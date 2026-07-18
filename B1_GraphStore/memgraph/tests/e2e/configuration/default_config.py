@@ -1,0 +1,352 @@
+# Copyright 2022 Memgraph Ltd.
+#
+# Use of this software is governed by the Business Source License
+# included in the file licenses/BSL.txt; by using this file, you agree to be bound by the terms of the Business Source
+# License, and you may not use this file except in compliance with the Business Source License.
+#
+# As of the Change Date specified in that file, in accordance with
+# the Business Source License, use of this software will be governed
+# by the Apache License, Version 2.0, included in the file
+# licenses/APL.txt.
+
+# In order to check the working correctness of the SHOW CONFIG command, a couple of configuration flags has been passed to the testing instance. These are:
+# "--log-level=TRACE", "--storage-properties-on-edges=True", "--storage-snapshot-interval-sec", "300", "--storage-wal-enabled=True"
+# If you wish to modify these, update the startup_config_dict and workloads.yaml !
+
+
+startup_config_dict = {
+    "auth_module_mappings": (
+        "",
+        "",
+        'Associates auth schemes to external modules. A mapping is structured as follows: "<scheme>:<absolute path>", '
+        'and individual entries are separated with ";". If the mapping contains whitespace, enclose all of it inside '
+        'quotation marks: " "',
+    ),
+    "auth_module_timeout_ms": (
+        "10000",
+        "10000",
+        "Timeout (in milliseconds) used when waiting for a response from the auth module.",
+    ),
+    "auth_password_permit_null": ("true", "true", "Set to false to disable null passwords."),
+    "auth_password_strength_regex": (
+        ".+",
+        ".+",
+        "The regular expression that should be used to match the entire entered password to ensure its strength.",
+    ),
+    "allow_load_csv": ("true", "true", "Controls whether LOAD CSV clause is allowed in queries."),
+    "aws_access_key": ("", "", "Define AWS access key for the AWS integration."),
+    "aws_endpoint_url": ("", "", "Define AWS endpoint url for the AWS integration."),
+    "aws_region": ("", "", "Define AWS region which is used for the AWS integration."),
+    "aws_secret_key": ("", "", "Define AWS secret key for the AWS integration."),
+    "audit_buffer_flush_interval_ms": (
+        "200",
+        "200",
+        "Interval (in milliseconds) used for flushing the audit log buffer.",
+    ),
+    "audit_buffer_size": ("100000", "100000", "Maximum number of items in the audit log buffer."),
+    "audit_enabled": ("false", "false", "Set to true to enable audit logging."),
+    "auth_user_or_role_name_regex": (
+        "[a-zA-Z0-9_.+-@]+",
+        "[a-zA-Z0-9_.+-@]+",
+        "Set to the regular expression that each user or role name must fulfill.",
+    ),
+    "bolt_address": ("0.0.0.0", "0.0.0.0", "IP address on which the Bolt server should listen."),
+    "bolt_cert_file": ("", "", "Certificate file which should be used for the Bolt server."),
+    "bolt_key_file": ("", "", "Key file which should be used for the Bolt server."),
+    "bolt_num_workers": (
+        "12",
+        "12",
+        "Number of workers used by the Bolt server. By default, this will be the number of processing units available on the machine.",
+    ),
+    "bolt_port": ("7687", "7687", "Port on which the Bolt server should listen."),
+    "bolt_server_name_for_init": (
+        "Neo4j/v5.11.0 compatible graph database server - Memgraph",
+        "Neo4j/v5.11.0 compatible graph database server - Memgraph",
+        "Server name which the database should send to the client in the Bolt INIT message.",
+    ),
+    "cartesian_product_enabled": ("true", "true", "Enable cartesian product expansion."),
+    "cluster_ca_file": (
+        "",
+        "",
+        "The file used for storing certificate of the Certificate Authority you trust for intra-cluster TLS communication.",
+    ),
+    "cluster_cert_file": ("", "", "Certificate file used for intra-cluster TLS communication."),
+    "cluster_key_file": ("", "", "Key file used for intra-cluster TLS communication."),
+    "management_port": ("0", "0", "Port on which coordinator servers will be started."),
+    "coordinator_port": ("0", "0", "Port on which raft servers will be started."),
+    "coordinator_id": ("0", "0", "Unique ID of the raft server."),
+    "coordinator_hostname": ("", "", "Instance's hostname. Used as output of SHOW INSTANCES query."),
+    "data_directory": ("mg_data", "mg_data", "Path to directory in which to save all permanent data."),
+    "data_dir_lock_acquisition_timeout_sec": (
+        "30",
+        "30",
+        "Timeout before the failure of acquiring file lock on data directory is considered a failure.",
+    ),
+    "data_recovery_on_startup": (
+        "true",
+        "true",
+        "Controls whether the database recovers persisted data on startup.",
+    ),
+    "file_download_conn_timeout_sec": (
+        "10",
+        "10",
+        "Define a timeout for establishing a connection with a remote server during a file download.",
+    ),
+    "isolation_level": (
+        "SNAPSHOT_ISOLATION",
+        "SNAPSHOT_ISOLATION",
+        "Default isolation level used for the transactions. Allowed values: SNAPSHOT_ISOLATION, READ_COMMITTED, READ_UNCOMMITTED",
+    ),
+    "kafka_bootstrap_servers": (
+        "",
+        "",
+        "List of default Kafka brokers as a comma separated list of broker host or host:port.",
+    ),
+    "logger_type": (
+        "sync",
+        "sync",
+        "Controls whether synchronous or asynchronous logger will be used. Options: sync, async",
+    ),
+    "log_file": ("", "", "Path to where the log should be stored."),
+    "log_retention_days": ("35", "35", "Controls for how many days will daily log files be preserved."),
+    "nuraft_log_file": ("", "", "Path to the file where NuRaft logs are saved."),
+    "log_level": (
+        "WARNING",
+        "TRACE",
+        "Minimum log level. Allowed values: TRACE, DEBUG, INFO, WARNING, ERROR, CRITICAL",
+    ),
+    "log_min_duration_ms": (
+        "-1",
+        "-1",
+        "Log queries whose parse+plan+execute time (ms) reaches this threshold with a [slow-query] tag. -1 disables; 0 logs every successful query.",
+    ),
+    "log_failed_queries": ("false", "false", "Log each failed query with a [failed-query] tag."),
+    "log_query_plan": ("true", "true", "Append the query's EXPLAIN plan to its [slow-query] log line."),
+    "memory_limit": (
+        "0",
+        "0",
+        "Total memory limit in MiB. Set to 0 to use the default values which are 100% of the phyisical memory if the swap is enabled and 90% of the physical memory otherwise.",
+    ),
+    "memory_warning_threshold": (
+        "1024",
+        "1024",
+        "Memory warning threshold, in MB. If Memgraph detects there is less available RAM it will log a warning. Set to 0 to disable.",
+    ),
+    "metrics_address": (
+        "0.0.0.0",
+        "0.0.0.0",
+        "IP address on which the Memgraph server for exposing metrics should listen.",
+    ),
+    "metrics_format": (
+        "JSON",
+        "JSON",
+        "Format for the metrics endpoint. Supported values: OpenMetrics, JSON. JSON is deprecated.",
+    ),
+    "metrics_port": ("9091", "9091", "Port on which the Memgraph server for exposing metrics should listen."),
+    "monitoring_address": (
+        "0.0.0.0",
+        "0.0.0.0",
+        "IP address on which the websocket server for Memgraph monitoring should listen.",
+    ),
+    "monitoring_port": ("7444", "7444", "Port on which the websocket server for Memgraph monitoring should listen."),
+    "storage_parallel_snapshot_creation": (
+        "false",
+        "false",
+        "If true, snapshots will be created using --storage-snapshot-thread-count number of treads.",
+    ),
+    "storage_parallel_schema_recovery": (
+        "false",
+        "false",
+        "Controls whether the indices and constraints creation can be done in a multithreaded fashion.",
+    ),
+    "storage_enable_schema_metadata": (
+        "false",
+        "false",
+        "Controls whether metadata should be collected about the resident labels and edge types.",
+    ),
+    "storage_automatic_label_index_creation_enabled": (
+        "false",
+        "false",
+        "Controls whether label indexes on vertices should be created automatically.",
+    ),
+    "storage_automatic_edge_type_index_creation_enabled": (
+        "false",
+        "false",
+        "Controls whether edge-type indexes on relationships should be created automatically.",
+    ),
+    "storage_enable_edges_metadata": (
+        "false",
+        "false",
+        "Controls whether additional metadata should be stored about the edges in order to do faster traversals on certain queries.",
+    ),
+    "storage_light_edge": (
+        "false",
+        "false",
+        "Controls whether edges are stored as lightweight objects in order to reduce memory footprint; implies --storage-properties-on-edges.",
+    ),
+    "storage_property_store_compression_enabled": (
+        "false",
+        "false",
+        "Controls whether the properties should be compressed in the storage.",
+    ),
+    "storage_property_store_compression_level": (
+        "mid",
+        "mid",
+        "Compression level for storing properties. Allowed values: low, mid, high.",
+    ),
+    "storage_floating_point_resolution_bits": (
+        "64",
+        "64",
+        "Max bits for floating-point property storage (16, 32, or 64). Smaller values save space but reduce precision (32=float, 16=half).",
+    ),
+    "password_encryption_algorithm": ("bcrypt", "bcrypt", "The password encryption algorithm used for authentication."),
+    "pulsar_service_url": ("", "", "Default URL used while connecting to Pulsar brokers."),
+    "query_execution_timeout_sec": (
+        "600",
+        "600",
+        "Maximum allowed query execution time. Queries exceeding this limit will be aborted. Value of 0 means no limit.",
+    ),
+    "query_modules_directory": (
+        "",
+        "",
+        "Directory where modules with custom query procedures are stored. NOTE: Multiple comma-separated directories can be defined.",
+    ),
+    "replication_replica_check_frequency_sec": (
+        "1",
+        "1",
+        "The time duration between two replica checks/pings. If < 1, replicas will NOT be checked at all. NOTE: The MAIN instance allocates a new thread for each REPLICA.",
+    ),
+    "storage_delta_on_identical_property_update": (
+        "true",
+        "true",
+        "Controls whether updating a property with the same value should create a delta object.",
+    ),
+    "storage_backup_dir_enabled": (
+        "true",
+        "true",
+        "Controls whether .old dir will be used to store latest snapshot and WAL files.",
+    ),
+    "strict_flag_check": ("true", "true", "If true, error and exit when suspicious positional arguments are detected."),
+    "storage_access_timeout_sec": ("1", "1", "Query's storage level access timeout in seconds."),
+    "storage_gc_aggressive": ("false", "false", "Enable aggressive garbage collection."),
+    "storage_gc_cycle_sec": ("30", "30", "Storage garbage collector interval (in seconds)."),
+    "storage_python_gc_cycle_sec": ("180", "180", "Storage python full garbage collection interval (in seconds)."),
+    "storage_items_per_batch": (
+        "1000000",
+        "1000000",
+        "The number of edges and vertices stored in a batch in a snapshot file.",
+    ),
+    "storage_properties_on_edges": ("false", "true", "Controls whether edges have properties."),
+    "storage_snapshot_thread_count": ("12", "12", "The number of threads used to create snapshots."),
+    "storage_recovery_thread_count": ("12", "12", "The number of threads used to recover persisted data from disk."),
+    "storage_snapshot_interval_sec": (
+        "300",
+        "300",
+        "Storage snapshot creation interval (in seconds). Set to 0 to disable periodic snapshot creation.",
+    ),
+    "storage_snapshot_interval": (
+        "",
+        "300",
+        "Define periodic snapshot schedule via cron format or as a period in seconds.",
+    ),
+    "storage_snapshot_on_exit": ("false", "false", "Controls whether the storage creates another snapshot on exit."),
+    "storage_allow_recovery_failure": (
+        "false",
+        "false",
+        "If true, a database that fails to recover on startup comes up in a broken state instead of crashing the process. Broken databases reject queries until recovered via RECOVER SNAPSHOT.",
+    ),
+    "storage_snapshot_retention_count": ("3", "3", "The number of snapshots that should always be kept."),
+    "storage_wal_enabled": (
+        "false",
+        "true",
+        "Controls whether the storage uses write-ahead-logging. To enable WAL periodic snapshots must be enabled.",
+    ),
+    "storage_wal_file_flush_every_n_tx": (
+        "100000",
+        "100000",
+        "Issue a 'fsync' call after this amount of transactions are written to the WAL file. Set to 1 for fully synchronous operation.",
+    ),
+    "storage_mode": (
+        "IN_MEMORY_TRANSACTIONAL",
+        "IN_MEMORY_TRANSACTIONAL",
+        "Default storage mode Memgraph uses. Allowed values: IN_MEMORY_TRANSACTIONAL, IN_MEMORY_ANALYTICAL, ON_DISK_TRANSACTIONAL",
+    ),
+    "storage_wal_file_size_kib": ("20480", "20480", "Minimum file size of each WAL file."),
+    "stream_transaction_conflict_retries": (
+        "30",
+        "30",
+        "Number of times to retry when a stream transformation fails to commit because of conflicting transactions",
+    ),
+    "stream_transaction_retry_interval": (
+        "500",
+        "500",
+        "Retry interval in milliseconds when a stream transformation fails to commit because of conflicting transactions",
+    ),
+    "telemetry_enabled": (
+        "false",
+        "false",
+        "Set to true to enable telemetry. We collect information about the running system (CPU and memory information) and information about the database runtime (vertex and edge counts and resource usage) to allow for easier improvement of the product.",
+    ),
+    "timezone": (
+        "UTC",
+        "UTC",
+        "Define instance's timezone (IANA format).",
+    ),
+    "query_cost_planner": ("true", "true", "Use the cost-estimating query planner."),
+    "query_plan_cache_max_size": ("1000", "1000", "Maximum number of query plans to cache."),
+    "query_vertex_count_to_expand_existing": (
+        "10",
+        "10",
+        "Maximum count of indexed vertices which provoke indexed lookup and then expand to existing, instead of a regular expand. Default is 10, to turn off use -1.",
+    ),
+    "query_max_plans": ("1000", "1000", "Maximum number of generated plans for a query."),
+    "flag_file": ("", "", "load flags from file"),
+    "hops_limit_partial_results": (
+        "true",
+        "true",
+        "If set to true, the query will return partial results if the hops limit is reached.",
+    ),
+    "init_file": (
+        "",
+        "",
+        "Path to cypherl file that is used for configuring users and database schema before server starts.",
+    ),
+    "init_data_file": ("", "", "Path to cypherl file that is used for creating data after server starts."),
+    "replication_restore_state_on_startup": (
+        "true",
+        "true",
+        "Restore replication state on startup, e.g. recover replica",
+    ),
+    "query_callable_mappings_path": (
+        "",
+        "",
+        "The path to mappings that describes aliases to callables in cypher queries in the form of key-value pairs in a json file. With this option query module procedures that do not exist in memgraph can be mapped to ones that exist.",
+    ),
+    "delta_chain_cache_threshold": (
+        "128",
+        "128",
+        "The threshold for when to cache long delta chains. This is used for heavy read + write workloads where repeated processing of delta chains can become costly.",
+    ),
+    "experimental_enabled": (
+        "",
+        "",
+        "Experimental features to be used, comma-separated. Options [planner-v2]",
+    ),
+    "experimental_config": (
+        "",
+        "",
+        "Experimental features to be used, JSON object. Options []",
+    ),
+    "schema_info_enabled": ("false", "false", "Set to true to enable run-time schema info tracking."),
+    "storage_rocksdb_enable_thread_tracking": (
+        "false",
+        "false",
+        "Enable RocksDB thread status tracking. Default is false for reduced syscall overhead. Enable when debugging disk storage performance issues (provides GetThreadList API).",
+    ),
+    "storage_rocksdb_info_log_level": (
+        "INFO_LEVEL",
+        "INFO_LEVEL",
+        "RocksDB info log level. Options: DEBUG_LEVEL, INFO_LEVEL, WARN_LEVEL, ERROR_LEVEL, FATAL_LEVEL, HEADER_LEVEL. Default is INFO_LEVEL.",
+    ),
+    "debug_query_plans": ("false", "false", "Enable DEBUG logging of potential query plans."),
+}

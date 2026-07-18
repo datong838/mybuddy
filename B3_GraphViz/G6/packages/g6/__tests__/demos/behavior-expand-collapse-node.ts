@@ -1,0 +1,52 @@
+import { Graph, treeToGraphData } from '@antv/g6';
+
+export const behaviorExpandCollapseNode: TestCase = async (context) => {
+  const graph = new Graph({
+    ...context,
+    x: 200,
+    y: 200,
+    data: treeToGraphData({
+      id: 'A',
+      children: [
+        { id: 'B', children: [{ id: 'D' }, { id: 'E' }] },
+        { id: 'C', style: { collapsed: true }, children: [{ id: 'F' }, { id: 'G' }] },
+      ],
+    }),
+    node: {
+      style: {
+        size: 32,
+        labelText: (d) => d.id,
+        labelPlacement: 'right',
+        ports: [{ position: 'center' }],
+      },
+    },
+    edge: {
+      type: 'cubic-horizontal',
+    },
+    layout: {
+      type: 'dendrogram',
+      nodeSep: 40,
+      rankSep: 100,
+      preLayout: false,
+    },
+    behaviors: [{ type: 'collapse-expand', trigger: 'click', align: false }, 'drag-element'],
+  });
+
+  await graph.render();
+
+  behaviorExpandCollapseNode.form = (panel) => {
+    const config = {
+      element: 'A',
+      collapse: () => graph.collapseElement(config.element),
+      expand: () => graph.expandElement(config.element),
+    };
+
+    return [
+      panel.add(config, 'element', ['A', 'B', 'C', 'D', 'E', 'F', 'G']).name('Node'),
+      panel.add(config, 'collapse').name('Collapse'),
+      panel.add(config, 'expand').name('Expand'),
+    ];
+  };
+
+  return graph;
+};

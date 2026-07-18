@@ -1,0 +1,874 @@
+# Licensed to the Apache Software Foundation (ASF) under one
+# or more contributor license agreements.  See the NOTICE file
+# distributed with this work for additional information
+# regarding copyright ownership.  The ASF licenses this file
+# to you under the Apache License, Version 2.0 (the
+# "License"); you may not use this file except in compliance
+# with the License.  You may obtain a copy of the License at
+# http://www.apache.org/licenses/LICENSE-2.0
+# Unless required by applicable law or agreed to in writing,
+# software distributed under the License is distributed on an
+# "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+# KIND, either express or implied.  See the License for the
+# specific language governing permissions and limitations
+# under the License.
+import json
+import re
+
+from age.models import Vertex, Edge, Path
+import unittest
+import unittest.mock
+import decimal
+import age
+# _validate_column is private but tested directly because its quoting
+# behavior is security-relevant and the public surface (buildCypher)
+# makes it difficult to isolate quoting assertions.
+from age.age import buildCypher, _validate_column
+from age.exceptions import InvalidIdentifier
+import argparse
+
+TEST_HOST = "localhost"
+TEST_PORT = 5432
+TEST_DB = "postgres"
+TEST_USER = "postgres"
+TEST_PASSWORD = "agens"
+TEST_GRAPH_NAME = "test_graph"
+
+
+class TestSetUpAge(unittest.TestCase):
+    """Unit tests for setUpAge() skip_load parameter — no DB required."""
+
+    def _make_mock_conn(self):
+        mock_conn = unittest.mock.MagicMock()
+        mock_cursor = unittest.mock.MagicMock()
+        mock_conn.cursor.return_value.__enter__ = unittest.mock.Mock(return_value=mock_cursor)
+        mock_conn.cursor.return_value.__exit__ = unittest.mock.Mock(return_value=False)
+        mock_conn.adapters = unittest.mock.MagicMock()
+        mock_type_info = unittest.mock.MagicMock()
+        mock_type_info.oid = 1
+        mock_type_info.array_oid = 2
+        return mock_conn, mock_cursor, mock_type_info
+
+    def test_skip_load_true_does_not_execute_load(self):
+        """When skip_load=True, LOAD 'age' must not be executed."""
+        mock_conn, mock_cursor, mock_type_info = self._make_mock_conn()
+        with unittest.mock.patch("age.age.TypeInfo.fetch", return_value=mock_type_info), \
+             unittest.mock.patch("age.age.checkGraphCreated"):
+            age.age.setUpAge(mock_conn, "test_graph", skip_load=True)
+        mock_cursor.execute.assert_called_once_with(
+            'SET search_path = ag_catalog, "$user", public;'
+        )
+
+    def test_skip_load_false_executes_load(self):
+        """When skip_load=False (default), LOAD 'age' must be executed."""
+        mock_conn, mock_cursor, mock_type_info = self._make_mock_conn()
+        with unittest.mock.patch("age.age.TypeInfo.fetch", return_value=mock_type_info), \
+             unittest.mock.patch("age.age.checkGraphCreated"):
+            age.age.setUpAge(mock_conn, "test_graph", skip_load=False)
+        mock_cursor.execute.assert_any_call("LOAD 'age';")
+
+    def test_skip_load_with_load_from_plugins(self):
+        """When skip_load=False and load_from_plugins=True, LOAD from plugins path."""
+        mock_conn, mock_cursor, mock_type_info = self._make_mock_conn()
+        with unittest.mock.patch("age.age.TypeInfo.fetch", return_value=mock_type_info), \
+             unittest.mock.patch("age.age.checkGraphCreated"):
+            age.age.setUpAge(mock_conn, "test_graph", load_from_plugins=True, skip_load=False)
+        mock_cursor.execute.assert_any_call("LOAD '$libdir/plugins/age';")
+
+    def test_skip_load_true_still_sets_search_path(self):
+        """When skip_load=True, search_path must still be set."""
+        mock_conn, mock_cursor, mock_type_info = self._make_mock_conn()
+        with unittest.mock.patch("age.age.TypeInfo.fetch", return_value=mock_type_info), \
+             unittest.mock.patch("age.age.checkGraphCreated"):
+            age.age.setUpAge(mock_conn, "test_graph", skip_load=True)
+        mock_cursor.execute.assert_any_call(
+            'SET search_path = ag_catalog, "$user", public;'
+        )
+
+    def test_contradictory_skip_load_and_load_from_plugins_raises(self):
+        """skip_load=True + load_from_plugins=True must raise ValueError."""
+        mock_conn, _, _ = self._make_mock_conn()
+        with self.assertRaises(ValueError):
+            age.age.setUpAge(mock_conn, "test_graph", load_from_plugins=True, skip_load=True)
+
+    def test_connect_forwards_skip_load_to_setup(self):
+        """age.connect(skip_load=True) must forward skip_load through the full call chain."""
+        with unittest.mock.patch("age.age.psycopg.connect") as mock_psycopg, \
+             unittest.mock.patch("age.age.setUpAge") as mock_setup:
+            mock_psycopg.return_value = unittest.mock.MagicMock()
+            age.connect(dsn="host=localhost", graph="test_graph", skip_load=True)
+        mock_setup.assert_called_once()
+        _, kwargs = mock_setup.call_args
+        self.assertTrue(
+            kwargs.get("skip_load", False),
+            "skip_load must be forwarded from age.connect() to setUpAge()"
+        )
+
+
+class TestBuildCypher(unittest.TestCase):
+    """Unit tests for buildCypher() and _validate_column() — no DB required."""
+
+    def test_simple_column(self):
+        result = buildCypher("g", "MATCH (n) RETURN n", ["n"])
+        self.assertIn('"n" agtype', result)
+
+    def test_column_with_type(self):
+        result = buildCypher("g", "MATCH (n) RETURN n", ["n agtype"])
+        self.assertIn('"n" agtype', result)
+
+    def test_reserved_word_count(self):
+        """Issue #2370: 'count' is a PostgreSQL reserved word."""
+        result = buildCypher("g", "MATCH (n) RETURN count(n)", ["count"])
+        self.assertIn('"count" agtype', result)
+        # Verify 'count' never appears unquoted as a column name
+        self.assertIsNone(
+            re.search(r'(?<!")\bcount\s+agtype\b', result),
+            f"'count' must be quoted in: {result}"
+        )
+
+    def test_reserved_word_order(self):
+        """Issue #2370: 'order' is a PostgreSQL reserved word."""
+        result = buildCypher("g", "MATCH (n) RETURN n.order", ["order"])
+        self.assertIn('"order" agtype', result)
+
+    def test_reserved_word_type(self):
+        """Issue #2370: 'type' is a PostgreSQL reserved word."""
+        result = buildCypher("g", "MATCH ()-[r]->() RETURN type(r)", ["type"])
+        self.assertIn('"type" agtype', result)
+
+    def test_reserved_word_select(self):
+        """Issue #2370: 'select' is a PostgreSQL reserved word."""
+        result = buildCypher("g", "MATCH (n) RETURN n", ["select"])
+        self.assertIn('"select" agtype', result)
+
+    def test_reserved_word_group(self):
+        """Issue #2370: 'group' is a PostgreSQL reserved word."""
+        result = buildCypher("g", "MATCH (n) RETURN n", ["group"])
+        self.assertIn('"group" agtype', result)
+
+    def test_multiple_columns(self):
+        result = buildCypher("g", "MATCH (n) RETURN n.name, count(n)", ["name", "count"])
+        self.assertIn('"name" agtype', result)
+        self.assertIn('"count" agtype', result)
+
+    def test_default_column(self):
+        result = buildCypher("g", "MATCH (n) RETURN n", None)
+        self.assertIn('"v" agtype', result)
+
+    def test_invalid_column_rejected(self):
+        with self.assertRaises(InvalidIdentifier):
+            buildCypher("g", "MATCH (n) RETURN n", ["invalid;col"])
+
+    def test_reserved_word_in_name_type_pair(self):
+        """Quoting applies even when the column is specified as 'name type'."""
+        result = buildCypher("g", "MATCH (n) RETURN n.order", ["order agtype"])
+        self.assertIn('"order" agtype', result)
+
+    def test_validate_column_quoting(self):
+        self.assertEqual(_validate_column("v"), '"v" agtype')
+        self.assertEqual(_validate_column("v agtype"), '"v" agtype')
+        self.assertEqual(_validate_column("count"), '"count" agtype')
+        self.assertEqual(_validate_column("my_col"), '"my_col" agtype')
+
+
+class TestModelToDict(unittest.TestCase):
+    """Unit tests for Vertex/Edge/Path to_dict() — no DB required."""
+
+    def test_vertex_to_dict(self):
+        v = Vertex(id=123, label="Person", properties={"name": "Alice", "age": 30})
+        d = v.to_dict()
+        self.assertEqual(d["id"], 123)
+        self.assertEqual(d["label"], "Person")
+        self.assertEqual(d["properties"], {"name": "Alice", "age": 30})
+        # Verify it's a plain dict (JSON-serializable)
+        json_str = json.dumps(d)
+        self.assertIn("Alice", json_str)
+
+    def test_vertex_to_dict_empty_properties(self):
+        v = Vertex(id=1, label="Empty", properties=None)
+        d = v.to_dict()
+        self.assertEqual(d["properties"], {})
+
+    def test_edge_to_dict(self):
+        e = Edge(id=456, label="KNOWS", properties={"since": 2020})
+        e.start_id = 123
+        e.end_id = 789
+        d = e.to_dict()
+        self.assertEqual(d["id"], 456)
+        self.assertEqual(d["label"], "KNOWS")
+        self.assertEqual(d["start_id"], 123)
+        self.assertEqual(d["end_id"], 789)
+        self.assertEqual(d["properties"], {"since": 2020})
+        json_str = json.dumps(d)
+        self.assertIn("KNOWS", json_str)
+
+    def test_path_to_dict(self):
+        v1 = Vertex(id=1, label="A", properties={"name": "start"})
+        e = Edge(id=10, label="r", properties={"w": 1})
+        e.start_id = 1
+        e.end_id = 2
+        v2 = Vertex(id=2, label="B", properties={"name": "end"})
+        p = Path([v1, e, v2])
+        d = p.to_dict()
+        self.assertEqual(len(d), 3)
+        self.assertEqual(d[0]["label"], "A")
+        self.assertEqual(d[1]["label"], "r")
+        self.assertEqual(d[1]["start_id"], 1)
+        self.assertEqual(d[2]["label"], "B")
+        # Verify the whole path is JSON-serializable
+        json_str = json.dumps(d)
+        self.assertIn("start", json_str)
+
+    def test_vertex_to_dict_is_plain_dict(self):
+        """to_dict() returns standard dict, not a model object."""
+        v = Vertex(id=1, label="X", properties={"k": "v"})
+        d = v.to_dict()
+        self.assertIsInstance(d, dict)
+        self.assertIsInstance(d["properties"], dict)
+
+
+class TestPublicImports(unittest.TestCase):
+    """Verify that public API symbols are importable without type: ignore."""
+
+    def test_import_configure_connection(self):
+        from age import configure_connection
+        self.assertTrue(callable(configure_connection))
+
+    def test_import_age_loader(self):
+        from age import AgeLoader
+        self.assertIsNotNone(AgeLoader)
+
+    def test_import_client_cursor(self):
+        from age import ClientCursor
+        self.assertIsNotNone(ClientCursor)
+
+
+class TestConfigureConnection(unittest.TestCase):
+    """Unit tests for configure_connection() — no DB required."""
+
+    def _make_mock_conn(self):
+        mock_conn = unittest.mock.MagicMock()
+        mock_cursor = unittest.mock.MagicMock()
+        mock_conn.cursor.return_value.__enter__ = unittest.mock.Mock(return_value=mock_cursor)
+        mock_conn.cursor.return_value.__exit__ = unittest.mock.Mock(return_value=False)
+        mock_conn.adapters = unittest.mock.MagicMock()
+        mock_type_info = unittest.mock.MagicMock()
+        mock_type_info.oid = 1
+        mock_type_info.array_oid = 2
+        return mock_conn, mock_cursor, mock_type_info
+
+    def test_default_does_not_load(self):
+        """By default, configure_connection should NOT execute LOAD."""
+        mock_conn, mock_cursor, mock_type_info = self._make_mock_conn()
+        with unittest.mock.patch("age.age.TypeInfo.fetch", return_value=mock_type_info), \
+             unittest.mock.patch("age.age.checkGraphCreated"):
+            age.age.configure_connection(mock_conn)
+        mock_cursor.execute.assert_called_once_with(
+            'SET search_path = ag_catalog, "$user", public;'
+        )
+
+    def test_load_true_executes_load(self):
+        """When load=True, LOAD 'age' must be executed."""
+        mock_conn, mock_cursor, mock_type_info = self._make_mock_conn()
+        with unittest.mock.patch("age.age.TypeInfo.fetch", return_value=mock_type_info), \
+             unittest.mock.patch("age.age.checkGraphCreated"):
+            age.age.configure_connection(mock_conn, load=True)
+        mock_cursor.execute.assert_any_call("LOAD 'age';")
+
+    def test_load_from_plugins(self):
+        """When load=True and load_from_plugins=True, use plugins path."""
+        mock_conn, mock_cursor, mock_type_info = self._make_mock_conn()
+        with unittest.mock.patch("age.age.TypeInfo.fetch", return_value=mock_type_info), \
+             unittest.mock.patch("age.age.checkGraphCreated"):
+            age.age.configure_connection(mock_conn, load=True, load_from_plugins=True)
+        mock_cursor.execute.assert_any_call("LOAD '$libdir/plugins/age';")
+
+    def test_load_from_plugins_without_load_raises(self):
+        """load_from_plugins=True without load=True must raise ValueError."""
+        mock_conn, _, _ = self._make_mock_conn()
+        with self.assertRaises(ValueError):
+            age.age.configure_connection(mock_conn, load_from_plugins=True)
+
+    def test_always_sets_search_path(self):
+        """search_path must always be set regardless of load parameter."""
+        mock_conn, mock_cursor, mock_type_info = self._make_mock_conn()
+        with unittest.mock.patch("age.age.TypeInfo.fetch", return_value=mock_type_info), \
+             unittest.mock.patch("age.age.checkGraphCreated"):
+            age.age.configure_connection(mock_conn)
+        mock_cursor.execute.assert_any_call(
+            'SET search_path = ag_catalog, "$user", public;'
+        )
+
+    def test_registers_agtype_adapters(self):
+        """AgeLoader must be registered for agtype OIDs."""
+        mock_conn, mock_cursor, mock_type_info = self._make_mock_conn()
+        with unittest.mock.patch("age.age.TypeInfo.fetch", return_value=mock_type_info), \
+             unittest.mock.patch("age.age.checkGraphCreated"):
+            age.age.configure_connection(mock_conn)
+        mock_conn.adapters.register_loader.assert_any_call(1, age.age.AgeLoader)
+        mock_conn.adapters.register_loader.assert_any_call(2, age.age.AgeLoader)
+
+    def test_graph_name_triggers_check(self):
+        """When graph_name is provided, checkGraphCreated must be called."""
+        mock_conn, mock_cursor, mock_type_info = self._make_mock_conn()
+        with unittest.mock.patch("age.age.TypeInfo.fetch", return_value=mock_type_info), \
+             unittest.mock.patch("age.age.checkGraphCreated") as mock_check:
+            age.age.configure_connection(mock_conn, graph_name="my_graph")
+        mock_check.assert_called_once_with(mock_conn, "my_graph")
+
+    def test_age_not_set_when_type_info_is_none(self):
+        """AgeNotSet must be raised when TypeInfo.fetch returns None."""
+        from age.exceptions import AgeNotSet
+        mock_conn, _, _ = self._make_mock_conn()
+        with unittest.mock.patch("age.age.TypeInfo.fetch", return_value=None):
+            with self.assertRaises(AgeNotSet):
+                age.age.configure_connection(mock_conn)
+
+
+class TestAgeBasic(unittest.TestCase):
+    ag = None
+    args: argparse.Namespace = argparse.Namespace(
+        host=TEST_HOST,
+        port=TEST_PORT,
+        database=TEST_DB,
+        user=TEST_USER,
+        password=TEST_PASSWORD,
+        graphName=TEST_GRAPH_NAME
+    )
+
+    def setUp(self):
+        print("Connecting to Test Graph.....")
+        args = dict(
+            host=self.args.host,
+            port=self.args.port,
+            dbname=self.args.database,
+            user=self.args.user,
+            password=self.args.password,
+        )
+
+        dsn = "host={host} port={port} dbname={dbname} user={user} password={password}".format(
+            **args
+        )
+        self.ag = age.connect(dsn, graph=self.args.graphName, **args)
+
+    def tearDown(self):
+        # Clear test data
+        print("Deleting Test Graph.....")
+        age.deleteGraph(self.ag.connection, self.ag.graphName)
+        self.ag.close()
+
+    def testExec(self):
+        print("\n---------------------------------------------------")
+        print("Test 1: Checking single and multi column Returns.....")
+        print("---------------------------------------------------\n")
+
+        ag = self.ag
+        # Create and Return single column
+        cursor = ag.execCypher(
+            "CREATE (n:Person {name: %s, title: 'Developer'}) RETURN n",
+            params=("Andy",),
+        )
+        for row in cursor:
+            print("Vertex: %s , Type: %s " % (Vertex, type(row[0])))
+
+        # Create and Return multi columns
+        cursor = ag.execCypher(
+            "CREATE (n:Person {name: %s, title: %s}) RETURN id(n), n.name",
+            cols=["id", "name"],
+            params=("Jack", "Manager"),
+        )
+        row = cursor.fetchone()
+        print("Id: %s , Name: %s" % (row[0], row[1]))
+        self.assertEqual(int, type(row[0]))
+        ag.commit()
+        print("\nTest 1 Successful....")
+
+    def testQuery(self):
+        print("\n--------------------------------------------------")
+        print("Test 2: Testing CREATE and query relationships.....")
+        print("--------------------------------------------------\n")
+
+        ag = self.ag
+        ag.execCypher("CREATE (n:Person {name: %s}) ", params=("Jack",))
+        ag.execCypher("CREATE (n:Person {name: %s}) ", params=("Andy",))
+        ag.execCypher("CREATE (n:Person {name: %s}) ", params=("Smith",))
+        ag.execCypher(
+            "MATCH (a:Person), (b:Person) WHERE a.name = 'Andy' AND b.name = 'Jack' CREATE (a)-[r:worksWith {weight: 3}]->(b)"
+        )
+        ag.execCypher(
+            """MATCH (a:Person), (b:Person)
+                    WHERE  a.name = %s AND b.name = %s
+                    CREATE p=((a)-[r:worksWith]->(b)) """,
+            params=(
+                "Jack",
+                "Smith",
+            ),
+        )
+
+        ag.commit()
+
+        cursor = ag.execCypher("MATCH p=()-[:worksWith]-() RETURN p")
+        for row in cursor:
+            path = row[0]
+            print("START:", path[0])
+            print("EDGE:", path[1])
+            print("END:", path[2])
+
+        cursor = ag.execCypher(
+            "MATCH p=(a)-[b]-(c) WHERE b.weight>%s RETURN a,label(b), b.weight, c",
+            cols=["a", "bl", "bw", "c"],
+            params=(2,),
+        )
+        for row in cursor:
+            start = row[0]
+            edgel = row[1]
+            edgew = row[2]
+            end = row[3]
+            print(
+                "Relationship: %s %s %s. Edge weight: %s"
+                % (start["name"], edgel, end["name"], edgew)
+            )
+            # Assert that the weight of the edge is greater than 2
+            self.assertEqual(edgew > 2, True)
+        print("\nTest 2 Successful...")
+
+    def testChangeData(self):
+        print("\n-------------------------------------------------------")
+        print("Test 3: Testing changes in data using SET and REMOVE.....")
+        print("-------------------------------------------------------\n")
+
+        ag = self.ag
+        # Create Vertices
+        # Commit automatically
+        ag.execCypher("CREATE (n:Person {name: 'Joe'})")
+
+        cursor = ag.execCypher(
+            "CREATE (n:Person {name: %s, title: 'Developer'}) RETURN n",
+            params=("Smith",),
+        )
+        row = cursor.fetchone()
+        print("CREATED: ", row[0])
+
+        # You must commit explicitly
+        ag.commit()
+
+        cursor = ag.execCypher(
+            "MATCH (n:Person {name: %s}) SET n.title=%s RETURN n",
+            params=(
+                "Smith",
+                "Manager",
+            ),
+        )
+        row = cursor.fetchone()
+        vertex = row[0]
+        title1 = vertex["title"]
+        print("SET title: ", title1)
+
+        ag.commit()
+
+        cursor = ag.execCypher("MATCH (p:Person {name: 'Smith'}) RETURN p.title")
+        row = cursor.fetchone()
+        title2 = row[0]
+
+        self.assertEqual(title1, title2)
+
+        cursor = ag.execCypher(
+            "MATCH (n:Person {name: %s}) SET n.bigNum=-6.45161e+46::numeric RETURN n",
+            params=("Smith",),
+        )
+        row = cursor.fetchone()
+        vertex = row[0]
+        for row in cursor:
+            print("SET bigNum: ", vertex["bigNum"])
+
+        bigNum1 = vertex["bigNum"]
+
+        self.assertEqual(decimal.Decimal("-6.45161e+46"), bigNum1)
+        ag.commit()
+
+        cursor = ag.execCypher("MATCH (p:Person {name: 'Smith'}) RETURN p.bigNum")
+        row = cursor.fetchone()
+        bigNum2 = row[0]
+
+        self.assertEqual(bigNum1, bigNum2)
+
+        cursor = ag.execCypher(
+            "MATCH (n:Person {name: %s}) REMOVE n.title RETURN n", params=("Smith",)
+        )
+        for row in cursor:
+            print("REMOVE Prop title: ", row[0])
+            # Assert that the title property is removed
+            self.assertIsNone(row[0].properties.get("title"))
+        print("\nTest 3 Successful....")
+
+        # You must commit explicitly
+        ag.commit()
+
+    def testCypher(self):
+        print("\n--------------------------")
+        print("Test 4: Testing Cypher.....")
+        print("--------------------------\n")
+
+        ag = self.ag
+
+        with ag.connection.cursor() as cursor:
+            try:
+                ag.cypher(cursor, "CREATE (n:Person {name: %s}) ", params=("Joe",))
+                ag.cypher(cursor, "CREATE (n:Person {name: %s}) ", params=("Jack",))
+                ag.cypher(cursor, "CREATE (n:Person {name: %s}) ", params=("Andy",))
+                ag.cypher(cursor, "CREATE (n:Person {name: %s}) ", params=("Smith",))
+                ag.cypher(cursor, "CREATE (n:Person {name: %s}) ", params=("Tom",))
+
+                # You must commit explicitly
+                ag.commit()
+            except Exception as ex:
+                print(ex)
+                ag.rollback()
+
+        with ag.connection.cursor() as cursor:
+            try:  # Create Edges
+                ag.cypher(
+                    cursor,
+                    "MATCH (a:Person), (b:Person) WHERE a.name = 'Joe' AND b.name = 'Smith' CREATE (a)-[r:worksWith {weight: 3}]->(b)",
+                )
+                ag.cypher(
+                    cursor,
+                    "MATCH (a:Person), (b:Person) WHERE  a.name = 'Andy' AND b.name = 'Tom' CREATE (a)-[r:worksWith {weight: 1}]->(b)",
+                )
+                ag.cypher(
+                    cursor,
+                    "MATCH (a:Person {name: 'Jack'}), (b:Person {name: 'Andy'}) CREATE (a)-[r:worksWith {weight: 5}]->(b)",
+                )
+
+                # You must commit explicitly
+                ag.commit()
+            except Exception as ex:
+                print(ex)
+                ag.rollback()
+
+        # With Params
+        cursor = ag.execCypher(
+            """MATCH (a:Person), (b:Person)
+                WHERE  a.name = %s AND b.name = %s
+                CREATE p=((a)-[r:worksWith]->(b)) RETURN p""",
+            params=(
+                "Andy",
+                "Smith",
+            ),
+        )
+
+        for row in cursor:
+            print("CREATED EDGE: %s" % row[0])
+
+        cursor = ag.execCypher("""MATCH (a:Person {name: 'Joe'}), (b:Person {name: 'Jack'})
+                CREATE p=((a)-[r:worksWith {weight: 5}]->(b))
+                RETURN p """)
+
+        for row in cursor:
+            print("CREATED EDGE WITH PROPERTIES: %s" % row[0])
+            self.assertEqual(row[0][1].properties["weight"], 5)
+
+        print("\nTest 4 Successful...")
+
+    def testMultipleEdges(self):
+        print("\n------------------------------------")
+        print("Test 5: Testing Multiple Edges.....")
+        print("------------------------------------\n")
+
+        ag = self.ag
+        with ag.connection.cursor() as cursor:
+            try:
+                ag.cypher(cursor, "CREATE (n:Country {name: %s}) ", params=("USA",))
+                ag.cypher(cursor, "CREATE (n:Country {name: %s}) ", params=("France",))
+                ag.cypher(cursor, "CREATE (n:Country {name: %s}) ", params=("Korea",))
+                ag.cypher(cursor, "CREATE (n:Country {name: %s}) ", params=("Russia",))
+
+                # You must commit explicitly after all executions.
+                ag.connection.commit()
+            except Exception as ex:
+                ag.rollback()
+                raise ex
+
+        with ag.connection.cursor() as cursor:
+            try:  # Create Edges
+                ag.cypher(
+                    cursor,
+                    "MATCH (a:Country), (b:Country) WHERE a.name = 'USA' AND b.name = 'France' CREATE (a)-[r:distance {unit:'miles', value: 4760}]->(b)",
+                )
+                ag.cypher(
+                    cursor,
+                    "MATCH (a:Country), (b:Country) WHERE  a.name = 'France' AND b.name = 'Korea' CREATE (a)-[r:distance {unit: 'km', value: 9228}]->(b)",
+                )
+                ag.cypher(
+                    cursor,
+                    "MATCH (a:Country {name: 'Korea'}), (b:Country {name: 'Russia'}) CREATE (a)-[r:distance {unit:'km', value: 3078}]->(b)",
+                )
+
+                # You must commit explicitly
+                ag.connection.commit()
+            except Exception as ex:
+                ag.rollback()
+                raise ex
+
+        cursor = ag.execCypher("""MATCH p=(:Country {name:"USA"})-[:distance]-(:Country)-[:distance]-(:Country)
+                RETURN p""")
+
+        count = 0
+        output = []
+        for row in cursor:
+            path = row[0]
+            for e in path:
+                if e.gtype == age.TP_VERTEX:
+                    output.append(e.label + " " + e["name"])
+                elif e.gtype == age.TP_EDGE:
+                    output.append(
+                        "---- (distance " + str(e["value"]) + " " + e["unit"] + ") --->"
+                    )
+                else:
+                    output.append("Unknown element. " + str(e))
+
+                count += 1
+
+        formatted_output = " ".join(output)
+        print("PATH WITH MULTIPLE EDGES: %s" % formatted_output)
+        self.assertEqual(5, count)
+
+        print("\nTest 5 Successful...")
+
+    def testCollect(self):
+        print("\n--------------------------")
+        print("Test 6: Testing COLLECT.....")
+        print("--------------------------\n")
+
+        ag = self.ag
+
+        with ag.connection.cursor() as cursor:
+            try:
+                ag.cypher(cursor, "CREATE (n:Person {name: %s}) ", params=("Joe",))
+                ag.cypher(cursor, "CREATE (n:Person {name: %s}) ", params=("Jack",))
+                ag.cypher(cursor, "CREATE (n:Person {name: %s}) ", params=("Andy",))
+                ag.cypher(cursor, "CREATE (n:Person {name: %s}) ", params=("Smith",))
+                ag.cypher(cursor, "CREATE (n:Person {name: %s}) ", params=("Tom",))
+
+                # You must commit explicitly
+                ag.commit()
+            except Exception as ex:
+                print(ex)
+                ag.rollback()
+
+        with ag.connection.cursor() as cursor:
+            try:  # Create Edges
+                ag.cypher(
+                    cursor,
+                    "MATCH (a:Person), (b:Person) WHERE a.name = 'Joe' AND b.name = 'Smith' CREATE (a)-[r:worksWith {weight: 3}]->(b)",
+                )
+                ag.cypher(
+                    cursor,
+                    "MATCH (a:Person), (b:Person) WHERE  a.name = 'Joe' AND b.name = 'Tom' CREATE (a)-[r:worksWith {weight: 1}]->(b)",
+                )
+                ag.cypher(
+                    cursor,
+                    "MATCH (a:Person {name: 'Joe'}), (b:Person {name: 'Andy'}) CREATE (a)-[r:worksWith {weight: 5}]->(b)",
+                )
+
+                # You must commit explicitly
+                ag.commit()
+            except Exception as ex:
+                print(ex)
+                ag.rollback()
+
+        print(" -------- TESTING COLLECT #1 --------")
+        with ag.connection.cursor() as cursor:
+            ag.cypher(
+                cursor,
+                "MATCH (a)-[:worksWith]->(c) WITH a as V, COLLECT(c) as CV RETURN V.name, CV",
+                cols=["V", "CV"],
+            )
+            for row in cursor:
+                nm = row[0]
+                collected = row[1]
+                print(nm, "worksWith", [i["name"] for i in collected])
+                self.assertEqual(3, len(collected))
+
+        print(" -------- TESTING COLLECT #2 --------")
+        for row in ag.execCypher(
+            "MATCH (a)-[:worksWith]->(c) WITH a as V, COLLECT(c) as CV RETURN V.name, CV",
+            cols=["V1", "CV"],
+        ):
+            nm = row[0]
+            collected = row[1]
+            print(nm, "worksWith", [i["name"] for i in collected])
+            self.assertEqual(3, len(collected))
+        print("\nTest 6 Successful...")
+
+    def testSerialization(self):
+        print("\n---------------------------------------")
+        print("Test 6: Testing Vertex Serialization.....")
+        print("-----------------------------------------\n")
+
+        ag = self.ag
+
+        with ag.connection.cursor() as cursor:
+            try:
+                ag.cypher(cursor, "CREATE (n:Person {name: %s}) ", params=("Joe",))
+                ag.cypher(cursor, "CREATE (n:Person {name: %s}) ", params=("Jack",))
+                ag.cypher(cursor, "CREATE (n:Person {name: %s}) ", params=("Andy",))
+                ag.cypher(cursor, "CREATE (n:Person {name: %s}) ", params=("Smith",))
+                ag.cypher(cursor, "CREATE (n:Person {name: %s}) ", params=("Tom",))
+
+                # You must commit explicitly
+                ag.commit()
+            except Exception as ex:
+                print(ex)
+                ag.rollback()
+
+        print(" -------- TESTING Output #1 --------")
+        cursor = ag.execCypher("MATCH (n) RETURN n")
+
+        for row in cursor:
+            vertex = row[0]
+            try:
+                # json.loads will fail if the json str is not properly formatted
+                as_dict = json.loads(vertex.toJson())
+                print("Vertex.toJson() returns a correct json string.")
+                assert True
+            except:
+                assert False
+
+        print(" -------- TESTING Output #2 --------")
+        cursor = ag.execCypher("MATCH (n) RETURN n")
+
+        for row in cursor:
+            vertex = row[0]
+            as_str = vertex.toString()
+            # Checking if the trailing comma appears in .toString() output
+            self.assertFalse(as_str.endswith(", }}::VERTEX"))
+        print("Vertex.toString() 'properties' field is formatted properly.")
+
+    def testConfigureConnection(self):
+        """Integration: configure_connection() on an externally-opened
+        connection must register agtype adapters so cypher queries return
+        real Vertex/Edge/Path objects, and to_dict() must round-trip those
+        parser-produced objects through json.dumps()."""
+        print("\n-------------------------------------------------------")
+        print("Test 8: configure_connection + to_dict end-to-end.....")
+        print("-------------------------------------------------------\n")
+
+        import psycopg
+
+        from age import configure_connection
+
+        dsn = "host={host} port={port} dbname={database} user={user} password={password}".format(
+            **vars(self.args)
+        )
+        # Deliberately bypass age.connect(): the whole point of
+        # configure_connection() is to enable AGE on a caller-managed
+        # connection (e.g. one obtained from psycopg_pool.ConnectionPool).
+        raw = psycopg.connect(dsn)
+        try:
+            configure_connection(raw, graph_name=self.args.graphName, load=True)
+
+            graph = self.args.graphName
+            with raw.cursor() as cur:
+                cur.execute(
+                    f"SELECT * FROM cypher('{graph}', $$ "
+                    "CREATE (a:Person {name: 'Alice'})-[r:KNOWS {since: 2020}]->(b:Person {name: 'Bob'}) "
+                    "RETURN a, r, b "
+                    "$$) AS (a agtype, r agtype, b agtype);"
+                )
+                row = cur.fetchone()
+                raw.commit()
+
+            v_a, e, v_b = row
+            self.assertIsInstance(v_a, Vertex)
+            self.assertIsInstance(e, Edge)
+            self.assertIsInstance(v_b, Vertex)
+            self.assertEqual(v_a["name"], "Alice")
+            self.assertEqual(v_b["name"], "Bob")
+            self.assertEqual(e["since"], 2020)
+
+            payload = {
+                "start": v_a.to_dict(),
+                "edge": e.to_dict(),
+                "end": v_b.to_dict(),
+            }
+            serialised = json.loads(json.dumps(payload))
+            self.assertEqual(serialised["start"]["label"], "Person")
+            self.assertEqual(serialised["edge"]["label"], "KNOWS")
+            self.assertEqual(serialised["edge"]["start_id"], v_a.id)
+            self.assertEqual(serialised["edge"]["end_id"], v_b.id)
+            self.assertEqual(serialised["start"]["properties"]["name"], "Alice")
+
+            with raw.cursor() as cur:
+                cur.execute(
+                    f"SELECT * FROM cypher('{graph}', $$ "
+                    "MATCH p=(:Person)-[:KNOWS]->(:Person) RETURN p "
+                    "$$) AS (p agtype);"
+                )
+                path = cur.fetchone()[0]
+
+            self.assertIsInstance(path, Path)
+            path_dict = json.loads(json.dumps(path.to_dict()))
+            self.assertEqual(len(path_dict), 3)
+            self.assertEqual(path_dict[0]["label"], "Person")
+            self.assertEqual(path_dict[1]["label"], "KNOWS")
+            self.assertEqual(path_dict[2]["label"], "Person")
+            print("\nTest 8 Successful....")
+        finally:
+            raw.close()
+
+
+if __name__ == "__main__":
+    parser = argparse.ArgumentParser()
+
+    parser.add_argument(
+        "-host",
+        "--host",
+        help='Optional Host Name. Default Host is "127.0.0.1" ',
+        default=TEST_HOST,
+    )
+    parser.add_argument(
+        "-port",
+        "--port",
+        help="Optional Port Number. Default port no is 5432",
+        default=TEST_PORT,
+    )
+    parser.add_argument(
+        "-db", "--database", help="Required Database Name", default=TEST_DB
+    )
+    parser.add_argument(
+        "-u", "--user", help="Required Username Name", default=TEST_USER
+    )
+    parser.add_argument(
+        "-pass",
+        "--password",
+        help="Required Password for authentication",
+        default=TEST_PASSWORD,
+    )
+    parser.add_argument(
+        "-gn",
+        "--graphName",
+        help='Optional Graph Name to be created. Default graphName is "test_graph"',
+        default=TEST_GRAPH_NAME,
+    )
+
+    args = parser.parse_args()
+    suite = unittest.TestSuite()
+    # Unit tests (no DB required)
+    loader = unittest.TestLoader()
+    suite.addTests(loader.loadTestsFromTestCase(TestSetUpAge))
+    suite.addTests(loader.loadTestsFromTestCase(TestBuildCypher))
+    suite.addTests(loader.loadTestsFromTestCase(TestModelToDict))
+    suite.addTests(loader.loadTestsFromTestCase(TestPublicImports))
+    suite.addTests(loader.loadTestsFromTestCase(TestConfigureConnection))
+    # Integration tests (require DB)
+    suite.addTest(TestAgeBasic("testExec"))
+    suite.addTest(TestAgeBasic("testQuery"))
+    suite.addTest(TestAgeBasic("testChangeData"))
+    suite.addTest(TestAgeBasic("testCypher"))
+    suite.addTest(TestAgeBasic("testMultipleEdges"))
+    suite.addTest(TestAgeBasic("testCollect"))
+    suite.addTest(TestAgeBasic("testSerialization"))
+    suite.addTest(TestAgeBasic("testConfigureConnection"))
+    TestAgeBasic.args = args
+    unittest.TextTestRunner().run(suite)

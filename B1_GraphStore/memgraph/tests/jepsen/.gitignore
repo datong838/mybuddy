@@ -1,0 +1,14 @@
+/target
+/classes
+/checkouts
+profiles.clj
+pom.xml
+pom.xml.asc
+*.jar
+*.class
+/.lein-*
+/.nrepl-port
+/store
+/jepsen
+/Jepsen.tar.gz
+/.clj-kondo

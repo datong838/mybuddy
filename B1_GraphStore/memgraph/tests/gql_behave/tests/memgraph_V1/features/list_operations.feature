@@ -1,0 +1,547 @@
+Feature: List operators
+
+    Scenario: In test1
+        When executing query:
+            """
+            WITH [1, 2, 3, 4] AS l
+            RETURN 3 IN l as x
+            """
+        Then the result should be:
+            | x    |
+            | true |
+
+    Scenario: In test2
+        When executing query:
+            """
+            WITH [1, '2', 3, 4] AS l
+            RETURN 2 IN l as x
+            """
+        Then the result should be:
+            | x     |
+            | false |
+
+    Scenario: In test4
+        When executing query:
+            """
+            WITH [1, [2, 3], 4] AS l
+            RETURN [3, 2] IN l as x
+            """
+        Then the result should be:
+            | x     |
+            | false |
+
+    Scenario: In test5
+        When executing query:
+            """
+            WITH [[1, 2], 3, 4] AS l
+            RETURN 1 IN l as x
+            """
+        Then the result should be:
+            | x     |
+            | false |
+
+    Scenario: In test6
+        When executing query:
+            """
+            WITH [1, [[2, 3], 4]] AS l
+            RETURN [[2, 3], 4] IN l as x
+            """
+        Then the result should be:
+            | x    |
+            | true |
+
+    Scenario: In test7
+        When executing query:
+            """
+            WITH [1, [[2, 3], 4]] AS l
+            RETURN [1, [[2, 3], 4]] IN l as x
+            """
+        Then the result should be:
+            | x     |
+            | false |
+
+    Scenario: Index test1
+        When executing query:
+            """
+            WITH [1, 2, 3, 4] AS l
+            RETURN l[2] as x
+            """
+        Then the result should be:
+            | x |
+            | 3 |
+
+    Scenario: Index test2
+        When executing query:
+            """
+            WITH [1, 2, 3, 4] AS l
+            RETURN l[-2] as x
+            """
+        Then the result should be:
+            | x |
+            | 3 |
+
+    Scenario: Index test3
+        When executing query:
+            """
+            WITH [1, 2, 3, 4] AS l
+            RETURN l[2][0] as x
+            """
+        Then an error should be raised
+
+    Scenario: Index test4
+        When executing query:
+            """
+            WITH [1, 2, [3], 4] AS l
+            RETURN l[2][0] as x
+            """
+        Then the result should be:
+            | x |
+            | 3 |
+
+    Scenario: Index test5
+        When executing query:
+            """
+            WITH [[1, [2, [3]]], 4] AS l
+            RETURN l[0][1][1][0] as x
+            """
+        Then the result should be:
+            | x |
+            | 3 |
+
+    Scenario: Slice test1
+        When executing query:
+            """
+            WITH [1, 2, 3, 4] AS l
+            RETURN l[0..2] as x
+            """
+        Then the result should be, in order:
+            | x      |
+            | [1, 2] |
+
+    Scenario: Slice test2
+        When executing query:
+            """
+            WITH [1, 2, 3, 4] AS l
+            RETURN l[-2..5] as x
+            """
+        Then the result should be, in order:
+            | x      |
+            | [3, 4] |
+
+    Scenario: Slice test3
+        When executing query:
+            """
+            WITH [1, 2, 3, 4] AS l
+            RETURN l[-2..4] as x
+            """
+        Then the result should be, in order:
+            | x      |
+            | [3, 4] |
+
+    Scenario: Slice test4
+        When executing query:
+            """
+            WITH [1, 2, 3, 4] AS l
+            RETURN l[-1..4] as x
+            """
+        Then the result should be, in order:
+            | x   |
+            | [4] |
+
+    Scenario: Slice test5
+        When executing query:
+            """
+            WITH [1, 2, 3, 4] AS l
+            RETURN l[-2..-2] as x
+            """
+        Then the result should be, in order:
+            | x  |
+            | [] |
+
+    Scenario: Slice test6
+        When executing query:
+            """
+            WITH [1, 2, 3, 4] AS l
+            RETURN l[4..-2] as x
+            """
+        Then the result should be, in order:
+            | x  |
+            | [] |
+
+    Scenario: Concatenate test1
+        When executing query:
+            """
+            WITH [1, 2, 3, 4] AS l1, [5, 6, 7] AS l2
+            RETURN l1+l2 as x
+            """
+        Then the result should be, in order:
+            | x                     |
+            | [1, 2, 3, 4, 5, 6, 7] |
+
+    Scenario: Concatenate test2
+        When executing query:
+            """
+            WITH [[1, [2]]] AS l1, [[[3], 4]] AS l2
+            RETURN l1+l2 as x
+            """
+        Then the result should be, in order:
+            | x                    |
+            | [[1, [2]], [[3], 4]] |
+
+    Scenario: Concatenate test3
+        When executing query:
+            """
+            WITH [1, 2, 3, 4] AS l1, NULL AS l2
+            RETURN l1+l2 as x
+            """
+        Then the result should be, in order:
+            | x    |
+            | null |
+
+    Scenario: Concatenate test4
+        When executing query:
+            """
+            WITH [] AS l1, [] AS l2
+            RETURN l1+l2 as x
+            """
+        Then the result should be, in order:
+            | x  |
+            | [] |
+
+    Scenario: Unwind test
+        When executing query:
+            """
+            UNWIND [ [[1], 2], [3], 4] as l
+            RETURN l
+            """
+        Then the result should be:
+            | l        |
+            | [[1], 2] |
+            | [3]      |
+            | 4        |
+
+    Scenario: Unwind + InList test1
+        When executing query:
+            """
+            UNWIND [[1,2], [3,4]] as l
+            RETURN 2 in l as x
+            """
+        Then the result should be:
+            | x     |
+            | true  |
+            | false |
+
+    Scenario: Unwind + InList test2
+        When executing query:
+            """
+            WITH [[1,2], [3,4]] as list
+            UNWIND list as l
+            RETURN 2 in l as x
+            """
+        Then the result should be:
+            | x     |
+            | true  |
+            | false |
+
+     Scenario: Unwind + InList test3
+        Given an empty graph
+        And having executed
+            """
+            CREATE ({id: 1}), ({id: 2}), ({id: 3}), ({id: 4})
+            """
+        When executing query:
+            """
+            WITH [1, 2, 3] as list
+            MATCH (n) WHERE n.id in list
+            WITH n
+            WITH n, [1, 2] as list
+            WHERE n.id in list
+            RETURN n.id as id
+            ORDER BY id;
+            """
+        Then the result should be:
+            | id |
+            | 1  |
+            | 2  |
+
+     Scenario: InList 01
+        Given an empty graph
+        And having executed
+            """
+            CREATE (o:Node) SET o.Status = 'This is the status';
+            """
+        When executing query:
+            """
+            match (o:Node)
+            where o.Status IN ['This is not the status', 'This is the status']
+            return o;
+            """
+        Then the result should be:
+            | o                                       |
+            | (:Node {Status: 'This is the status'})  |
+
+     Scenario: Simple list pattern comprehension
+        Given graph "graph_keanu"
+        When executing query:
+            """
+            MATCH (keanu:Person {name: 'Keanu Reeves'})
+            RETURN [(keanu)-->(b:Movie) WHERE b.title CONTAINS 'Matrix' | b.released] AS years
+            """
+        Then the result should be:
+            | years                    |
+            | [2003, 2003, 1999, 2021] |
+
+    Scenario: List pattern comprehension and property
+        Given graph "graph_keanu"
+        When executing query:
+            """
+            MATCH (keanu:Person {name: 'Keanu Reeves'})
+            RETURN [(keanu)-->(b:Movie) WHERE b.title CONTAINS 'Matrix' | b.released] AS years, keanu.name
+            """
+        Then the result should be:
+            | years                    | keanu.name     |
+            | [2003, 2003, 1999, 2021] | 'Keanu Reeves' |
+
+    Scenario: List pattern comprehension with function on selected property
+        Given graph "graph_keanu"
+        When executing query:
+            """
+            MATCH (keanu:Person {name: 'Keanu Reeves'})
+            RETURN [(keanu)-->(b:Movie) WHERE b.title CONTAINS 'Matrix' | size(b.title)] AS movie_lens;
+            """
+        Then the result should be:
+            | movie_lens       |
+            | [22, 19, 10, 24] |
+
+     Scenario: Multiple entries with list pattern comprehension
+        Given graph "graph_keanu"
+        When executing query:
+            """
+            MATCH (n:Person)
+            RETURN n.name, [(n)-->(b:Movie) WHERE b.title CONTAINS 'Matrix' | b.released] AS years
+            """
+        Then the result should be:
+            | n.name               | years                    |
+            | 'Keanu Reeves'       | [2003, 2003, 1999, 2021] |
+            | 'Carrie-Anne Moss'   | [1999, 2003]             |
+            | 'Laurence Fishburne' | [1999]                   |
+
+     Scenario: Multiple list pattern comprehensions in Return
+        Given graph "graph_keanu"
+        When executing query:
+            """
+            MATCH (n:Person)
+            RETURN n.name,
+                [(n)-->(b:Movie) WHERE b.title CONTAINS 'Matrix' | b.released] AS years,
+                [(n)-->(c:Movie) WHERE c.title CONTAINS 'Matrix' | c.title] AS titles
+            """
+        Then the result should be:
+            | n.name               | years                 | titles                                                                            |
+            | 'Keanu Reeves'       | [2003,2003,1999,2021] | ['TheMatrixRevolutions','TheMatrixReloaded','TheMatrix','TheMatrixResurrections'] |
+            | 'Carrie-Anne Moss'   | [1999,2003]           | ['TheMatrix','TheMatrixReloaded']                                                 |
+            | 'Laurence Fishburne' | [1999]                | ['The Matrix']                                                                    |
+
+     Scenario: Multiple list pattern comprehensions with the same symbol name inside in Return
+        Given graph "graph_keanu"
+        When executing query:
+            """
+            MATCH (n:Person)
+            RETURN n.name,
+                [(n)-->(b:Movie) WHERE b.title CONTAINS 'Matrix' | b.released] AS years,
+                [(n)-->(b:Movie) WHERE b.title CONTAINS 'Matrix' | b.title] AS titles
+            """
+        Then the result should be:
+            | n.name               | years                 | titles                                                                            |
+            | 'Keanu Reeves'       | [2003,2003,1999,2021] | ['TheMatrixRevolutions','TheMatrixReloaded','TheMatrix','TheMatrixResurrections'] |
+            | 'Carrie-Anne Moss'   | [1999,2003]           | ['TheMatrix','TheMatrixReloaded']                                                 |
+            | 'Laurence Fishburne' | [1999]                | ['The Matrix']                                                                    |
+
+     Scenario: Function inside pattern comprehension's expression
+        Given graph "graph_keanu"
+        When executing query:
+            """
+            MATCH (keanu:Person {name: 'Keanu Reeves'})
+            RETURN [p = (keanu)-->(b:Movie) WHERE b.title CONTAINS 'Matrix' | size(nodes(p))] AS nodes
+            """
+        Then the result should be:
+            | nodes        |
+            | [2, 2, 2, 2] |
+
+     Scenario: Multiple list pattern comprehensions in With
+        Given graph "graph_keanu"
+        When executing query:
+            """
+            MATCH (n:Person) WHERE size(n.name) > 5
+            WITH
+                n AS actor,
+                [(n)-->(m) WHERE m.released > 2000 | m.title] AS titles,
+                [(n)-->(m) WHERE m.released > 2000 | m.released] AS years
+            RETURN actor.name, years, titles;
+            """
+        Then the result should be:
+            | actor.name           | years            | titles                                                                |
+            | 'Keanu Reeves'       | [2003,2003,2021] | ['TheMatrixRevolutions','TheMatrixReloaded','TheMatrixResurrections'] |
+            | 'Carrie-Anne Moss'   | [2003]           | ['TheMatrixReloaded']                                                 |
+            | 'Laurence Fishburne' | []               | []                                                                    |
+
+     Scenario: Multiple list pattern comprehensions with filters in With and Return
+        Given graph "graph_keanu"
+        When executing query:
+            """
+            MATCH (n:Person) WHERE size(n.name) > 5
+            WITH
+                n AS actor,
+                [(n)-->(m) WHERE m.released > 2000 | m.title] AS titles,
+                [(n)-->(m) WHERE m.released > 2000 | m.released] AS years
+            RETURN actor.name, years, titles, [(actor)-->(m) WHERE m.released > 2000 | m.released] AS years_in_return;
+            """
+        Then the result should be:
+            | actor.name           | years            | titles                                                                | years_in_return  |
+            | 'Keanu Reeves'       | [2003,2003,2021] | ['TheMatrixRevolutions','TheMatrixReloaded','TheMatrixResurrections'] | [2003,2003,2021] |
+            | 'Carrie-Anne Moss'   | [2003]           | ['TheMatrixReloaded']                                                 | [2003]           |
+            | 'Laurence Fishburne' | []               | []                                                                    | []               |
+
+     Scenario: Multiple list pattern comprehensions in With and Return
+        Given graph "graph_keanu"
+        When executing query:
+            """
+            MATCH (n) WHERE size(n.name) > 15
+            WITH
+                n AS actor,
+                [(n)-->(m) | m.title] AS titles,
+                [(n)-->(m) | m.released] AS years
+            RETURN
+                actor.name,
+                years,
+                titles,
+                [(actor)-->(m) | m.released] AS years_in_return;
+            """
+        Then the result should be:
+            | actor.name           | years       | titles                            | years_in_return |
+            | 'Carrie-Anne Moss'   | [1999,2003] | ['TheMatrix','TheMatrixReloaded'] | [1999,2003]     |
+            | 'Laurence Fishburne' | [1999]      | ['TheMatrix']                     | [1999]          |
+
+    Scenario: Multiple list pattern comprehensions in Return and label index
+        Given graph "graph_keanu"
+        And with new index :Person
+        When executing query:
+            """
+            MATCH (n:Person)
+            RETURN
+                n.name,
+                [(n)-->(b:Movie) WHERE b.title CONTAINS 'Matrix' | b.released] AS years,
+                [(n)-->(c:Movie) WHERE c.title CONTAINS 'Matrix' | c.title] AS titles;
+            """
+        Then the result should be:
+            | n.name               | years                 | titles                                                                            |
+            | 'Keanu Reeves'       | [2003,2003,1999,2021] | ['TheMatrixRevolutions','TheMatrixReloaded','TheMatrix','TheMatrixResurrections'] |
+            | 'Carrie-Anne Moss'   | [1999,2003]           | ['TheMatrix','TheMatrixReloaded']                                                 |
+            | 'Laurence Fishburne' | [1999]                | ['The Matrix']                                                                    |
+
+    Scenario: Access map property inside a list
+        Given any graph
+        When executing query:
+            """
+             RETURN [{x: 42}][0].x AS x;
+            """
+        Then the result should be, in order:
+            | x  |
+            | 42 |
+
+    Scenario: Access list property inside a map
+        Given any graph
+        When executing query:
+            """
+             RETURN {arr: [2, 3, 5]}.arr[1] AS x;
+            """
+        Then the result should be, in order:
+            | x |
+            | 3 |
+
+     Scenario: Access map property inside a list inside a map
+        Given any graph
+        When executing query:
+            """
+             RETURN {arr: [{x: 23}]}.arr[0].x AS x;
+            """
+        Then the result should be, in order:
+            | x  |
+            | 23 |
+
+    Scenario: Access list property inside a map inside a list
+        Given any graph
+        When executing query:
+            """
+             RETURN [{scores: [2, 3, 5]}][0].scores[2] AS x
+            """
+        Then the result should be, in order:
+            | x |
+            | 5 |
+
+    Scenario: Encode and decode mixed list type
+        Given an empty graph
+        And having executed
+            """
+            CREATE (:Node {prop: ['string', [1, 2], [1, 2.5], [1.3, 1.4], ['string', 1]]})
+            """
+        When executing query:
+            """
+            MATCH (n) RETURN n;
+            """
+        Then the result should be:
+            | n                                                                       |
+            | (:Node {prop: ['string', [1, 2], [1, 2.5], [1.3, 1.4], ['string', 1]]}) |
+
+    Scenario: Numeric list equality between int and double lists
+        When executing query:
+            """
+            RETURN [1, 2, 3, 4] = [1.0, 2.0, 3.0, 4.0] AND [1.0, 2.0, 3.0, 4.0] = [1, 2, 3, 4.0] AND [1, 2, 3, 4] = [1, 2, 3, 4.0] AS x
+            """
+        Then the result should be:
+            | x    |
+            | true |
+
+    Scenario: Numeric list equality between int and double lists stored as property
+        Given an empty graph
+        And with new index :L(lst)
+        And having executed:
+            """
+            CREATE (:L {lst: [1, 2, 3]});
+            """
+        When executing query:
+            """
+            MATCH (n:L) WHERE n.lst = [1.0, 2.0, 3.0] RETURN count(*) = 1 AS result
+            """
+        Then the result should be:
+            | result |
+            | true   |
+
+    Scenario: Numeric list equality between int and numeric lists stored as property
+        Given an empty graph
+        And with new index :L(lst)
+        And having executed:
+            """
+            CREATE (:L {lst: [1, 2, 3]});
+            """
+        When executing query:
+            """
+            MATCH (n:L) WHERE n.lst = [1.0, 2, 3.0] RETURN count(*) = 1 AS result
+            """
+        Then the result should be:
+            | result |
+            | true   |
+
+    Scenario: Numeric list equality between int and numeric lists stored as property
+        Given an empty graph
+        And with new index :L(lst)
+        And having executed:
+            """
+            CREATE (:L {lst: [1.0, 2.0, 3]});
+            """
+        When executing query:
+            """
+            MATCH (n:L) WHERE n.lst = [1.0, 2.0, 3.0] RETURN count(*) = 1 AS result
+            """
+        Then the result should be:
+            | result |
+            | true   |

@@ -1,0 +1,411 @@
+name: "Diff-coverage"
+
+on:
+  workflow_call:
+    inputs:
+      arch:
+        type: string
+        description: "Target architecture (amd, arm). Default value is amd."
+        default: 'amd'
+      os:
+        type: string
+        description: "Target os. Default value is ubuntu-24.04."
+        default: 'ubuntu-24.04'
+      run_core:
+        type: string
+        description: "Should the core coverage build tests be run? Default is true."
+        default: 'true'
+      run_clang_tidy:
+        type: string
+        description: "Should the clang-tidy tests be run? Default is true."
+        default: 'true'
+      run_id:
+        type: string
+        description: "The ID of the run that triggered this workflow."
+        default: ''
+      ref:
+        description: 'Branch or commit ref to run the workflow on'
+        required: false
+        default: ''
+        type: string
+
+env:
+  ARCH: ${{ inputs.arch }}
+  BUILD_TYPE: 'Debug'
+  MEMGRAPH_ENTERPRISE_LICENSE: ${{ secrets.MEMGRAPH_ENTERPRISE_LICENSE }}
+  MEMGRAPH_ORGANIZATION_NAME: ${{ secrets.MEMGRAPH_ORGANIZATION_NAME }}
+  OS: ${{ inputs.os }}
+  TOOLCHAIN: v7
+  CONAN_REMOTE: ${{ secrets.CONAN_REMOTE }}
+  CONAN_USERNAME: ${{ secrets.CONAN_USERNAME }}
+  CONAN_PASSWORD: ${{ secrets.CONAN_PASSWORD }}
+  RUN_ID: ${{ inputs.run_id != '' && format('-{0}', inputs.run_id) || '' }}
+
+
+jobs:
+  core:
+    if: ${{ inputs.run_core == 'true' }}
+    name: "Core tests"
+    runs-on: [self-hosted, Linux, X64, DockerMgBuild]
+    timeout-minutes: 70
+    steps:
+      - name: Set up repository
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd  # v6.0.2
+        with:
+          ref: ${{ inputs.ref || github.ref }}
+          fetch-depth: 0
+
+      - name: Clean up Docker
+        if: always()
+        continue-on-error: true
+        run: |
+          ./tools/ci/docker_cleanup.sh
+
+      - name: Log in to Docker Hub
+        uses: ./.github/actions/docker-login
+        with:
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+
+      - name: Spin up mgbuild container
+        run: |
+          if [[ "$OS" == "ubuntu-24.04" ]]; then
+            USE_CUSTOM_MIRROR=true
+          else
+            USE_CUSTOM_MIRROR=false
+          fi
+          ./release/package/mgbuild.sh \
+          --toolchain $TOOLCHAIN \
+          --os $OS \
+          --arch $ARCH \
+          --no-ccache \
+          run --custom-mirror $USE_CUSTOM_MIRROR
+
+      - name: Check core dump support
+        run: |
+          ./release/package/mgbuild.sh \
+          --toolchain $TOOLCHAIN \
+          --os $OS \
+          --arch $ARCH \
+          check-core-dumps
+
+      # This is also needed if we want do to comparison against other branches
+      # See https://github.community/t/checkout-code-fails-when-it-runs-lerna-run-test-since-master/17920
+      # - name: Fetch all history for all tags and branches
+      #   run: git fetch
+
+      - name: Set base branch
+        run: |
+          base_branch="master"
+          if [[ "${{ github.event_name }}" == "pull_request" ]]; then
+            base_branch="${{ github.base_ref }}"
+          fi
+          echo "BASE_BRANCH=origin/$base_branch" >> $GITHUB_ENV
+
+      - name: Initialize deps
+        run: |
+          ./release/package/mgbuild.sh \
+          --toolchain $TOOLCHAIN \
+          --os $OS \
+          --arch $ARCH \
+          --build-type $BUILD_TYPE \
+          --no-ccache \
+          build-memgraph --init-only \
+          --conan-remote $CONAN_REMOTE \
+          --conan-username $CONAN_USERNAME \
+          --conan-password $CONAN_PASSWORD
+
+      - name: Run python code analysis
+        run: |
+          ./release/package/mgbuild.sh \
+          --toolchain $TOOLCHAIN \
+          --os $OS \
+          --arch $ARCH \
+          --enterprise-license $MEMGRAPH_ENTERPRISE_LICENSE \
+          --organization-name $MEMGRAPH_ORGANIZATION_NAME \
+          test-memgraph code-analysis --base-branch "${{ env.BASE_BRANCH }}"
+
+      - name: Build combined coverage binary with ASAN and UBSAN
+        run: |
+          LINK_THREADS=$(./tools/ci/compute-build-threads.sh 5)
+          echo "Linking with $LINK_THREADS threads"
+          ./release/package/mgbuild.sh \
+          --toolchain $TOOLCHAIN \
+          --os $OS \
+          --arch $ARCH \
+          --build-type $BUILD_TYPE \
+          --no-ccache \
+          build-memgraph --coverage --asan --ubsan \
+          --link-threads $LINK_THREADS \
+          --conan-remote $CONAN_REMOTE \
+          --conan-username $CONAN_USERNAME \
+          --conan-password $CONAN_PASSWORD
+
+      - name: Initialize tests
+        run: |
+          ./release/package/mgbuild.sh \
+          --toolchain $TOOLCHAIN \
+          --os $OS \
+          --arch $ARCH \
+          init-tests
+
+      - name: Run unit tests
+        run: |
+          ./release/package/mgbuild.sh \
+          --toolchain $TOOLCHAIN \
+          --os $OS \
+          --arch $ARCH \
+          --enterprise-license $MEMGRAPH_ENTERPRISE_LICENSE \
+          --organization-name $MEMGRAPH_ORGANIZATION_NAME \
+          test-memgraph unit-coverage
+
+      - name: Compute code coverage
+        run: |
+          ./release/package/mgbuild.sh \
+          --toolchain $TOOLCHAIN \
+          --os $OS \
+          --arch $ARCH \
+          --enterprise-license $MEMGRAPH_ENTERPRISE_LICENSE \
+          --organization-name $MEMGRAPH_ORGANIZATION_NAME \
+          test-memgraph code-coverage
+
+      - name: Save code coverage
+        continue-on-error: true
+        uses: actions/upload-artifact@bbbca2ddaa5d8feaa63e36b76fdaad77386f024f  # v7.0.0
+        with:
+          name: "Code coverage(Code analysis)${{ env.RUN_ID }}"
+          path: tools/github/generated/code_coverage.tar.gz
+
+      - name: Collect core dumps
+        if: failure()
+        continue-on-error: true
+        env:
+          AWS_ACCESS_KEY_ID: ${{ secrets.S3_AWS_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.S3_AWS_SECRET_ACCESS_KEY }}
+          MONITORING_HOST: ${{ secrets.MONITORING_HOST }}
+          MONITORING_USERNAME: ${{ secrets.MONITORING_USERNAME }}
+          MONITORING_PASSWORD: ${{ secrets.MONITORING_PASSWORD }}
+          CLUSTER_ID: "${{ github.run_id }}-${{ github.job }}"
+          CLUSTER_ENV: "ci-diff-coverage"
+        run: |
+          ./tools/ci/core-dumps/collect.sh \
+          --toolchain $TOOLCHAIN \
+          --os $OS \
+          --run-id "${{ github.run_id }}" \
+          --job-id "${{ github.job }}-${{ github.run_attempt }}"
+
+      - name: Stop mgbuild container
+        if: always()
+        run: |
+          ./release/package/mgbuild.sh \
+          --toolchain $TOOLCHAIN \
+          --os $OS \
+          --arch $ARCH \
+          --no-ccache \
+          stop --remove
+
+      - name: Clean up Docker
+        if: always()
+        continue-on-error: true
+        run: |
+          ./tools/ci/docker_cleanup.sh
+
+      - name: Cancel run on merge_group failure
+        if: ${{ failure() && github.event_name == 'merge_group' }}
+        uses: ./.github/actions/cancel-on-failure-in-merge-queue
+
+  clang-tidy-community:
+    if: ${{ inputs.run_clang_tidy == 'true' }}
+    name: "Clang tidy community"
+    runs-on: [self-hosted, Linux, X64, DockerMgBuild]
+    timeout-minutes: 60
+    steps:
+      - name: Set up repository
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd  # v6.0.2
+        with:
+          fetch-depth: 0
+          ref: ${{ inputs.ref || github.ref }}
+
+      - name: Clean up Docker
+        if: always()
+        continue-on-error: true
+        run: |
+          ./tools/ci/docker_cleanup.sh
+
+      - name: Log in to Docker Hub
+        uses: ./.github/actions/docker-login
+        with:
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+
+      - name: Spin up mgbuild container
+        run: |
+          if [[ "$OS" == "ubuntu-24.04" ]]; then
+            USE_CUSTOM_MIRROR=true
+          else
+            USE_CUSTOM_MIRROR=false
+          fi
+          ./release/package/mgbuild.sh \
+          --toolchain $TOOLCHAIN \
+          --os $OS \
+          --arch $ARCH \
+          --no-ccache \
+          run --custom-mirror $USE_CUSTOM_MIRROR
+
+      - name: Set base branch
+        run: |
+          base_branch="master"
+          if [[ "${{ github.event_name }}" == "pull_request" ]]; then
+            base_branch="${{ github.base_ref }}"
+          fi
+          echo "BASE_BRANCH=origin/$base_branch" >> $GITHUB_ENV
+
+      - name: Configure cmake
+        run: |
+          ./release/package/mgbuild.sh \
+          --toolchain $TOOLCHAIN \
+          --os $OS \
+          --arch $ARCH \
+          --build-type $BUILD_TYPE \
+          --no-ccache \
+          build-memgraph --cmake-only --community \
+          --conan-remote $CONAN_REMOTE \
+          --conan-username $CONAN_USERNAME \
+          --conan-password $CONAN_PASSWORD
+
+      - name: Configure mage
+        run: |
+          ./release/package/mgbuild.sh \
+          --toolchain $TOOLCHAIN \
+          --os $OS \
+          --arch $ARCH \
+          --no-ccache \
+          build-mage --config-only
+
+      - name: Run clang-tidy
+        run: |
+          ./release/package/mgbuild.sh \
+          --toolchain $TOOLCHAIN \
+          --os $OS \
+          --arch $ARCH \
+          --enterprise-license $MEMGRAPH_ENTERPRISE_LICENSE \
+          --organization-name $MEMGRAPH_ORGANIZATION_NAME \
+          test-memgraph clang-tidy --base-branch "${{ env.BASE_BRANCH }}"
+
+      - name: Stop mgbuild container
+        if: always()
+        run: |
+          ./release/package/mgbuild.sh \
+          --toolchain $TOOLCHAIN \
+          --os $OS \
+          --arch $ARCH \
+          --no-ccache \
+          stop --remove
+
+      - name: Clean up Docker
+        if: always()
+        continue-on-error: true
+        run: |
+          ./tools/ci/docker_cleanup.sh
+
+      - name: Cancel run on merge_group failure
+        if: ${{ failure() && github.event_name == 'merge_group' }}
+        uses: ./.github/actions/cancel-on-failure-in-merge-queue
+
+  clang-tidy-enterprise:
+    if: ${{ inputs.run_clang_tidy == 'true' }}
+    name: "Clang tidy enterprise"
+    runs-on: [self-hosted, Linux, X64, DockerMgBuild]
+    timeout-minutes: 60
+    steps:
+      - name: Set up repository
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd  # v6.0.2
+        with:
+          fetch-depth: 0
+          ref: ${{ inputs.ref || github.ref }}
+
+      - name: Clean up Docker
+        if: always()
+        continue-on-error: true
+        run: |
+          ./tools/ci/docker_cleanup.sh
+
+      - name: Log in to Docker Hub
+        uses: ./.github/actions/docker-login
+        with:
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+
+      - name: Spin up mgbuild container
+        run: |
+          if [[ "$OS" == "ubuntu-24.04" ]]; then
+            USE_CUSTOM_MIRROR=true
+          else
+            USE_CUSTOM_MIRROR=false
+          fi
+          ./release/package/mgbuild.sh \
+          --toolchain $TOOLCHAIN \
+          --os $OS \
+          --arch $ARCH \
+          --no-ccache \
+          run --custom-mirror $USE_CUSTOM_MIRROR
+
+      - name: Set base branch
+        run: |
+          base_branch="master"
+          if [[ "${{ github.event_name }}" == "pull_request" ]]; then
+            base_branch="${{ github.base_ref }}"
+          fi
+          echo "BASE_BRANCH=origin/$base_branch" >> $GITHUB_ENV
+
+      - name: Configure cmake
+        run: |
+          ./release/package/mgbuild.sh \
+          --toolchain $TOOLCHAIN \
+          --os $OS \
+          --arch $ARCH \
+          --build-type $BUILD_TYPE \
+          --no-ccache \
+          build-memgraph --cmake-only \
+          --conan-remote $CONAN_REMOTE \
+          --conan-username $CONAN_USERNAME \
+          --conan-password $CONAN_PASSWORD
+
+      - name: Configure mage
+        run: |
+          ./release/package/mgbuild.sh \
+          --toolchain $TOOLCHAIN \
+          --os $OS \
+          --arch $ARCH \
+          --no-ccache \
+          build-mage --config-only
+
+      - name: Run clang-tidy
+        run: |
+          ./release/package/mgbuild.sh \
+          --toolchain $TOOLCHAIN \
+          --os $OS \
+          --arch $ARCH \
+          --enterprise-license $MEMGRAPH_ENTERPRISE_LICENSE \
+          --organization-name $MEMGRAPH_ORGANIZATION_NAME \
+          test-memgraph clang-tidy --base-branch "${{ env.BASE_BRANCH }}"
+
+      - name: Stop mgbuild container
+        if: always()
+        run: |
+          ./release/package/mgbuild.sh \
+          --toolchain $TOOLCHAIN \
+          --os $OS \
+          --arch $ARCH \
+          --no-ccache \
+          stop --remove
+
+      - name: Clean up Docker
+        if: always()
+        continue-on-error: true
+        run: |
+          ./tools/ci/docker_cleanup.sh
+
+      - name: Cancel run on merge_group failure
+        if: ${{ failure() && github.event_name == 'merge_group' }}
+        uses: ./.github/actions/cancel-on-failure-in-merge-queue

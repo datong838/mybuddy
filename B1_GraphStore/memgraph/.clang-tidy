@@ -1,0 +1,59 @@
+---
+Checks: '-*,
+         bugprone-*,
+         -bugprone-easily-swappable-parameters,
+         -bugprone-nondeterministic-pointer-iteration-order,
+         -bugprone-unchecked-optional-access,
+         clang-analyzer-*,
+         misc-*,
+         -misc-include-cleaner,
+         -misc-no-recursion,
+         -misc-non-private-member-variables-in-classes,
+         modernize-*,
+         -modernize-concat-nested-namespaces,
+         -modernize-use-constraints,
+         -modernize-use-default-member-init,
+         -modernize-use-equals-default,
+         -modernize-use-nodiscard,
+         -modernize-use-trailing-return-type,
+         performance-*,
+         -performance-trivially-destructible,
+         -performance-unnecessary-value-param,
+         portability-*,
+         -portability-template-virtual-member-function,
+         readability-*,
+         -readability-braces-around-statements,
+         -readability-else-after-return,
+         -readability-function-cognitive-complexity,
+         -readability-identifier-length,
+         -readability-implicit-bool-conversion,
+         -readability-magic-numbers,
+         -readability-named-parameter,
+         -readability-redundant-declaration,
+         -misc-no-recursion,
+         -concurrency-mt-unsafe,
+         -bugprone-easily-swappable-parameters,
+         -bugprone-unchecked-optional-access,
+         -bugprone-nondeterministic-pointer-iteration-order,
+         -clang-analyzer-optin.core.EnumCastOutOfRange,
+         -readability-redundant-member-init'
+WarningsAsErrors: ''
+HeaderFilterRegex: '(^|/)(src|mage/cpp)/'
+ExcludeHeaderFilterRegex: '.*/_deps/.*|.*/libs/.*'
+FormatStyle:     none
+CheckOptions:
+  - key:             modernize-loop-convert.MaxCopySize
+    value:           '16'
+  - key:             modernize-loop-convert.MinConfidence
+    value:           reasonable
+  - key:             modernize-loop-convert.NamingStyle
+    value:           CamelCase
+  - key:             modernize-pass-by-value.IncludeStyle
+    value:           llvm
+  - key:             modernize-replace-auto-ptr.IncludeStyle
+    value:           llvm
+  - key:             modernize-use-nullptr.NullMacros
+    value:           'NULL'
+  - key:             readability-function-size.StatementThreshold
+    value:           '800'
+...

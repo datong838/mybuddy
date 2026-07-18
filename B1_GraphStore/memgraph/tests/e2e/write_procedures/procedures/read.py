@@ -1,0 +1,135 @@
+# Copyright 2021 Memgraph Ltd.
+#
+# Use of this software is governed by the Business Source License
+# included in the file licenses/BSL.txt; by using this file, you agree to be bound by the terms of the Business Source
+# License, and you may not use this file except in compliance with the Business Source License.
+#
+# As of the Change Date specified in that file, in accordance with
+# the Business Source License, use of this software will be governed
+# by the Apache License, Version 2.0, included in the file
+# licenses/APL.txt.
+
+import mgp
+
+
+@mgp.read_proc
+def underlying_graph_is_mutable(ctx: mgp.ProcCtx, object: mgp.Any) -> mgp.Record(mutable=bool):
+    return mgp.Record(mutable=object.underlying_graph_is_mutable())
+
+
+@mgp.read_proc
+def graph_is_mutable(ctx: mgp.ProcCtx) -> mgp.Record(mutable=bool):
+    return mgp.Record(mutable=ctx.graph.is_mutable())
+
+
+@mgp.read_proc
+def subgraph_empty(ctx: mgp.ProcCtx, arg1: mgp.Any, arg2: mgp.Any, arg3: mgp.Any = 2) -> mgp.Record(result=int):
+    return mgp.Record(result=1)
+
+
+@mgp.read_proc
+def subgraph_get_vertices(ctx: mgp.ProcCtx) -> mgp.Record(node=mgp.Vertex):
+    return [mgp.Record(node=vertex) for vertex in ctx.graph.vertices]
+
+
+@mgp.read_proc
+def subgraph_get_out_edges(ctx: mgp.ProcCtx, vertex: mgp.Vertex) -> mgp.Record(edge=mgp.Edge):
+    return [mgp.Record(edge=edge) for edge in vertex.out_edges]
+
+
+# Used by virtual_graph.py e2e tests to verify that virtual edges
+# and virtual nodes created by derive() are visible through the MGP API.
+
+
+@mgp.read_proc
+def subgraph_vertex_info(
+    ctx: mgp.ProcCtx, vertex: mgp.Vertex
+) -> mgp.Record(labels=list, score=mgp.Nullable[mgp.Number]):
+    labels = [label.name for label in vertex.labels]
+    score = vertex.properties.get("score", None)
+    return mgp.Record(labels=labels, score=score)
+
+
+@mgp.read_proc
+def subgraph_edge_info(
+    ctx: mgp.ProcCtx, vertex: mgp.Vertex
+) -> mgp.Record(edge_type=str, weight=mgp.Nullable[mgp.Number]):
+    records = []
+    for edge in vertex.out_edges:
+        weight = edge.properties.get("weight", None)
+        records.append(mgp.Record(edge_type=edge.type.name, weight=weight))
+    return records
+
+
+@mgp.read_proc
+def subgraph_get_in_edges(ctx: mgp.ProcCtx, vertex: mgp.Vertex) -> mgp.Record(edge=mgp.Edge):
+    return [mgp.Record(edge=edge) for edge in vertex.in_edges]
+
+
+# community_label mirrors the shape a graph-algorithm module would take when
+# rewritten to accept a subgraph: group vertices by a property and yield
+# (node, community_id) records. Used by the derive()-pipeline e2e test.
+@mgp.read_proc
+def community_label(ctx: mgp.ProcCtx, key: str) -> mgp.Record(node=mgp.Vertex, community_id=int):
+    group_to_id: dict = {}
+    records = []
+    for vertex in ctx.graph.vertices:
+        group = vertex.properties.get(key)
+        if group not in group_to_id:
+            group_to_id[group] = len(group_to_id)
+        records.append(mgp.Record(node=vertex, community_id=group_to_id[group]))
+    return records
+
+
+@mgp.read_proc
+def subgraph_get_2_hop_edges(ctx: mgp.ProcCtx, vertex: mgp.Vertex) -> mgp.Record(edge=mgp.Edge):
+    out_edges = vertex.out_edges
+    records = []
+    for edge in out_edges:
+        vertex = edge.to_vertex
+        properties = vertex.properties
+        print(properties)
+        records.extend([mgp.Record(edge=edge) for edge in edge.to_vertex.out_edges])
+    return records
+
+
+@mgp.read_proc
+def subgraph_get_out_edges_vertex_id(ctx: mgp.ProcCtx, vertex: mgp.Vertex) -> mgp.Record(edge=mgp.Edge):
+    vertex = ctx.graph.get_vertex_by_id(vertex.id)
+    return [mgp.Record(edge=edge) for edge in vertex.out_edges]
+
+
+@mgp.read_proc
+def subgraph_get_path_vertices(ctx: mgp.ProcCtx, path: mgp.Path) -> mgp.Record(node=mgp.Vertex):
+    return [mgp.Record(node=node) for node in path.vertices]
+
+
+@mgp.read_proc
+def subgraph_get_path_edges(ctx: mgp.ProcCtx, path: mgp.Path) -> mgp.Record(edge=mgp.Edge):
+    return [mgp.Record(edge=edge) for edge in path.edges]
+
+
+@mgp.read_proc
+def subgraph_get_path_vertices_in_subgraph(ctx: mgp.ProcCtx, path: mgp.Path) -> mgp.Record(node=mgp.Vertex):
+    path_vertices = path.vertices
+    graph_vertices = ctx.graph.vertices
+    records = []
+    for path_vertex in path_vertices:
+        if path_vertex in graph_vertices:
+            records.append(mgp.Record(node=path_vertex))
+    return records
+
+
+@mgp.read_proc
+def log_message(ctx: mgp.ProcCtx, message: str) -> mgp.Record(success=bool):
+    logger = mgp.Logger()
+    try:
+        logger.info(message)
+        logger.critical(message)
+        logger.trace(message)
+        logger.debug(message)
+        logger.warning(message)
+        logger.error(message)
+    except RuntimeError:
+        return mgp.Record(success=False)
+    return mgp.Record(success=True)

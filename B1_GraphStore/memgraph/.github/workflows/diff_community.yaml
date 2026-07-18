@@ -1,0 +1,152 @@
+name: "Diff-community"
+
+on:
+  workflow_call:
+    inputs:
+      arch:
+        type: string
+        description: "Target architecture (amd, arm). Default value is amd."
+        default: 'amd'
+      os:
+        type: string
+        description: "Target os. Default value is ubuntu-24.04."
+        default: 'ubuntu-24.04'
+      run_core:
+        type: string
+        description: "Should the core community build tests be run? Default is true."
+        default: 'true'
+      run_id:
+        type: string
+        description: "The ID of the run that triggered this workflow."
+        default: ''
+      ref:
+        description: 'Branch or commit ref to run the workflow on'
+        required: false
+        default: ''
+        type: string
+
+env:
+  ARCH: ${{ inputs.arch }}
+  BUILD_TYPE: 'RelWithDebInfo'
+  MEMGRAPH_ENTERPRISE_LICENSE: ${{ secrets.MEMGRAPH_ENTERPRISE_LICENSE }}
+  MEMGRAPH_ORGANIZATION_NAME: ${{ secrets.MEMGRAPH_ORGANIZATION_NAME }}
+  OS: ${{ inputs.os }}
+  TOOLCHAIN: v7
+  CONAN_REMOTE: ${{ secrets.CONAN_REMOTE }}
+  CONAN_USERNAME: ${{ secrets.CONAN_USERNAME }}
+  CONAN_PASSWORD: ${{ secrets.CONAN_PASSWORD }}
+
+
+jobs:
+  core:
+    if: ${{ inputs.run_core == 'true' }}
+    name: "Core tests"
+    runs-on: [self-hosted, Linux, X64, DockerMgBuild]
+    timeout-minutes: 60
+    steps:
+      - name: Set up repository
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd  # v6.0.2
+        with:
+          ref: ${{ inputs.ref || github.ref }}
+          fetch-depth: 0
+
+      - name: Clean up Docker
+        if: always()
+        continue-on-error: true
+        run: |
+          ./tools/ci/docker_cleanup.sh
+
+      - name: Log in to Docker Hub
+        uses: ./.github/actions/docker-login
+        with:
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+
+      - name: Spin up mgbuild container
+        run: |
+          if [[ "$OS" == "ubuntu-24.04" ]]; then
+            USE_CUSTOM_MIRROR=true
+          else
+            USE_CUSTOM_MIRROR=false
+          fi
+          ./release/package/mgbuild.sh \
+          --toolchain $TOOLCHAIN \
+          --os $OS \
+          --arch $ARCH \
+          run --custom-mirror $USE_CUSTOM_MIRROR
+
+      - name: Check core dump support
+        run: |
+          ./release/package/mgbuild.sh \
+          --toolchain $TOOLCHAIN \
+          --os $OS \
+          --arch $ARCH \
+          check-core-dumps
+
+      - name: Build community binary
+        run: |
+          ./release/package/mgbuild.sh \
+          --toolchain $TOOLCHAIN \
+          --os $OS \
+          --arch $ARCH \
+          --build-type $BUILD_TYPE \
+          build-memgraph --community \
+          --split-debug \
+          --conan-remote $CONAN_REMOTE \
+          --conan-username $CONAN_USERNAME \
+          --conan-password $CONAN_PASSWORD
+
+      - name: Initialize tests
+        run: |
+          ./release/package/mgbuild.sh \
+          --toolchain $TOOLCHAIN \
+          --os $OS \
+          --arch $ARCH \
+          init-tests
+
+      - name: Run unit tests
+        run: |
+          ./release/package/mgbuild.sh \
+          --toolchain $TOOLCHAIN \
+          --os $OS \
+          --arch $ARCH \
+          --enterprise-license $MEMGRAPH_ENTERPRISE_LICENSE \
+          --organization-name $MEMGRAPH_ORGANIZATION_NAME \
+          test-memgraph unit
+
+      - name: Collect core dumps
+        if: failure()
+        continue-on-error: true
+        env:
+          AWS_ACCESS_KEY_ID: ${{ secrets.S3_AWS_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.S3_AWS_SECRET_ACCESS_KEY }}
+          MONITORING_HOST: ${{ secrets.MONITORING_HOST }}
+          MONITORING_USERNAME: ${{ secrets.MONITORING_USERNAME }}
+          MONITORING_PASSWORD: ${{ secrets.MONITORING_PASSWORD }}
+          CLUSTER_ID: "${{ github.run_id }}-${{ github.job }}"
+          CLUSTER_ENV: "ci-diff-community"
+        run: |
+          ./tools/ci/core-dumps/collect.sh \
+          --toolchain $TOOLCHAIN \
+          --os $OS \
+          --run-id "${{ github.run_id }}" \
+          --job-id "${{ github.job }}-${{ github.run_attempt }}"
+
+      - name: Stop mgbuild container
+        if: always()
+        run: |
+          ./release/package/mgbuild.sh \
+          --toolchain $TOOLCHAIN \
+          --os $OS \
+          --arch $ARCH \
+          stop --remove
+
+      - name: Clean up Docker
+        if: always()
+        continue-on-error: true
+        run: |
+          ./tools/ci/docker_cleanup.sh
+
+      - name: Cancel run on merge_group failure
+        if: ${{ failure() && github.event_name == 'merge_group' }}
+        uses: ./.github/actions/cancel-on-failure-in-merge-queue

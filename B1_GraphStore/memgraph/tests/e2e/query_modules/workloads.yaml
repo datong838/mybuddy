@@ -1,0 +1,59 @@
+bolt_port: &bolt_port "7687"
+args: &args
+  - "--bolt_port"
+  - *bolt_port
+  - "--log-level=TRACE"
+  - "--query-callable-mappings-path"
+  - "query_modules/callable_alias_mapping.json"
+
+in_memory_cluster: &in_memory_cluster
+  cluster:
+    main:
+      args: *args
+      log_file: "query_modules-e2e.log"
+      setup_queries: []
+      validation_queries: []
+
+workloads:
+  - name: "Convert query module test"
+    binary: "tests/e2e/pytest_runner.sh"
+    proc: "query_modules/"
+    args: ["query_modules/convert_test.py"]
+    <<: *in_memory_cluster
+
+  - name: "Mgps query module test"
+    pre_set_workload: "tests/e2e/x.sh"
+    binary: "tests/e2e/pytest_runner.sh"
+    proc: "query_modules/"
+    args: ["query_modules/mgps_test.py"]
+    <<: *in_memory_cluster
+
+  - name: "Schema query module test"
+    binary: "tests/e2e/pytest_runner.sh"
+    proc: "query_modules/"
+    args: ["query_modules/schema_test.py"]
+    <<: *in_memory_cluster
+
+  - name: "Edge cases query module test"
+    binary: "tests/e2e/pytest_runner.sh"
+    proc: "tests/e2e/query_modules/query_modules/"
+    args: ["query_modules/edge_cases_test.py"]
+    <<: *in_memory_cluster
+
+  - name: "Passing temporal types test"
+    binary: "tests/e2e/pytest_runner.sh"
+    proc: "tests/e2e/query_modules/query_modules/"
+    args: ["query_modules/temporal_types_test.py"]
+    <<: *in_memory_cluster
+
+  - name: "Type annotations test"
+    binary: "tests/e2e/pytest_runner.sh"
+    proc: "tests/e2e/query_modules/query_modules/"
+    args: ["query_modules/type_annotations_test.py"]
+    <<: *in_memory_cluster
+
+  - name: "Vector index WITH CONFIG function test"
+    binary: "tests/e2e/pytest_runner.sh"
+    proc: "tests/e2e/query_modules/query_modules/"
+    args: ["query_modules/vector_index_config_test.py"]
+    <<: *in_memory_cluster
