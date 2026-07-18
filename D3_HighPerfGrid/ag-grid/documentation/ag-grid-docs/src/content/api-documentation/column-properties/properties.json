@@ -1,0 +1,716 @@
+{
+    "_config_": {
+        "codeSrc": "column-options.AUTO.json",
+        "validate": true,
+        "undocumentedProperties": {
+            "pivotKeys": "Internal use only, doc comment says 'Never set this'",
+            "pivotValueColumn": "Internal use only, doc comment says 'Never set this'",
+            "pivotTotalColumnIds": "Internal use only, doc comment says 'Never set this'",
+            "rowSpan": "Old API, not deprecated, but not encouraged either"
+        }
+    },
+    "columns": {
+        "meta": {
+            "displayName": "Columns"
+        },
+        "field": {
+            "interfaceHierarchyOverrides": {
+                "exclude": ["ColDefField"]
+            },
+            "more": {
+                "name": "Accessing Row Data Values",
+                "url": "./value-getters/#field"
+            }
+        },
+        "colId": {},
+        "type": {
+            "more": {
+                "name": "Column Types",
+                "url": "./column-definitions/#default-column-definitions"
+            }
+        },
+        "cellDataType": {
+            "more": {
+                "name": "Cell Data Types",
+                "url": "./cell-data-types/"
+            }
+        },
+        "valueGetter": {
+            "description": "Function or [expression](./cell-expressions/#column-definition-expressions). Gets the value from your data for display.",
+            "more": {
+                "name": "Value Getters",
+                "url": "./value-getters/"
+            }
+        },
+        "valueFormatter": {
+            "more": {
+                "name": "Value Formatters",
+                "url": "./value-formatters/"
+            }
+        },
+        "refData": {
+            "more": {
+                "name": "Using the 'refData' Property",
+                "url": "./reference-data/#using-the-refdata-property"
+            }
+        },
+        "keyCreator": {},
+        "equals": {
+            "more": {
+                "name": "Change Detection Comparing Values",
+                "url": "./change-detection/#comparing-values"
+            }
+        },
+        "toolPanelClass": {},
+        "suppressColumnsToolPanel": {},
+        "columnGroupShow": {},
+        "icons": {
+            "more": {
+                "name": "Custom Icons",
+                "url": "./custom-icons/#set-the-icons-through-gridoptions-javascript"
+            }
+        },
+        "suppressNavigable": {},
+        "suppressKeyboardEvent": {
+            "more": {
+                "name": "Suppress Keyboard Events",
+                "url": "./keyboard-navigation/#suppresskeyboardevent"
+            }
+        },
+        "suppressPaste": {},
+        "suppressFillHandle": {
+            "more": {
+                "name": "Suppressing the Fill Handle",
+                "url": "./cell-selection-fill-handle/#suppressing-the-fill-handle"
+            }
+        },
+        "contextMenuItems": {
+            "more": {
+                "name": "Configuring the Context Menu",
+                "url": "./context-menu/#configuring-the-context-menu"
+            }
+        },
+        "suppressNoteActions": {},
+        "context": {}
+    },
+    "charts": {
+        "meta": {
+            "displayName": "Columns: Integrated Charts",
+            "description": "(Enterprise only) See [Integrated Charts](./integrated-charts/)"
+        },
+        "chartDataType": {}
+    },
+    "tooltips": {
+        "meta": {
+            "displayName": "Columns: Tooltips"
+        },
+        "tooltipField": {
+            "interfaceHierarchyOverrides": {
+                "exclude": ["NestedFieldPaths"]
+            }
+        },
+        "tooltipValueGetter": {
+            "more": {
+                "name": "Tooltip Component",
+                "url": "./tooltips"
+            }
+        },
+        "tooltipComponent": {
+            "description": "Provide your own tooltip component for the column.",
+            "more": {
+                "name": "Tooltip Component",
+                "url": "./tooltips"
+            }
+        },
+        "tooltipComponentSelector": {
+            "more": {
+                "name": "Custom Tooltip Component",
+                "url": "./tooltips/#custom-component"
+            }
+        },
+        "tooltipComponentParams": {}
+    },
+    "header": {
+        "meta": {
+            "displayName": "Columns: Header",
+            "page": {
+                "name": "Column Headers",
+                "url": "./column-headers/"
+            }
+        },
+        "headerName": {},
+        "headerValueGetter": {
+            "description": "Function or [expression](./cell-expressions/#column-definition-expressions). Gets the value for display in the header."
+        },
+        "headerTooltipValueGetter": {},
+        "headerTooltip": {},
+        "headerStyle": {},
+        "headerClass": {},
+        "headerComponent": {
+            "description": "The custom header group component to be used for rendering the component header. If none specified the default AG Grid is used.",
+            "more": {
+                "name": "Header Component",
+                "url": "./column-headers/"
+            }
+        },
+        "headerComponentParams": {},
+        "wrapHeaderText": {},
+        "autoHeaderHeight": {
+            "more": {
+                "name": "Auto Header Height",
+                "url": "./column-headers/"
+            }
+        },
+        "menuTabs": {
+            "more": {
+                "name": "Legacy Tabbed Column Menu",
+                "url": "./column-menu/#legacy-tabbed-column-menu"
+            }
+        },
+        "columnChooserParams": {
+            "more": {
+                "name": "Customising the Column Chooser",
+                "url": "./column-menu/#customising-the-column-chooser"
+            }
+        },
+        "mainMenuItems": {
+            "more": {
+                "name": "Customising the Menu Items",
+                "url": "./column-menu/#customising-the-menu-items"
+            }
+        },
+        "suppressHeaderMenuButton": {
+            "more": {
+                "name": "Customising the Column Menu",
+                "url": "./column-menu/#customising-the-column-menu"
+            }
+        },
+        "suppressHeaderFilterButton": {
+            "more": {
+                "name": "Customising the Column Menu",
+                "url": "./column-menu/#customising-the-column-menu"
+            }
+        },
+        "suppressHeaderContextMenu": {
+            "more": {
+                "name": "Customising the Column Menu",
+                "url": "./column-menu/#customising-the-column-menu"
+            }
+        },
+        "suppressHeaderKeyboardEvent": {
+            "more": {
+                "name": "Suppress Keyboard Events",
+                "url": "./keyboard-navigation/#suppressheaderkeyboardevent"
+            }
+        },
+        "suppressFloatingFilterButton": {
+            "more": {
+                "name": "Floating Filters",
+                "url": "./floating-filters/"
+            }
+        }
+    },
+    "accessibility": {
+        "meta": {
+            "displayName": "Columns: Accessibility"
+        },
+        "cellAriaRole": {}
+    },
+    "display": {
+        "meta": {
+            "displayName": "Columns: Display"
+        },
+        "hide": {},
+        "initialHide": {},
+        "lockVisible": {},
+        "lockPosition": {},
+        "suppressMovable": {},
+        "useValueFormatterForExport": {
+            "more": {
+                "name": "Using Value Formatters with Other Grid Features",
+                "url": "./value-formatters/#formatting-for-export"
+            }
+        }
+    },
+    "width": {
+        "meta": {
+            "displayName": "Columns: Width",
+            "page": {
+                "name": "Column Sizing",
+                "url": "./column-sizing/"
+            }
+        },
+        "width": {},
+        "initialWidth": {},
+        "minWidth": {},
+        "maxWidth": {},
+        "flex": {
+            "more": {
+                "name": "Column Flex",
+                "url": "./column-sizing/#column-flex"
+            }
+        },
+        "initialFlex": {},
+        "resizable": {},
+        "suppressSizeToFit": {},
+        "suppressAutoSize": {}
+    },
+    "pinned": {
+        "meta": {
+            "displayName": "Columns: Pinned",
+            "page": {
+                "name": "Column Pinning",
+                "url": "./column-pinning/"
+            }
+        },
+        "pinned": {},
+        "initialPinned": {},
+        "lockPinned": {}
+    },
+    "spanning": {
+        "meta": {
+            "displayName": "Columns: Spanning",
+            "description": "See [Column](./column-spanning/) / [Row](./row-spanning/) Spanning"
+        },
+        "colSpan": {},
+        "spanRows": {
+            "more": {
+                "name": "Row Spanning",
+                "url": "./row-spanning/"
+            }
+        }
+    },
+    "styling": {
+        "meta": {
+            "displayName": "Columns: Rendering and Styling"
+        },
+        "cellStyle": {
+            "more": {
+                "name": "Cell Style",
+                "url": "./cell-styles/#cell-style"
+            }
+        },
+        "cellClass": {
+            "more": {
+                "name": "Cell Class",
+                "url": "./cell-styles/#cell-class"
+            }
+        },
+        "cellClassRules": {
+            "more": {
+                "name": "Cell Class Rules",
+                "url": "./cell-styles/#cell-class-rules"
+            }
+        },
+        "cellRenderer": {
+            "description": "Provide your own cell Renderer component for this column's cells.",
+            "more": {
+                "name": "Cell Renderer",
+                "url": "./component-cell-renderer/"
+            }
+        },
+        "cellRendererParams": {
+            "more": {
+                "name": "Cell Renderer Params",
+                "url": "./component-cell-renderer/#custom-props"
+            }
+        },
+        "cellRendererSelector": {
+            "more": {
+                "name": "Many Renderers One Column",
+                "url": "./component-cell-renderer/#providing-custom-components-dynamically"
+            }
+        },
+        "loadingCellRenderer": {
+            "description": "Provide your own cell loading Renderer component for this column's cells when using SSRM or when a cell renderer is deferred.",
+            "more": {
+                "name": "SSRM Cell Loading",
+                "url": "./component-loading-cell-renderer/#skeleton-loading"
+            }
+        },
+        "loadingCellRendererParams": {
+            "more": {
+                "name": "SSRM Cell Loading",
+                "url": "./component-loading-cell-renderer/#skeleton-loading"
+            }
+        },
+        "loadingCellRendererSelector": {
+            "more": {
+                "name": "SSRM Cell Loading",
+                "url": "./component-loading-cell-renderer/#skeleton-loading"
+            }
+        },
+        "autoHeight": {
+            "more": {
+                "name": "Auto Row Height",
+                "url": "./row-height/#auto-row-height"
+            }
+        },
+        "wrapText": {
+            "more": {
+                "name": "Text Wrapping and Displaying Multi-Line Text",
+                "url": "./row-height/#text-wrapping-and-displaying-multi-line-text"
+            }
+        },
+        "enableCellChangeFlash": {}
+    },
+    "sort": {
+        "meta": {
+            "displayName": "Columns: Sort",
+            "page": {
+                "name": "Row Sorting",
+                "url": "./row-sorting/"
+            }
+        },
+        "sortable": {},
+        "sort": {},
+        "initialSort": {},
+        "sortIndex": {},
+        "initialSortIndex": {},
+        "sortingOrder": {},
+        "comparator": {},
+        "unSortIcon": {}
+    },
+    "filtering": {
+        "meta": {
+            "displayName": "Columns: Filter",
+            "page": {
+                "name": "Filtering",
+                "url": "./filtering-overview/"
+            }
+        },
+        "filter": {
+            "description": "Filter component to use for this column. <br/>Set to `true` to use the default filter. <br/>Set to the name of a [Provided Filter](./filtering/#column-filter-types) or set to a `IFilterComp`.",
+            "more": {
+                "name": "Column Filters",
+                "url": "./filtering/"
+            }
+        },
+        "filterParams": {
+            "more": {
+                "name": "Filter Parameters",
+                "url": "./filtering/"
+            }
+        },
+        "filterValueGetter": {
+            "description": "Function or [expression](./cell-expressions/#column-definition-expressions). Gets the value for filtering purposes."
+        },
+        "getQuickFilterText": {
+            "more": {
+                "name": "Overriding the Quick Filter Value",
+                "url": "./filter-quick/#overriding-the-quick-filter-value"
+            }
+        },
+        "floatingFilter": {
+            "more": {
+                "name": "Floating Filter",
+                "url": "./floating-filters"
+            }
+        },
+        "floatingFilterComponent": {
+            "more": {
+                "name": "Floating Filter Component",
+                "url": "./component-floating-filter/"
+            }
+        },
+        "floatingFilterComponentParams": {
+            "more": {
+                "name": "Floating Filter Parameters",
+                "url": "./component-floating-filter/#example-custom-floating-filter"
+            }
+        },
+        "suppressFiltersToolPanel": {},
+        "dateComponent": {
+            "description": "Custom date selection component to be used in Date Filters and Date Floating Filters for this column.",
+            "more": {
+                "name": "Custom Selection Component",
+                "url": "./filter-date/#custom-selection-component"
+            }
+        },
+        "dateComponentParams": {
+            "more": {
+                "name": "Custom Selection Component",
+                "url": "./filter-date/#custom-selection-component"
+            }
+        }
+    },
+    "editing": {
+        "meta": {
+            "displayName": "Columns: Editing",
+            "page": {
+                "name": "Cell Editing",
+                "url": "./cell-editing/"
+            }
+        },
+        "editable": {},
+        "groupRowEditable": {
+            "description": "Works like `editable`, but is evaluated only for group rows. Requires `RowGroupingEditModule`.",
+            "more": {
+                "name": "Editing Group Row Cells",
+                "url": "./grouping-edit/"
+            }
+        },
+        "groupRowValueSetter": {
+            "description": "Runs after a group row value changes so custom code can push edits down to descendant rows. Requires `RowGroupingEditModule`.",
+            "more": {
+                "name": "Editing Group Row Cells",
+                "url": "./grouping-edit/"
+            }
+        },
+        "valueSetter": {
+            "description": "Function or [expression](./cell-expressions/#column-definition-expressions). Custom function to modify your data based off the new value for saving. Return `true` if the data changed.",
+            "more": {
+                "name": "Saving Values",
+                "url": "./value-setters/"
+            }
+        },
+        "valueParser": {
+            "description": "Function or [expression](./cell-expressions/#column-definition-expressions). Parses the value for saving.",
+            "more": {
+                "name": "Parsing Values",
+                "url": "./value-parsers/"
+            }
+        },
+        "cellEditor": {
+            "description": "Provide your own cell editor component for this column's cells.",
+            "more": {
+                "name": "Cell Editors",
+                "url": "./cell-editors/"
+            }
+        },
+        "cellEditorParams": {},
+        "cellEditorSelector": {
+            "more": {
+                "name": "Many Editors One Column",
+                "url": "./cell-editors/#dynamic-selection"
+            }
+        },
+        "cellEditorPopup": {},
+        "cellEditorPopupPosition": {},
+        "singleClickEdit": {},
+        "groupRowEditable": {},
+        "groupRowValueSetter": {},
+        "useValueParserForImport": {
+            "more": {
+                "name": "Using Value Parsers with Other Grid Features",
+                "url": "./value-parsers/#use-value-parser-for-import"
+            }
+        }
+    },
+    "grouping": {
+        "meta": {
+            "displayName": "Columns: Row Grouping",
+            "description": "(Enterprise only) See [Row Grouping](./grouping/)"
+        },
+        "rowGroup": {},
+        "initialRowGroup": {},
+        "rowGroupIndex": {},
+        "initialRowGroupIndex": {},
+        "enableRowGroup": {},
+        "showRowGroup": {
+            "more": {
+                "name": "Custom Group Columns",
+                "url": "./grouping-custom-group-columns/"
+            }
+        },
+        "groupHierarchy": {
+            "more": {
+                "name": "Grouping by Dates and Times",
+                "url": "./grouping-data/#example-grouping-date-time"
+            }
+        }
+    },
+    "aggregation": {
+        "meta": {
+            "displayName": "Columns: Aggregation",
+            "description": "(Enterprise only) See [Aggregation](./aggregation-columns/)"
+        },
+        "aggFunc": {
+            "more": {
+                "name": "Enabling Aggregation",
+                "url": "./aggregation-columns/#enabling-aggregation"
+            }
+        },
+        "initialAggFunc": {},
+        "valueIndex": {},
+        "initialValueIndex": {},
+        "enableValue": {
+            "more": {
+                "name": "Configuring via the UI",
+                "url": "./aggregation-columns/#configuring-via-the-ui"
+            }
+        },
+        "allowedAggFuncs": {
+            "more": {
+                "name": "Allowed Functions",
+                "url": "./aggregation-columns/#allowed-functions"
+            }
+        },
+        "defaultAggFunc": {
+            "more": {
+                "name": "Default Function",
+                "url": "./aggregation-columns/#default-function"
+            }
+        },
+        "showValuesAs": {
+            "more": {
+                "name": "Show Values As",
+                "url": "./aggregation-show-values-as/"
+            }
+        },
+        "initialShowValuesAs": {},
+        "showValuesAsDef": {
+            "more": {
+                "name": "Configuration",
+                "url": "./aggregation-show-values-as/#configuration"
+            }
+        },
+        "enableShowValuesAs": {}
+    },
+    "pivoting": {
+        "meta": {
+            "displayName": "Columns: Pivoting",
+            "description": "(Enterprise only) See [Pivoting](./pivoting/)"
+        },
+        "pivot": {
+            "more": {
+                "name": "Enabling Pivoting",
+                "url": "./aggregation-columns/#default-function"
+            }
+        },
+        "initialPivot": {},
+        "pivotIndex": {},
+        "initialPivotIndex": {},
+        "enablePivot": {
+            "more": {
+                "name": "Configuring via the UI",
+                "url": "./pivoting/#configuring-via-the-ui"
+            }
+        },
+        "pivotComparator": {
+            "more": {
+                "name": "Ordering Pivot Result Groups",
+                "url": "./pivoting-column-groups/#ordering-groups"
+            }
+        },
+        "pivotSort": {
+            "more": {
+                "name": "Sorting Pivot Columns",
+                "url": "./pivoting-column-groups/#sorting-pivot-columns"
+            }
+        },
+        "initialPivotSort": {}
+    },
+    "row dragging": {
+        "meta": {
+            "displayName": "Columns: Row Dragging",
+            "page": {
+                "name": "Row Dragging",
+                "url": "./row-dragging/"
+            }
+        },
+        "rowDrag": {},
+        "rowDragText": {},
+        "dndSource": {},
+        "dndSourceOnRowDrag": {}
+    },
+    "events": {
+        "meta": {
+            "displayName": "Columns: Events",
+            "isEvent": true
+        },
+        "onCellValueChanged": {},
+        "onCellClicked": {},
+        "onCellDoubleClicked": {},
+        "onCellContextMenu": {}
+    },
+    "columnGroups": {
+        "meta": {
+            "displayName": "Groups",
+            "description": "For column groups, the property `children` is mandatory. When the grid sees `children` it knows it's a column group.",
+            "page": {
+                "name": "Column Groups",
+                "url": "./column-groups/"
+            }
+        },
+        "children": {
+            "isRequired": true
+        },
+        "groupId": {},
+        "marryChildren": {},
+        "openByDefault": {},
+        "columnGroupShow": {},
+        "toolPanelClass": {},
+        "suppressColumnsToolPanel": {},
+        "suppressFiltersToolPanel": {},
+        "tooltipComponent": {
+            "description": "Provide your own tooltip component for the column group.",
+            "more": {
+                "name": "Tooltip Component",
+                "url": "./tooltips"
+            }
+        },
+        "tooltipComponentParams": {},
+        "context": {}
+    },
+    "groupsHeader": {
+        "meta": {
+            "displayName": "Groups:  Header",
+            "page": {
+                "name": "Column Headers",
+                "url": "./column-headers/"
+            }
+        },
+        "headerName": {},
+        "headerClass": {},
+        "headerTooltipValueGetter": {},
+        "headerTooltip": {},
+        "autoHeaderHeight": {
+            "more": {
+                "name": "Auto Header Height",
+                "url": "./column-groups/"
+            }
+        },
+        "headerGroupComponent": {
+            "description": "The custom header group component to be used for rendering the component header. If none specified the default AG Grid is used.",
+            "more": {
+                "name": "Header Group Component",
+                "url": "./column-headers/"
+            }
+        },
+        "headerGroupComponentParams": {},
+        "suppressSpanHeaderHeight": {},
+        "suppressStickyLabel": {}
+    },
+    "find": {
+        "meta": {
+            "displayName": "Columns: Find"
+        },
+        "getFindText": {
+            "more": {
+                "name": "Using Find with Cell Components",
+                "url": "./find/#using-find-with-cell-components"
+            }
+        }
+    },
+    "formulas": {
+        "meta": {
+            "displayName": "Columns: Formulas",
+            "page": {
+                "name": "Formulas",
+                "url": "./formulas/"
+            }
+        },
+        "allowFormula": {}
+    },
+    "calculatedColumns": {
+        "meta": {
+            "displayName": "Columns: Calculated Columns",
+            "page": {
+                "name": "Calculated Columns",
+                "url": "./calculated-columns/"
+            }
+        },
+        "calculatedExpression": {}
+    }
+}

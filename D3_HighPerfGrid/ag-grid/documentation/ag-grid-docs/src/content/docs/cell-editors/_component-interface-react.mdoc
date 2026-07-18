@@ -1,0 +1,42 @@
+{% if isFramework("react") %}
+Custom Cell Editor Components are Controlled Components, which receive a value as part of the props, and pass value updates back to the grid via the `onValueChange` callback. The value is not set until editing stops.
+{% /if %}
+
+{% if isFramework("react") %}
+The provided props follow the `CustomCellEditorProps` interface which is listed below under [API Reference](#customcelleditorprops).
+{% /if %}
+
+{% if isFramework("react") %}
+
+```jsx
+export default ({ value, onValueChange }) => {
+    return (
+        <input
+            type="text"
+            value={value || ''}
+            onChange={({ target: { value }}) => onValueChange(value === '' ? null : value)}
+        />
+    );
+}
+```
+
+{% /if %}
+
+{% if isFramework("react") %}
+{% note %}
+In previous versions of the grid, custom components were declared in an imperative way. See [Migrating to Use reactiveCustomComponents](./upgrading-to-ag-grid-31-1/#migrating-custom-components-to-use-reactivecustomcomponents-option) for details on how to migrate to the current format.
+{% /note %}
+{% /if %}
+
+{% if isFramework("react") %}
+The following callbacks can be passed to the `useGridCellEditor` hook (`CustomCellEditorCallbacks` interface). All the callbacks are optional. The hook only needs to be used if callbacks are provided.
+{% /if %}
+
+{% if isFramework("react") %}
+{% interfaceDocumentation interfaceName="CustomCellEditorCallbacks" config={ "description": "" } /%}
+{% /if %}
+
+{% if isFramework("react") %}
+The custom numeric editor in the example below demonstrates the `useGridCellEditor` hook:
+{% gridExampleRunner title="useGridCellEditor Example" name="component-editor"  exampleHeight=370 /%}
+{% /if %}

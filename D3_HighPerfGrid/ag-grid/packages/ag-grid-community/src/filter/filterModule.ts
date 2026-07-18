@@ -1,0 +1,226 @@
+import type { _ColumnFilterGridApi, _FilterGridApi, _QuickFilterGridApi } from '../api/gridApi';
+import { HeaderFilterCellCtrl } from '../headerRendering/cells/floatingFilter/headerFilterCellCtrl';
+import type { FilterWrapperParams } from '../interfaces/iFilter';
+import type { _ModuleWithApi, _ModuleWithoutApi } from '../interfaces/iModule';
+import { SharedMenuModule } from '../misc/menu/sharedMenuModule';
+import { VERSION } from '../version';
+import { PopupModule } from '../widgets/popupModule';
+import columnFiltersCSS from './column-filters.css';
+import {
+    destroyFilter,
+    doFilterAction,
+    getColumnFilterHandler,
+    getColumnFilterInstance,
+    getColumnFilterModel,
+    getFilterModel,
+    hideColumnFilter,
+    isColumnFilterPresent,
+    setColumnFilterModel,
+    setFilterModel,
+    showColumnFilter,
+} from './columnFilterApi';
+import { ColumnFilterService } from './columnFilterService';
+import { isAnyFilterPresent, onFilterChanged } from './filterApi';
+import { FilterManager } from './filterManager';
+import { FilterMenuFactory } from './filterMenuFactory';
+import { FilterValueService } from './filterValueService';
+import { ReadOnlyFloatingFilter } from './floating/provided/readOnlyFloatingFilter';
+import { BigIntFilter } from './provided/bigInt/bigIntFilter';
+import { BigIntFilterHandler } from './provided/bigInt/bigIntFilterHandler';
+import { BigIntFloatingFilter } from './provided/bigInt/bigIntFloatingFilter';
+import { DateFilter } from './provided/date/dateFilter';
+import { DateFilterHandler } from './provided/date/dateFilterHandler';
+import { DateFloatingFilter } from './provided/date/dateFloatingFilter';
+import { DefaultDateComponent } from './provided/date/defaultDateComponent';
+import { NumberFilter } from './provided/number/numberFilter';
+import { NumberFilterHandler } from './provided/number/numberFilterHandler';
+import { NumberFloatingFilter } from './provided/number/numberFloatingFilter';
+import { TextFilter } from './provided/text/textFilter';
+import { TextFilterHandler } from './provided/text/textFilterHandler';
+import { TextFloatingFilter } from './provided/text/textFloatingFilter';
+import { getQuickFilter, isQuickFilterPresent, resetQuickFilter } from './quickFilterApi';
+import { QuickFilterService } from './quickFilterService';
+
+/**
+ * @internal AG_GRID_INTERNAL - Not for public use. Can change / be removed at any time.
+ */
+export const FilterCoreModule: _ModuleWithApi<_FilterGridApi> = {
+    moduleName: 'FilterCore',
+    version: VERSION,
+    beans: [FilterManager],
+    apiFunctions: {
+        isAnyFilterPresent,
+        onFilterChanged,
+    },
+    css: [columnFiltersCSS],
+};
+
+/**
+ * @internal AG_GRID_INTERNAL - Not for public use. Can change / be removed at any time.
+ */
+export const FilterValueModule: _ModuleWithoutApi = {
+    moduleName: 'FilterValue',
+    version: VERSION,
+    beans: [FilterValueService],
+};
+
+/**
+ * @internal AG_GRID_INTERNAL - Not for public use. Can change / be removed at any time.
+ */
+export const ColumnFilterModule: _ModuleWithApi<_ColumnFilterGridApi> = {
+    moduleName: 'ColumnFilter',
+    version: VERSION,
+    beans: [ColumnFilterService, FilterMenuFactory],
+    dynamicBeans: { headerFilterCellCtrl: HeaderFilterCellCtrl as any },
+    icons: {
+        // open filter button - header, floating filter, menu
+        filter: 'filter',
+        // filter is applied - header (legacy column menu), filter tool panel
+        filterActive: 'filter',
+    },
+    apiFunctions: {
+        isColumnFilterPresent,
+        getColumnFilterInstance,
+        destroyFilter,
+        setFilterModel,
+        getFilterModel,
+        getColumnFilterModel,
+        setColumnFilterModel,
+        showColumnFilter,
+        hideColumnFilter,
+        getColumnFilterHandler,
+        doFilterAction,
+    },
+    dependsOn: [FilterCoreModule, PopupModule, FilterValueModule, SharedMenuModule],
+};
+
+/**
+ * @feature Filtering -> Custom Column Filters
+ */
+export const CustomFilterModule: _ModuleWithoutApi = {
+    moduleName: 'CustomFilter',
+    version: VERSION,
+    userComponents: { agReadOnlyFloatingFilter: ReadOnlyFloatingFilter },
+    dependsOn: [ColumnFilterModule],
+};
+
+/**
+ * @feature Filtering -> Text Filter
+ */
+export const TextFilterModule: _ModuleWithoutApi = {
+    moduleName: 'TextFilter',
+    version: VERSION,
+    dependsOn: [ColumnFilterModule],
+    userComponents: {
+        agTextColumnFilter: {
+            classImp: TextFilter,
+            params: {
+                useForm: true,
+            } as FilterWrapperParams,
+        },
+        agTextColumnFloatingFilter: TextFloatingFilter,
+    },
+    dynamicBeans: {
+        agTextColumnFilterHandler: TextFilterHandler,
+    },
+};
+
+/**
+ * @feature Filtering -> Number Filter
+ */
+export const NumberFilterModule: _ModuleWithoutApi = {
+    moduleName: 'NumberFilter',
+    version: VERSION,
+    dependsOn: [ColumnFilterModule],
+    userComponents: {
+        agNumberColumnFilter: {
+            classImp: NumberFilter,
+            params: {
+                useForm: true,
+            } as FilterWrapperParams,
+        },
+        agNumberColumnFloatingFilter: NumberFloatingFilter,
+    },
+    dynamicBeans: {
+        agNumberColumnFilterHandler: NumberFilterHandler,
+    },
+};
+
+/**
+ * @feature Filtering -> BigInt Filter
+ */
+export const BigIntFilterModule: _ModuleWithoutApi = {
+    moduleName: 'BigIntFilter',
+    version: VERSION,
+    dependsOn: [ColumnFilterModule],
+    userComponents: {
+        agBigIntColumnFilter: {
+            classImp: BigIntFilter,
+            params: {
+                useForm: true,
+            } as FilterWrapperParams,
+        },
+        agBigIntColumnFloatingFilter: BigIntFloatingFilter,
+    },
+    dynamicBeans: {
+        agBigIntColumnFilterHandler: BigIntFilterHandler,
+    },
+};
+
+/**
+ * @feature Filtering -> Date Filter
+ */
+export const DateFilterModule: _ModuleWithoutApi = {
+    moduleName: 'DateFilter',
+    version: VERSION,
+    dependsOn: [ColumnFilterModule],
+    userComponents: {
+        agDateColumnFilter: {
+            classImp: DateFilter,
+            params: {
+                useForm: true,
+            } as FilterWrapperParams,
+        },
+        agDateInput: DefaultDateComponent,
+        agDateColumnFloatingFilter: DateFloatingFilter,
+    },
+    dynamicBeans: {
+        agDateColumnFilterHandler: DateFilterHandler,
+    },
+};
+
+/**
+ * @internal
+ */
+const QuickFilterCoreModule: _ModuleWithoutApi = {
+    moduleName: 'QuickFilterCore',
+    version: VERSION,
+    rowModels: ['clientSide'],
+    beans: [QuickFilterService],
+    dependsOn: [FilterCoreModule, FilterValueModule],
+};
+
+/**
+ * @feature Filtering -> Quick Filter
+ * @gridOption quickFilterText
+ */
+export const QuickFilterModule: _ModuleWithApi<_QuickFilterGridApi> = {
+    moduleName: 'QuickFilter',
+    version: VERSION,
+    apiFunctions: {
+        isQuickFilterPresent,
+        getQuickFilter,
+        resetQuickFilter,
+    },
+    dependsOn: [QuickFilterCoreModule],
+};
+
+/**
+ * @feature Filtering -> External Filter
+ * @gridOption doesExternalFilterPass
+ */
+export const ExternalFilterModule: _ModuleWithoutApi = {
+    moduleName: 'ExternalFilter',
+    version: VERSION,
+    dependsOn: [FilterCoreModule],
+};

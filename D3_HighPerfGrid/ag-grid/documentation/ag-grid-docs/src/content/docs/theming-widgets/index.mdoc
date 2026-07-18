@@ -1,0 +1,135 @@
+---
+title: "Customising Inputs & Widgets"
+---
+
+Style text inputs, checkboxes and toggle buttons.
+
+## Styling Text Inputs
+
+The grid exposes many theme parameters beginning `input*` for customising text input appearance. For the full list, see the [Inputs section](./theming-api/#reference-inputs) of the parameters reference.
+
+```js
+const myTheme = themeQuartz.withParams({
+    inputBorder: { color: 'orange', style: 'dotted', width: 3 },
+    inputBackgroundColor: 'rgb(255, 209, 123)',
+    inputPlaceholderTextColor: 'rgb(155, 101, 1)',
+    inputIconColor: 'purple',
+    inputTextColor: 'black',
+    // Cell Editors
+    inputInvalidBackgroundColor: 'purple',
+    inputInvalidBorder: 'darkred',
+    inputInvalidTextColor: 'white'
+});
+```
+
+If there is no parameter for the effect that you want to achieve, you can use CSS selectors:
+
+```css
+.ag-text-field-input {
+    box-shadow: 0 0 10px orange;
+}
+```
+
+{% gridExampleRunner title="Text Input Styling" name="text-inputs"  exampleHeight=450 /%}
+
+### Underlined Text Inputs
+
+The default text input style is `inputStyleBordered`. The other provided input style is `inputStyleUnderlined` which produces a Material Design style underlined input. These are [theme parts](./theming-parts/) so you can swap them using `theme.withPart()` or create your own:
+
+```js
+const myTheme = themeQuartz.withPart(inputStyleUnderlined);
+```
+
+{% gridExampleRunner title="Text Input Styling" name="input-style-part"  exampleHeight=450 /%}
+
+`inputStyleUnderlined` supports all the same theme parameters but only applies border parameters to the bottom border so use for example `inputBorder` and `inputFocusBorder` to style the underline in default and focus states.
+
+### Creating Your Own Text Input Styles
+
+If you'd like to create your own input styles from scratch you can remove the existing `inputStyle` part, see [Removing a Part](./theming-parts/#removing-a-part).
+
+## Styling Checkboxes
+
+The grid exposes many theme parameters beginning `checkbox*` for customising checkbox appearance. For the full list, see the [Checkboxes & Radio Buttons section](./theming-api/#reference-checkboxes) of the parameters reference.
+
+```js
+const myTheme = themeQuartz.withParams({
+    checkboxUncheckedBackgroundColor: 'yellow',
+    checkboxUncheckedBorderColor: 'darkred',
+    checkboxCheckedBackgroundColor: 'red',
+    checkboxCheckedBorderColor: 'darkred',
+    checkboxCheckedShapeColor: 'yellow',
+    checkboxCheckedShapeImage: {
+        svg: '<svg>... svg source code...</svg>',
+    },
+    checkboxIndeterminateBorderColor: 'darkred',
+});
+```
+
+If there is no parameter for the effect that you want to achieve, you can use CSS selectors:
+
+```css
+.ag-checkbox-input-wrapper {
+    ... default styles ...
+}
+.ag-checkbox-input-wrapper.ag-checked {
+    ... override default styles for 'checked' state ...
+}
+.ag-checkbox-input-wrapper.ag-indeterminate {
+    ... override default styles for 'indeterminate' state ...
+}
+```
+
+{% gridExampleRunner title="Checkbox Styling" name="checkboxes" exampleHeight=450 /%}
+
+### Changing Checkbox Icons
+
+The example above uses `checkboxCheckedShapeImage` to replace the default check mark with a X symbol. By default, `checkboxCheckedShapeImage` provides only the shape of the check mark, and the colour is replaced using the `checkboxCheckedShapeColor` parameter.
+
+If you have SVG images containing their own colour, this example demonstrates how to create a checkbox style with coloured SVG images. It removes the existing checkbox styles using `theme.withoutPart()` and adds new styles with CSS:
+
+{% gridExampleRunner title="Checkbox Styling" name="checkboxes-custom-svg" exampleHeight=450 /%}
+
+### Creating Your Own Checkbox Styles
+
+If you'd like to create your own checkbox styles from scratch you can remove the existing `checkboxStyle` part, see [Removing a Part](./theming-parts/#removing-a-part).
+
+### Styling Radio Buttons
+
+Radio Buttons, such as those in the chart settings UI, are specialised checkboxes. They have their corner radius overridden to be 100% to create a round shape, and get their checked shape from the `radioCheckedShapeImage` theme parameter.
+
+## Styling Toggle Buttons
+
+Toggle Buttons, such as the "Pivot Mode" toggle in the example below, are styled using theme parameters beginning `toggleButton*`.
+
+```js
+const myTheme = themeQuartz.withParams({
+    toggleButtonWidth: 50,
+    toggleButtonHeight: 30,
+    toggleButtonSwitchInset: 10,
+    toggleButtonOffBackgroundColor: 'darkred',
+    toggleButtonOnBackgroundColor: 'darkgreen',
+    toggleButtonSwitchBackgroundColor: 'yellow',
+});
+```
+
+{% gridExampleRunner title="Toggle Button Styling" name="toggle-buttons" exampleHeight=450 /%}
+
+If there is no parameter that achieves the effect you want, you can use CSS selectors:
+
+```css
+.ag-toggle-button-input-wrapper {
+    ... background styles ...
+}
+.ag-toggle-button-input-wrapper.ag-checked {
+    ... override background styles for 'checked' state ...
+}
+.ag-toggle-button-input-wrapper::before {
+    ... sliding switch styles ...
+}
+.ag-toggle-button-input-wrapper.ag-checked::before {
+    ... override sliding switch styles for 'checked' state ...
+}
+```
+
+{% gridExampleRunner title="Toggle Button Styling with CSS" name="toggle-buttons-css" exampleHeight=450 /%}

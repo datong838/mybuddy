@@ -1,0 +1,65 @@
+[
+    {
+        "name": "Angular CLI",
+        "devEnvironment": "Angular CLI",
+        "framework": "angular",
+        "licenseType": "enterprise",
+        "url": "https://github.com/ag-grid/ag-grid-seed/tree/main/enterprise/packages/angular-cli"
+    },
+    {
+        "name": "Create React App",
+        "devEnvironment": "Create React App",
+        "framework": "react",
+        "licenseType": "enterprise",
+        "url": "https://github.com/ag-grid/ag-grid-seed/tree/main/enterprise/packages/create-react-app"
+    },
+    {
+        "name": "Create Next App",
+        "devEnvironment": "Next.js",
+        "framework": "react",
+        "licenseType": "enterprise",
+        "url": "https://github.com/ag-grid/ag-grid-seed/tree/main/enterprise/packages/create-next-app"
+    },
+    {
+        "name": "Nuxt - Vue3",
+        "devEnvironment": "Nuxt",
+        "framework": "vue",
+        "licenseType": "enterprise",
+        "url": "https://github.com/ag-grid/ag-grid-seed/tree/main/enterprise/packages/nuxt-vue3"
+    },
+    {
+        "name": "Vite - React",
+        "devEnvironment": "Vite",
+        "framework": "react",
+        "licenseType": "enterprise",
+        "url": "https://github.com/ag-grid/ag-grid-seed/tree/main/enterprise/packages/vite-react"
+    },
+    {
+        "name": "Vite - TypeScript",
+        "devEnvironment": "Vite",
+        "framework": "javascript",
+        "licenseType": "enterprise",
+        "url": "https://github.com/ag-grid/ag-grid-seed/tree/main/enterprise/packages/vite-typescript"
+    },
+    {
+        "name": "Vite - Vue 3",
+        "devEnvironment": "Vite",
+        "framework": "vue",
+        "licenseType": "enterprise",
+        "url": "https://github.com/ag-grid/ag-grid-seed/tree/main/enterprise/packages/vite-vue3"
+    },
+    {
+        "name": "Webpack 5 - JavaScript",
+        "devEnvironment": "Webpack 5",
+        "framework": "javascript",
+        "licenseType": "enterprise",
+        "url": "https://github.com/ag-grid/ag-grid-seed/tree/main/enterprise/packages/webpack5-javascript"
+    },
+    {
+        "name": "Webpack 5 - TypeScript",
+        "devEnvironment": "Webpack 5",
+        "framework": "javascript",
+        "licenseType": "enterprise",
+        "url": "https://github.com/ag-grid/ag-grid-seed/tree/main/enterprise/packages/webpack5-typescript"
+    }
+]

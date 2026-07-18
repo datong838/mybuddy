@@ -1,0 +1,60 @@
+{% if isFramework("javascript") %}
+A cell renderer is either:
+
+- A function returning an HTML string or a DOM object
+- A class implementing the [`ICellRendererComp`](#api-reference) interface
+
+Use the function variant of a Cell Component if you have no refresh or cleanup requirements (ie you don't need to implement the refresh or destroy functions).
+
+```ts
+interface ICellRendererComp {
+    // Optional - props for rendering.
+    init?(props: ICellRendererParams): void;
+
+    // Mandatory - Return the DOM element of the component, this is what the grid puts into the cell
+    getGui(): HTMLElement;
+
+    // Optional - Gets called once by grid after rendering is finished - if your renderer needs to do any cleanup,
+    // do it here
+    destroy?(): void;
+
+    // Mandatory - Get the cell to refresh. Return true if the refresh succeeded, otherwise return false.
+    // If you return false, the grid will remove the component from the DOM and create
+    // a new component in its place with the new values.
+    refresh(params: ICellRendererParams): boolean;
+}
+```
+
+When providing a class-based component, it is initialised with `props` containing, amongst other things, the value to be rendered. A full description of the props can be found below in the [API Reference](#api-reference).
+
+```ts
+class CustomButtonComponent {
+    // ...
+    init(props) {
+        // create the cell
+        this.eGui = document.createElement('div');
+        this.eGui.innerHTML = props.value;
+    }
+    // ...
+}
+```
+
+When providing a function-based component, it receives the same `props` as its argument as would have been provided to the `init` method above.
+Below are some simple examples of Cell Components provided as simple functions:
+
+```js
+// uppercase the value
+colDef.cellRenderer = params => `${params.value.toUpperCase()}`;
+
+// put a tooltip on the value
+colDef.cellRenderer = params => `<span title="the tooltip">${params.value}</span>`;
+
+// create a DOM object
+colDef.cellRenderer = params => {
+    const eDiv = document.createElement('div');
+    eDiv.innerHTML = '<span class="my-css-class"><button class="btn-simple">Push Me</button></span>';
+    return eDiv;
+}
+```
+
+{% /if %}

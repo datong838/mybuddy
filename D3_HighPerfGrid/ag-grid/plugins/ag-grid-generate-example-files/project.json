@@ -1,0 +1,68 @@
+{
+  "name": "ag-grid-generate-example-files",
+  "$schema": "../../node_modules/nx/schemas/project-schema.json",
+  "sourceRoot": "plugins/ag-grid-generate-example-files/",
+  "projectType": "library",
+  "targets": {
+    "build": {
+      "executor": "@nx/js:swc",
+      "dependsOn": ["ag-grid-community:build", "copySrcFilesForGeneration", "ag-shared:build"],
+      "outputs": ["{options.outputPath}"],
+      "options": {
+        "outputPath": "plugins/ag-grid-generate-example-files/dist",
+        "main": "plugins/ag-grid-generate-example-files/src/index.ts",
+        "tsConfig": "plugins/ag-grid-generate-example-files/tsconfig.lib.json",
+        "assets": [
+          "plugins/ag-grid-generate-example-files/*.md",
+          {
+            "input": "./plugins/ag-grid-generate-example-files/src",
+            "glob": "**/!(*.ts|*.snap)",
+            "output": "./src"
+          },
+          {
+            "input": "./plugins/ag-grid-generate-example-files/src",
+            "glob": "**/*.d.ts",
+            "output": "./src"
+          },
+          {
+            "input": "./plugins/ag-grid-generate-example-files",
+            "glob": "generators.json",
+            "output": "."
+          },
+          {
+            "input": "./plugins/ag-grid-generate-example-files",
+            "glob": "executors.json",
+            "output": "."
+          }
+        ]
+      }
+    },
+    "copySrcFilesForGeneration": {
+      "command": "node ./src/copySrcFilesForGeneration.js",
+      "cache": true,
+      "inputs": [
+        "{workspaceRoot}/packages/ag-grid-community/src/propertyKeys.ts",
+        "{workspaceRoot}/packages/ag-grid-community/src/eventTypes.ts"
+      ],
+      "outputs": ["{projectRoot}/src/executors/generate/generator/_copiedFromCore/"],
+      "options": {
+        "cwd": "{projectRoot}"
+      }
+    },
+    "lint": {
+      "command": "eslint",
+      "options": {
+        "cwd": "{projectRoot}"
+      }
+    },
+    "test": {
+      "command": "npx vitest run",
+      "dependsOn": ["copySrcFilesForGeneration"],
+      "outputs": ["{workspaceRoot}/reports/ag-grid-generate-example-files.xml"],
+      "options": {
+        "cwd": "{projectRoot}"
+      }
+    }
+  },
+  "tags": []
+}

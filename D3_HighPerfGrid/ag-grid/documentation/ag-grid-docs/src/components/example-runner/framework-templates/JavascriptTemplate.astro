@@ -1,0 +1,107 @@
+---
+interface Props {
+    isDev: boolean;
+    title: string;
+
+    modifiedTimeMs: number;
+    isEnterprise: boolean;
+    isLocale: boolean;
+    isIntegratedCharts: boolean;
+    /**
+     * All script file names
+     */
+    scriptFiles?: string[];
+    styleFiles?: string[];
+    indexFragment: string;
+    headFragment?: string;
+    appLocation: string;
+    extraStyles?: string;
+    extras?: string[];
+    usesMathRandom?: boolean;
+    nonce?: string;
+}
+
+const {
+    isDev,
+    title,
+    modifiedTimeMs,
+    isEnterprise,
+    isLocale,
+    isIntegratedCharts,
+    styleFiles,
+    scriptFiles,
+    indexFragment,
+    headFragment,
+    appLocation,
+    extraStyles,
+    extras,
+    usesMathRandom,
+    nonce,
+} = Astro.props as Props;
+
+import { MetaData } from './lib/MetaData';
+import ExampleStyle from './lib/ExampleStyle.astro';
+import Styles from './lib/Styles.astro';
+import Extras from './lib/Extras.astro';
+import { Scripts } from './lib/Scripts';
+import { SITE_BASE_URL } from '@constants';
+import { pathJoin } from '@utils/pathJoin';
+import {
+    getCacheBustingUrl,
+    getGridEnterpriseScriptPath,
+    getGridScriptPath,
+    getChartsEnterpriseScriptPath,
+    getGridLocaleScriptPath,
+} from '@utils/gridLibraryPaths';
+import { SeedRandom } from './lib/SeedRandom';
+
+const siteUrl = Astro.site ? pathJoin(Astro.site, SITE_BASE_URL) : '/';
+
+const gridScriptPath = getCacheBustingUrl(getGridScriptPath(siteUrl), modifiedTimeMs);
+const gridScriptEnterprisePath = getCacheBustingUrl(getGridEnterpriseScriptPath(siteUrl), modifiedTimeMs);
+const chartsScriptEnterprisePath = getCacheBustingUrl(getChartsEnterpriseScriptPath(siteUrl), modifiedTimeMs);
+const gridScriptLocalePath = getCacheBustingUrl(getGridLocaleScriptPath(siteUrl), modifiedTimeMs);
+---
+
+<html lang="en">
+    <head>
+        <MetaData isDev={isDev} title={`JavaScript Example - ${title}`} modifiedTimeMs={modifiedTimeMs} />
+        <ExampleStyle extraStyles={extraStyles} />
+        <Styles
+            baseUrl={appLocation}
+            files={isDev && styleFiles
+                ? styleFiles
+                      .filter((file: string) => !file.includes('style.css') && !file.includes('styles.css'))
+                      .map((file: string) => getCacheBustingUrl(file, modifiedTimeMs))
+                : []}
+        />
+        <Extras extras={extras ?? []} />
+        <Fragment set:html={headFragment} />
+    </head>
+    <body>
+        <Fragment set:html={indexFragment} />
+
+        <script
+            is:inline
+            nonce={nonce}
+            define:vars={{
+                appLocation,
+            }}
+        >
+            window.__basePath = appLocation;
+        </script>
+        {usesMathRandom && <SeedRandom nonce={nonce} />}
+        {isIntegratedCharts && <script nonce={nonce} src={chartsScriptEnterprisePath} crossorigin="anonymous" />}
+        <script nonce={nonce} src={isEnterprise ? gridScriptEnterprisePath : gridScriptPath} crossorigin="anonymous"
+        ></script>
+        {isLocale && <script nonce={nonce} src={gridScriptLocalePath} crossorigin="anonymous" />}
+        <Scripts baseUrl={appLocation} files={scriptFiles!} nonce={nonce} />
+        <Styles
+            baseUrl={appLocation}
+            files={styleFiles
+                ? styleFiles.filter((file: string) => file.includes('style.css') || file.includes('styles.css'))
+                : []}
+        />
+        <slot />
+    </body>
+</html>

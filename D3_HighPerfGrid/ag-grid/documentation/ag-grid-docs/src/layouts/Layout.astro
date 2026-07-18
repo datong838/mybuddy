@@ -1,0 +1,300 @@
+---
+import { Font } from 'astro:assets';
+import { DevTools } from '@ag-website-shared/components/dev-tools/DevTools';
+import { getEntry, type CollectionEntry } from 'astro:content';
+import dsStylesUrl from '@design-system/design-system.scss?url';
+import SiteHeader from '@ag-website-shared/components/site-header/SiteHeader.astro';
+import { getFavIconsData, getAppleTouchIconsData } from '@utils/favicons';
+import { getIsProduction, getIsArchive, getIsStaging, getIsDev } from '@utils/env';
+import { urlWithBaseUrl } from '@utils/urlWithBaseUrl';
+import Plausible from '@components/Plausible.astro';
+import { DARK_MODE_INIT_SCRIPT, KBD_PLATFORM_INIT_SCRIPT } from '@utils/csp/inlineScripts';
+import { Footer } from '@ag-website-shared/components/footer/Footer';
+import styles from '@layouts/Layout.module.scss';
+import { getApiPaths } from '@utils/apiMenuPath';
+import { SITE_BASE_URL, PUBLIC_GTM_ID, PUBLIC_GTM_AUTH, PUBLIC_GTM_PREVIEW, agGridVersion } from '@constants';
+import GoogleTagManager from '@ag-website-shared/components/google-tag-manager/GoogleTagManager.astro';
+import GoogleTagManagerBody from '@ag-website-shared/components/google-tag-manager/GoogleTagManagerBody.astro';
+import AnnouncementBanner from '@ag-website-shared/components/announcement-banner/AnnouncementBanner.astro';
+import JsonLd from '@ag-website-shared/components/structured-data/JsonLd.astro';
+import {
+    buildOrganization,
+    buildSoftwareApplication,
+    buildWebSite,
+    siteRootUrl,
+    type JsonLdObject,
+} from '@ag-website-shared/utils/structuredData';
+
+interface Props {
+    title: string;
+    description?: string;
+    showSearchBar?: boolean;
+    showDocsNav?: boolean;
+    hideHeader?: boolean;
+    hideFooter?: boolean;
+    hidePageFromSearchEngines?: boolean;
+    showMicrosoftMessage?: boolean;
+    showAnnouncementBanner?: boolean;
+    overrideSocialImage?: string;
+    pageStructuredData?: JsonLdObject[];
+}
+
+const { data: metadata } = (await getEntry('metadata', 'metadata')) as CollectionEntry<'metadata'>;
+const { data: apiNavData } = (await getEntry('apiNav', 'nav')) as CollectionEntry<'apiNav'>;
+
+const { data: footerItems } = (await getEntry('footer', 'footer')) as CollectionEntry<'footer'>;
+const { data: announcementBannerContent } = (await getEntry(
+    'announcementBanner',
+    'announcement-banner'
+)) as CollectionEntry<'announcementBanner'>;
+const apiPaths = getApiPaths(apiNavData);
+
+const isProduction = getIsProduction();
+const isArchive = getIsArchive();
+const isStaging = getIsStaging();
+const isDev = getIsDev();
+const canonicalUrl = new URL(Astro.url.pathname, metadata.canonicalUrlBase);
+
+const {
+    title,
+    description = metadata.description,
+    showSearchBar,
+    showDocsNav,
+    hideHeader,
+    hideFooter,
+    hidePageFromSearchEngines,
+    showMicrosoftMessage,
+    showAnnouncementBanner = announcementBannerContent.enabled,
+    overrideSocialImage,
+    pageStructuredData,
+} = Astro.props;
+
+const path = Astro.url.pathname;
+const siteRoot = siteRootUrl(metadata.canonicalUrlBase);
+// Open Graph and Twitter crawlers require absolute image URLs, so resolve the social image against the site root.
+const socialImagePathOrUrl = urlWithBaseUrl(overrideSocialImage ?? metadata.socialImage);
+const socialImage = socialImagePathOrUrl.startsWith('http')
+    ? socialImagePathOrUrl
+    : `${siteRoot}${socialImagePathOrUrl.replace(/^\//, '')}`;
+
+const lightModeCSSUrl = `url("${urlWithBaseUrl('/images/sun.svg')}")`;
+const darkModeCSSUrl = `url("${urlWithBaseUrl('/images/moon.svg')}")`;
+
+const isHomepage = Astro.url.pathname.replaceAll('/', '') === SITE_BASE_URL.replaceAll('/', '');
+
+const includeStructuredData = !hidePageFromSearchEngines && !isArchive;
+const sameAsUrls = includeStructuredData
+    ? footerItems.flatMap((group) => group.links.filter((link) => link.iconName).map((link) => link.url))
+    : [];
+const organizationLogoUrl = `${siteRoot}images/ag-logos/png-logos/AG-Grid-Logo_Light-Theme_476_140.png`;
+const licensePricingUrl = `${siteRoot}license-pricing/`;
+const structuredData: JsonLdObject[] = includeStructuredData
+    ? [
+          buildOrganization({
+              canonicalUrlBase: metadata.canonicalUrlBase,
+              name: 'AG Grid',
+              logoUrl: organizationLogoUrl,
+              sameAs: sameAsUrls,
+              // Line up with the enquiry-type options on the contact page. Sales enquiries go
+              // through the contact form; technical support is handled via the Zendesk portal.
+              contactPoints: [
+                  { contactType: 'sales', url: `${siteRoot}contact/`, availableLanguage: 'English' },
+                  {
+                      contactType: 'technical support',
+                      url: 'https://ag-grid.zendesk.com/',
+                      availableLanguage: 'English',
+                  },
+              ],
+          }),
+          buildWebSite({
+              canonicalUrlBase: metadata.canonicalUrlBase,
+              name: metadata.title,
+              description: metadata.description,
+          }),
+          buildSoftwareApplication({
+              canonicalUrlBase: metadata.canonicalUrlBase,
+              name: 'AG Grid',
+              version: agGridVersion.split('-')[0],
+              offers: [
+                  {
+                      '@type': 'Offer',
+                      name: 'AG Grid Community',
+                      price: '0',
+                      priceCurrency: 'USD',
+                      url: licensePricingUrl,
+                  },
+                  {
+                      '@type': 'Offer',
+                      name: 'AG Grid Enterprise',
+                      url: licensePricingUrl,
+                  },
+              ],
+          }),
+          ...(pageStructuredData ?? []),
+      ]
+    : [];
+
+const announcementBannerProps = {
+    href: urlWithBaseUrl('/community/beyond-the-prompt/'),
+    title: 'Beyond the Prompt',
+    description: 'A one-day AG Grid & Bryntum conference • 19th May 26',
+    ctaLabel: 'Learn more',
+};
+---
+
+<!doctype html>
+<html lang="en">
+    <head>
+        <meta charset="UTF-8" />
+        <meta name="description" content={description} />
+        <meta name="viewport" content="width=device-width, initial-scale=1" />
+        {
+            getFavIconsData().map(({ size, icon }: any) => (
+                <link rel="icon" type="image/png" sizes={`${size}x${size}`} href={icon} />
+            ))
+        }
+        {
+            getAppleTouchIconsData().map(({ size, icon }: any) => (
+                <link rel="apple-touch-icon" sizes={`${size}x${size}`} href={icon} />
+            ))
+        }
+        {(!isProduction || isArchive || hidePageFromSearchEngines) && <meta name="robots" content="noindex" />}
+        <meta name="generator" content={Astro.generator} />
+        <title>{title}</title>
+        {!isStaging && <link rel="canonical" href={canonicalUrl} />}
+        {
+            !isDev && (
+                <link
+                    rel="sitemap"
+                    type="application/xml"
+                    title="Sitemap"
+                    href={urlWithBaseUrl('/sitemap-index.xml')}
+                />
+            )
+        }
+
+        <Font cssVariable="--font-ibm-plex-sans" preload />
+        <Font cssVariable="--font-jetbrains-mono" preload />
+
+        <!-- Import all global design system CSS -->
+        <link rel="stylesheet" href={dsStylesUrl} />
+
+        {
+            /* Astro's font system generates @font-face with hashed names (e.g. "IBM Plex Sans-abc123")
+            rather than the original font name. AG Grid's Quartz theme hardcodes font-family: 'IBM Plex Sans',
+            so we redirect its CSS variable to the Astro-generated variable which resolves to the correct name.
+            This must come after stylesheet imports so it wins the cascade over any theme CSS that also sets
+            --ag-font-family on the same selectors. */
+        }
+        <style is:global>
+            .ag-theme-quartz,
+            .ag-theme-quartz-dark,
+            .ag-theme-quartz-auto-dark {
+                --ag-font-family: var(
+                    --font-ibm-plex-sans,
+                    'IBM Plex Sans',
+                    -apple-system,
+                    BlinkMacSystemFont,
+                    'Segoe UI',
+                    Roboto,
+                    sans-serif
+                );
+            }
+        </style>
+
+        <!-- Facebook Meta Tags -->
+        <meta property="og:url" content={canonicalUrl} />
+        <meta property="og:type" content="website" />
+        <meta property="og:title" content={title} />
+        <meta property="og:description" content={description} />
+        <meta property="og:image" content={socialImage} />
+
+        <!-- Twitter Meta Tags -->
+        <meta name="twitter:card" content="summary_large_image" />
+        <meta property="twitter:domain" content={canonicalUrl.host} />
+        <meta property="twitter:url" content={canonicalUrl} />
+        <meta name="twitter:title" content={title} />
+        <meta name="twitter:description" content={description} />
+        <meta name="twitter:image" content={socialImage} />
+
+        {structuredData.length > 0 && <JsonLd data={structuredData} />}
+
+        {
+            !isDev && (
+                <GoogleTagManager
+                    googleTagManagerId={PUBLIC_GTM_ID}
+                    googleTagManagerAuth={PUBLIC_GTM_AUTH}
+                    googleTagManagerPreview={PUBLIC_GTM_PREVIEW}
+                />
+            )
+        }
+        {isProduction && <Plausible domain="ag-grid.com" />}
+
+        {isStaging && <Plausible domain="grid-staging.ag-grid.com" />}
+
+        <style lang="scss" define:vars={{ lightModeCSSUrl, darkModeCSSUrl }}>
+            :root {
+                --dark-icon: var(--darkModeCSSUrl);
+            }
+
+            html[data-dark-mode='true'] {
+                --dark-icon: var(--lightModeCSSUrl);
+            }
+        </style>
+    </head>
+    <body data-is-homepage={isHomepage}>
+        {
+            /* Authorised in script-src by SHA-256 hash (not 'unsafe-inline'); body lives in
+            @utils/csp/inlineScripts so the rendered bytes match the hashed source. */
+        }
+        <script is:inline set:html={DARK_MODE_INIT_SCRIPT} />
+        <script is:inline set:html={KBD_PLATFORM_INIT_SCRIPT} />
+
+        {
+            !isArchive && showAnnouncementBanner && (
+                <AnnouncementBanner
+                    href={urlWithBaseUrl(announcementBannerContent.href)}
+                    title={announcementBannerContent.title}
+                    description={announcementBannerContent.description}
+                    ctaLabel={announcementBannerContent.ctaLabel}
+                    external={announcementBannerContent.external}
+                />
+            )
+        }
+
+        <div id="mainContainer" class:list={styles.mainContainer}>
+            {!hideHeader && <SiteHeader showSearchBar={showSearchBar} showDocsNav={showDocsNav} apiPaths={apiPaths} />}
+            <main class:list={styles.pageMain}>
+                <slot />
+            </main>
+        </div>
+
+        {
+            !hideFooter && (
+                <Footer
+                    client:load
+                    showMicrosoftMessage={showMicrosoftMessage || path === SITE_BASE_URL || path === undefined}
+                    footerItems={footerItems}
+                />
+            )
+        }
+        <DevTools client:only="react" />
+
+        {
+            !isDev && (
+                <GoogleTagManagerBody
+                    googleTagManagerId={PUBLIC_GTM_ID}
+                    googleTagManagerAuth={PUBLIC_GTM_AUTH}
+                    googleTagManagerPreview={PUBLIC_GTM_PREVIEW}
+                />
+            )
+        }
+
+        {
+            /* SE-44: strip heading semantics from the GTM-injected OneTrust cookie banner/modal
+        so it doesn't pollute the document heading outline. Externalised to a 'self' script
+        (like gtm-init.js) to stay off the CSP hash list. No-ops when OneTrust is absent. */
+        }
+        <script is:inline src={urlWithBaseUrl('/scripts/neutralise-onetrust-headings.js')} defer></script>
+    </body>
+</html>

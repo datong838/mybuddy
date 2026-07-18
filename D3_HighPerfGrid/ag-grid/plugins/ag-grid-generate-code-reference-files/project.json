@@ -1,0 +1,61 @@
+{
+  "name": "ag-grid-generate-code-reference-files",
+  "$schema": "../../node_modules/nx/schemas/project-schema.json",
+  "sourceRoot": "plugins/ag-grid-generate-code-reference-files/src",
+  "projectType": "library",
+  "targets": {
+    "build": {
+      "executor": "@nx/js:swc",
+      "dependsOn": ["copySrcFilesForGeneration", "ag-shared:build"],
+      "inputs": ["{projectRoot}/src/**"],
+      "outputs": ["{options.outputPath}"],
+      "options": {
+        "outputPath": "{projectRoot}/dist",
+        "main": "{projectRoot}/src/index.ts",
+        "tsConfig": "{projectRoot}/tsconfig.lib.json",
+        "assets": [
+          "plugins/ag-grid-generate-code-reference-files/*.md",
+          {
+            "input": "./plugins/ag-grid-generate-code-reference-files/src",
+            "glob": "**/!(*.ts|*.snap)",
+            "output": "./src"
+          },
+          {
+            "input": "./plugins/ag-grid-generate-code-reference-files/src",
+            "glob": "**/*.d.ts",
+            "output": "./src"
+          },
+          {
+            "input": "./plugins/ag-grid-generate-code-reference-files",
+            "glob": "generators.json",
+            "output": "."
+          },
+          {
+            "input": "./plugins/ag-grid-generate-code-reference-files",
+            "glob": "executors.json",
+            "output": "."
+          }
+        ]
+      }
+    },
+    "copySrcFilesForGeneration": {
+      "command": "node ./src/copySrcFilesForGeneration.js",
+      "cache": true,
+      "inputs": [
+        "{workspaceRoot}/packages/ag-grid-community/src/propertyKeys.ts",
+        "{workspaceRoot}/packages/ag-grid-community/src/eventTypes.ts"
+      ],
+      "outputs": ["{projectRoot}/src/executors/generate/_copiedFromCore/"],
+      "options": {
+        "cwd": "{projectRoot}"
+      }
+    },
+    "lint": {
+      "command": "eslint",
+      "options": {
+        "cwd": "{projectRoot}"
+      }
+    }
+  },
+  "tags": []
+}

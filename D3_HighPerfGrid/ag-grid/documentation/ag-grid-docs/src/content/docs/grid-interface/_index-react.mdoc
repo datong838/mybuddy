@@ -1,0 +1,20 @@
+{% if isFramework("react") %}
+The grid is configured via props on the `AgGridReact` component. Props consist of simple types, arrays, complex objects and callback functions.
+
+```jsx
+<AgGridReact
+    // Simple attributes
+    rowGroupPanelShow="always"
+    // Component state
+    columnDefs={columnDefs}
+    // Callback
+    getRowHeight={getRowHeight}
+    // Event handlers
+    onCellClicked={onCellClicked}
+/>
+```
+
+{% warning %}
+When setting properties, it's best to treat non-simple types as immutable objects (e.g. by using `useState` or `useMemo`). See [React Best Practices](./react-hooks/).
+{% /warning %}
+{% /if %}

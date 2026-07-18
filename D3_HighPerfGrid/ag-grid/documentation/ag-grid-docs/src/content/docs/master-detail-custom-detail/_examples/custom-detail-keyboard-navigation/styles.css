@@ -1,0 +1,42 @@
+p {
+    font-size: 1em;
+    margin-top: 0;
+}
+
+.container {
+    max-width: 960px;
+    height: 100%;
+    margin: 10% auto;
+    padding: 2.5em;
+}
+
+[role='gridcell'] {
+    display: flex;
+    height: 100%;
+    width: 100%;
+}
+
+form {
+    flex: 1;
+}
+
+form > div {
+    display: flex;
+    flex: 1;
+    height: 100%;
+    background-color: #99999944;
+}
+
+form > div > p {
+    min-width: 33.33%;
+}
+
+form input {
+    width: 100%;
+}
+
+label {
+    display: block;
+    margin: 0.75em 25%;
+    font-weight: bold;
+}

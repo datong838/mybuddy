@@ -1,0 +1,108 @@
+import type { IntegratedModule } from 'ag-charts-types';
+
+import type { ModuleName, _ModuleWithoutApi } from 'ag-grid-community';
+import { AllCommunityModule } from 'ag-grid-community';
+
+import { AdvancedFilterModule } from './advancedFilter/advancedFilterModule';
+import { AiToolkitModule } from './aiToolkit/aiToolkitModule';
+import { BatchEditModule } from './batch-edit/batchEditModule';
+import { CalculatedColumnsModule } from './calculatedColumns/calculatedColumnsModule';
+import { IntegratedChartsModule } from './charts/integratedChartsModule';
+import { ClipboardModule } from './clipboard/clipboardModule';
+import { ColumnsToolPanelModule } from './columnToolPanel/columnsToolPanelModule';
+import { ExcelExportModule } from './excelExport/excelExportModule';
+import { FiltersToolPanelModule, NewFiltersToolPanelModule } from './filterToolPanel/filtersToolPanelModule';
+import { FindModule } from './find/findModule';
+import { FormulaModule } from './formula/formulaModule';
+import { MasterDetailModule } from './masterDetail/masterDetailModule';
+import { ColumnMenuModule, ContextMenuModule } from './menu/menuModule';
+import { MultiFilterModule } from './multiFilter/multiFilterModule';
+import { NotesModule } from './notes/notesModule';
+import { PdfExportModule } from './pdfExport/pdfExportModule';
+import { PivotModule } from './pivot/pivotModule';
+import { CellSelectionModule } from './rangeSelection/rangeSelectionModule';
+import { RichSelectModule } from './richSelect/richSelectModule';
+import { RowGroupingEditModule } from './rowGrouping/rowGroupingEditModule';
+import { GroupFilterModule, RowGroupingModule, RowGroupingPanelModule } from './rowGrouping/rowGroupingModule';
+import { RowNumbersModule } from './rowNumbers/rowNumbersModule';
+import { ServerSideRowModelApiModule, ServerSideRowModelModule } from './serverSideRowModel/serverSideRowModelModule';
+import { SetFilterModule } from './setFilter/setFilterModule';
+import { ShowValuesAsModule } from './showValuesAs/showValuesAsModule';
+import { SideBarModule } from './sideBar/sideBarModule';
+import { SparklinesModule } from './sparkline/sparklinesModule';
+import { StatusBarModule } from './statusBar/statusBarModule';
+import { ToolbarModule } from './toolbar/toolbarModule';
+import { TreeDataModule } from './treeData/treeDataModule';
+import { VERSION } from './version';
+import { ViewportRowModelModule } from './viewportRowModel/viewportRowModelModule';
+
+type AllEnterpriseModuleType = { with: (params: IntegratedModule) => _ModuleWithoutApi } & _ModuleWithoutApi;
+
+const dependsOn = [
+    AllCommunityModule,
+    ClipboardModule,
+    ColumnsToolPanelModule,
+    ExcelExportModule,
+    PdfExportModule,
+    FiltersToolPanelModule,
+    NewFiltersToolPanelModule,
+    MasterDetailModule,
+    ColumnMenuModule,
+    ContextMenuModule,
+    CellSelectionModule,
+    RichSelectModule,
+    RowNumbersModule,
+    RowGroupingModule,
+    RowGroupingPanelModule,
+    GroupFilterModule,
+    ServerSideRowModelModule,
+    ServerSideRowModelApiModule,
+    FormulaModule,
+    NotesModule,
+    SetFilterModule,
+    MultiFilterModule,
+    AdvancedFilterModule,
+    SideBarModule,
+    StatusBarModule,
+    ToolbarModule,
+    ViewportRowModelModule,
+    PivotModule,
+    ShowValuesAsModule,
+    TreeDataModule,
+    FindModule,
+    BatchEditModule,
+    CalculatedColumnsModule,
+    RowGroupingEditModule,
+    AiToolkitModule,
+];
+const moduleName: ModuleName = 'AllEnterprise';
+
+/**
+ * @feature All Enterprise and Community features
+ * Registers all the Grid features: Community and Enterprise.
+ * If using Integrated Charts or Sparklines then the relevant AG Charts module must be provided.
+ * @example
+ * // All Enterprise features
+ * import { ModuleRegistry } from 'ag-grid-community';
+ * import { AllEnterpriseModule } from 'ag-grid-enterprise';
+ *
+ * ModuleRegistry.registerModules([ AllEnterpriseModule ]);
+ * @example
+ * // All Enterprise features including Integrated Charts and Sparklines
+ * import { ModuleRegistry } from 'ag-grid-community';
+ * import { AgChartsEnterpriseModule } from 'ag-charts-enterprise';
+ * import { AllEnterpriseModule } from 'ag-grid-enterprise';
+ *
+ * ModuleRegistry.registerModules([ AllEnterpriseModule.with(AgChartsEnterpriseModule) ]);
+ *
+ */
+export const AllEnterpriseModule: AllEnterpriseModuleType = {
+    with: (params) => ({
+        moduleName,
+        version: VERSION,
+        dependsOn: [...dependsOn, IntegratedChartsModule.with(params), SparklinesModule.with(params)],
+    }),
+    moduleName,
+    version: VERSION,
+    dependsOn,
+};

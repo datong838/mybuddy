@@ -1,0 +1,157 @@
+---
+title: "Status Bar"
+enterprise: true
+---
+
+The Status Bar appears below the grid and contains Status Bar Panels. Panels can be Grid Provided Panels or Custom Status Bar Panels.
+
+Configure the Status Bar with the `statusBar` grid property. The property takes a list of Status Bar Panels.
+
+```{% frameworkTransform=true %}
+const gridOptions = {
+    statusBar: {
+        statusPanels: [
+            { statusPanel: 'agTotalAndFilteredRowCountComponent' },
+            { statusPanel: 'agTotalRowCountComponent' },
+            { statusPanel: 'agFilteredRowCountComponent' },
+            { statusPanel: 'agSelectedRowCountComponent' },
+            { statusPanel: 'agAggregationComponent' }
+        ]
+    }
+}
+```
+
+Some Status Panels only show when a Cell Selection is present.
+
+{% gridExampleRunner title="Status Bar Simple" name="status-bar-simple" /%}
+
+## Provided Panels
+
+The Status Bar Panels provided by the grid are as follows:
+
+- `agTotalRowCountComponent`: Provides the total row count.
+- `agTotalAndFilteredRowCountComponent`: Provides the total and filtered row count.
+- `agFilteredRowCountComponent`: Provides the filtered row count.
+- `agSelectedRowCountComponent`: Provides the selected row count.
+- `agAggregationComponent`: Provides aggregations on the selected range.
+
+## Configuration
+
+The `align` property can be `left`, `center` or `right` (default).
+
+The `key` is used for [Accessing Panel Instances](#accessing-instances) via the grid API `getStatusPanel(key)`. This can be useful for interacting with Custom Panels.
+
+Additional `props` are passed to Status Panels using `statusPanelParams`. The provided panel `agAggregationComponent` can have `aggFuncs` passed.
+
+```{% frameworkTransform=true %}
+const gridOptions = {
+    statusBar: {
+        statusPanels: [
+            {
+                key: 'aUniqueString',
+                statusPanel: 'agTotalRowCountComponent',
+                align: 'left'
+            },
+            {
+                statusPanel: 'agAggregationComponent',
+                statusPanelParams: {
+                    // possible values are: 'count', 'sum', 'min', 'max', 'avg'
+                    aggFuncs: ['avg', 'sum']
+                }
+            }
+        ]
+    }
+}
+```
+
+Labels (e.g. "Rows", "Total Rows", "Average") and number formatting are changed using the grid's [Localisation](./localisation/).
+
+The Aggregation Panel `agAggregationComponent` works with number and `bigint` values. When `bigint` values are present, `avg` uses integer division and discards the fractional part.
+
+{% gridExampleRunner title="Status Bar Params" name="status-bar" /%}
+
+The Status Bar sizes its height to fit content. When no panels are visible, the Status Bar will have zero height (not be shown). Add CSS to have a fixed height on the Status Bar.
+
+```css
+.ag-status-bar {
+    min-height: 35px;
+}
+```
+
+## Value Formatting
+
+Each Status Bar Panel can have its displayed values customised using a **valueFormatter** function. This allows for formatting values before they are rendered in the UI.
+
+The `valueFormatter` function is provided in the `statusPanelParams` object.
+
+```{% frameworkTransform=true %}
+const gridOptions = {
+    statusBar: {
+        statusPanels: [
+            {
+                statusPanel: 'agTotalAndFilteredRowCountComponent',
+                statusPanelParams: {
+                    valueFormatter: (statusPanelValueFormatterParams) => {
+                        const { value } = statusPanelValueFormatterParams;
+                        if (value > 1000) {
+                            return value / 1000 + ' K';
+                        }
+                        return String(value);
+                    }
+                }
+            },
+        ]
+    }
+}
+```
+
+### IProvidedStatusPanelParams
+
+{% interfaceDocumentation interfaceName="IProvidedStatusPanelParams" /%}
+
+{% gridExampleRunner title="Custom Value Formatter" name="status-bar-value-formatter" /%}
+
+## Custom Panels
+
+Applications that are using [Server-side Data](./row-models/) or which require bespoke Status Bar Panels can provide their own custom Status Bar panels.
+
+Clicking on the button in the status bar will log the number of selected rows to the developer console.
+
+{% gridExampleRunner title="Custom Panels" name="custom-component" /%}
+
+{% partial file="./_component-interface-javascript.mdoc" /%}
+{% partial file="./_component-interface-angular.mdoc" /%}
+{% partial file="./_component-interface-react.mdoc" /%}
+{% partial file="./_component-interface-vue.mdoc" /%}
+
+{% if isFramework("javascript", "angular", "vue") %}
+{% interfaceDocumentation interfaceName="IStatusPanelParams" /%}
+{% /if %}
+
+{% if isFramework("react") %}
+{% interfaceDocumentation interfaceName="CustomStatusPanelProps" /%}
+{% /if %}
+
+Custom Panels are configured alongside Provided Panels.
+
+{% partial file="./_configure-javascript.mdoc" /%}
+{% partial file="./_configure-angular.mdoc" /%}
+{% partial file="./_configure-react.mdoc" /%}
+{% partial file="./_configure-vue.mdoc" /%}
+
+Custom Panels can listen to grid events to react to grid changes. An easy way to listen to grid events from inside a Status Panel is using the API provided via `props`.
+
+{% partial file="./_init-javascript.mdoc" /%}
+{% partial file="./_init-angular.mdoc" /%}
+{% partial file="./_init-react.mdoc" /%}
+{% partial file="./_init-vue.mdoc" /%}
+
+## Accessing Instances
+
+Use the grid API `getStatusPanel(key)` to access a panel instance. This can be used to expose Custom Panels to the application.
+
+{% apiDocumentation source="grid-api/api.json" section="accessories" names=["getStatusPanel"] /%}
+
+Clicking on the button in the status bar will log the number of selected rows to the developer console.
+
+{% gridExampleRunner title="Get Status Bar Panel Instance" name="component-instance" /%}

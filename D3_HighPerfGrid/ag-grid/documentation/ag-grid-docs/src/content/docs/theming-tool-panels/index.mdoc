@@ -1,0 +1,69 @@
+---
+title: "Theming: Customising Tool Panels"
+description: "$framework Data Grid theming: style the Filters Tool Panel and Columns Tool Panel with theme parameters."
+---
+
+Style the Filters [Tool Panel](./component-tool-panel/) and [Columns Tool Panel](./tool-panel-columns/).
+
+## Styling the Sidebar Area
+
+The sidebar is a tabbed container for opening and switching between tool panels. The grid exposes many theme parameters for customising the sidebar and tabbed buttons. For the full list, see the [Sidebar section](./theming-api/#reference-sidebar) of the parameters reference.
+
+```js
+const myTheme = themeQuartz.withParams({
+    sideBarBackgroundColor: '#08f3',
+    sideButtonBarBackgroundColor: '#fff6',
+    sideButtonBarTopPadding: 20,
+    sideButtonSelectedUnderlineColor: 'orange',
+    sideButtonTextColor: '#0009',
+    sideButtonHoverBackgroundColor: '#fffa',
+    sideButtonSelectedBackgroundColor: '#08f1',
+    sideButtonHoverTextColor: '#000c',
+    sideButtonSelectedTextColor: '#000e',
+    sideButtonSelectedBorder: false,
+});
+```
+
+To create effects beyond what is possible with theme parameters, use CSS selectors:
+
+```css
+.ag-side-button.ag-selected {
+    text-shadow: 0 0 8px #039;
+    font-weight: 500;
+}
+```
+
+{% gridExampleRunner title="Tool Panel Area Styling" name="tool-panel-tabs"  exampleHeight=450 /%}
+
+## Styling the Columns Tool Panel
+
+The `--ag-column-select-indent-size` CSS Variable sets the indent of each column group within the columns tool panel. For further customisation, use CSS selectors.
+
+This example demonstrates changing the child indent for grouped columns and the style of the column drop component in the Row Groups area:
+
+```js
+const myTheme = themeQuartz.withParams({
+    columnSelectIndentSize: 40,
+    columnDropCellBackgroundColor: 'purple',
+    columnDropCellTextColor: 'white',
+    columnDropCellDragHandleColor: 'white',
+    columnDropCellBorder: { color: 'yellow', style: 'dashed', width: 2 },
+});
+```
+
+```css
+.ag-column-drop-cell {
+    box-shadow: 0 0 4px purple;
+}
+/* The different sections within the columns tool panel use
+   flex sizing to adapt to vertical space, use min-height
+   and max-height to constrain their heights */
+.ag-column-drop-vertical-rowgroup {
+    min-height: 120px;
+}
+.ag-column-drop-vertical-aggregation {
+    min-height: 90px;
+}
+```
+
+{% gridExampleRunner title="Columns Tool Panel" name="column-tool-panel"  exampleHeight=450 /%}

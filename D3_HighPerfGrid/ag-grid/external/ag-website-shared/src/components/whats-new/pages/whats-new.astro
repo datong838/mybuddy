@@ -1,0 +1,60 @@
+---
+import { getEntry, type CollectionEntry } from 'astro:content';
+import Layout from '@layouts/Layout.astro';
+import { DocsNavFromLocalStorage } from '@ag-website-shared/components/docs-navigation/DocsNavFromLocalStorage';
+import { parseVersion } from '@ag-website-shared/utils/parseVersion';
+import { Version, type VersionProps } from '../components/Version';
+import type { Library } from '@ag-grid-types';
+import styles from '../WhatsNew.module.scss';
+import whatsNewData from '@ag-website-shared/content/whats-new/data.json';
+
+interface Props {
+    site: Library;
+    versionsData: VersionProps[];
+}
+
+const { site, versionsData } = Astro.props;
+
+const { name, blogPrefix } = whatsNewData[site];
+
+const { data: docsNavData } = (await getEntry('docsNav', 'nav')) as CollectionEntry<'docsNav'>;
+---
+
+<Layout
+    title={`${name} What's new`}
+    description={`See what's new in recent ${name} versions. View feature highlights, browse release notes or read our release blogs. Includes major and minor releases.`}
+    showDocsNav={true}
+    showSearchBar={true}
+>
+    <div class:list={['contentViewport layout-grid']}>
+        <DocsNavFromLocalStorage client:load menuData={docsNavData} pageName={'whats-new'} />
+
+        <div class={styles.whatsNewContainer}>
+            <h1>What's New in {name}</h1>
+            <p class={styles.description}>See what's new in recent {name} versions.</p>
+            <div class={styles.versions}>
+                {
+                    versionsData
+                        .filter((version) => version.highlights)
+                        .slice(0, 12)
+                        .map((versionInfo, index) => {
+                            const { major, minor } = parseVersion(versionInfo.version);
+                            const blogUrl = `${minor ? `${blogPrefix}${major}-${minor}` : `${blogPrefix}${major}`}/`;
+
+                            return (
+                                <Version
+                                    client:load
+                                    isLatest={index === 0}
+                                    blogUrl={versionInfo.hideBlogPostLink ? undefined : blogUrl}
+                                    version={versionInfo.version}
+                                    date={versionInfo.date}
+                                    highlights={versionInfo.highlights}
+                                    notesPath={versionInfo.notesPath}
+                                />
+                            );
+                        })
+                }
+            </div>
+        </div>
+    </div>
+</Layout>

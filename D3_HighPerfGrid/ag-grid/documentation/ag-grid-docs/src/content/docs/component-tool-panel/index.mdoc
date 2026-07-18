@@ -1,0 +1,44 @@
+---
+title: "Tool Panel Component"
+enterprise: true
+---
+
+Custom Tool Panel Components can be included into the grid's Side Bar. Implement these when you require more Tool Panels to meet your application requirements.
+
+The example below provides a 'Custom Stats' Tool Panel to demonstrates how to create and register a Custom Tool Panel Component with the grid and include it the Side Bar:
+
+{% gridExampleRunner title="Custom Stats" name="custom-stats" /%}
+
+## Implementing a Tool Panel Component
+
+{% partial file="./_component-interface-javascript.mdoc" /%}
+{% partial file="./_component-interface-angular.mdoc" /%}
+{% partial file="./_component-interface-react.mdoc" /%}
+{% partial file="./_component-interface-vue.mdoc" /%}
+
+{% if isFramework("javascript", "angular", "vue") %}
+{% interfaceDocumentation interfaceName="IToolPanelParams" /%}
+{% /if %}
+
+{% if isFramework("react") %}
+{% interfaceDocumentation interfaceName="CustomToolPanelProps" /%}
+{% /if %}
+
+{% if isFramework("react") %}
+{% note %}
+In previous versions of the grid, custom components were declared in an imperative way. See [Migrating to Use reactiveCustomComponents](./upgrading-to-ag-grid-31-1/#migrating-custom-components-to-use-reactivecustomcomponents-option) for details on how to migrate to the current format.
+{% /note %}
+{% /if %}
+
+## Registering Tool Panel Components
+
+Registering a Tool Panel component follows the same approach as any other custom components in the grid. For more details see: [Registering Custom Components](./components/#registering-custom-components).
+
+Once the Tool Panel Component is registered with the grid it needs to be included into the Side Bar. The following snippet illustrates this:
+
+{% partial file="./_configure-javascript.mdoc" /%}
+{% partial file="./_configure-angular.mdoc" /%}
+{% partial file="./_configure-react.mdoc" /%}
+{% partial file="./_configure-vue.mdoc" /%}
+
+For more details on the configuration properties above, refer to the [Side Bar Configuration](./side-bar/#sidebardef-configuration) section.

@@ -1,0 +1,21 @@
+
+This project is made up of many packages. There are two license types: MIT and Commercial.
+
+Each package has it's own license file explaining the license for that package.
+
+The following packages are MIT licensed:
+
++ @ag-grid-community/locale
++ @ag-grid-community/styles
++ ag-grid-angular
++ ag-grid-react
++ ag-grid-vue3
++ ag-grid-community
+
+The following packages are Commercial licensed:
+
+
++ ag-grid-enterprise
+
+To view the commercial license for the commercial projects please refer to each projects respective license - for example for
+ag-grid-enterprise refer to packages/ag-grid-enterprise/LICENSE.html.

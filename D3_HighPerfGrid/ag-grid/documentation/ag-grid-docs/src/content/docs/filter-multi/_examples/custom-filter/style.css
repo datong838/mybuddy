@@ -1,0 +1,26 @@
+.example-wrapper {
+    display: flex;
+    flex-direction: column;
+    height: 100%;
+}
+
+#myGrid {
+    flex: 1 1 0px;
+    width: 100%;
+}
+
+.year-filter {
+    width: 200px;
+}
+
+.year-filter > * {
+    margin: 8px 12px;
+}
+
+.year-filter > div:first-child {
+    font-weight: bold;
+}
+
+.year-filter > label {
+    display: inline-block;
+}

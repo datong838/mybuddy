@@ -1,0 +1,732 @@
+[
+    {
+        "group": {
+            "name": "AI Features"
+        },
+        "items": [
+            {
+                "label": {
+                    "name": "MCP Server",
+                    "link": "grid:./mcp-server/"
+                },
+                "community": true,
+                "enterprise": true,
+                "chartsGrid": true
+            },
+            {
+                "label": {
+                    "name": "AI Toolkit",
+                    "link": "grid:./ai-toolkit/"
+                },
+                "community": false,
+                "enterprise": true,
+                "chartsGrid": true
+            }
+        ]
+    },
+    {
+        "group": {
+            "name": "Charting"
+        },
+        "items": [
+            {
+                "label": {
+                    "name": "Sparklines",
+                    "link": "grid:./sparklines-overview/"
+                },
+                "community": false,
+                "enterprise": true,
+                "chartsGrid": true
+            },
+            {
+                "label": {
+                    "name": "Integrated Charts",
+                    "link": "grid:./integrated-charts/"
+                },
+                "community": false,
+                "enterprise": false,
+                "chartsGrid": true
+            },
+            {
+                "label": {
+                    "name": "AG Charts Enterprise ",
+                    "link": "https://www.ag-grid.com/charts/"
+                },
+                "community": false,
+                "enterprise": false,
+                "chartsGrid": true
+            }
+        ]
+    },
+    {
+        "group": {
+            "name": "Columns"
+        },
+        "items": [
+            {
+                "name": "Basic Column Operations",
+                "isSubGroup": true,
+                "items": [
+                    {
+                        "label": {
+                            "name": "Headers",
+                            "link": "grid:./column-headers/"
+                        },
+                        "community": true,
+                        "enterprise": true,
+                        "chartsGrid": true
+                    },
+                    {
+                        "label": {
+                            "name": "Groups",
+                            "link": "grid:./column-groups/"
+                        },
+                        "community": true,
+                        "enterprise": true,
+                        "chartsGrid": true
+                    },
+                    {
+                        "label": {
+                            "name": "Sizing",
+                            "link": "grid:./column-sizing/"
+                        },
+                        "community": true,
+                        "enterprise": true,
+                        "chartsGrid": true
+                    },
+                    {
+                        "label": {
+                            "name": "Moving",
+                            "link": "grid:./column-moving/"
+                        },
+                        "community": true,
+                        "enterprise": true,
+                        "chartsGrid": true
+                    },
+                    {
+                        "label": {
+                            "name": "Pinning",
+                            "link": "grid:./column-pinning/"
+                        },
+                        "community": true,
+                        "enterprise": true,
+                        "chartsGrid": true
+                    },
+                    {
+                        "label": {
+                            "name": "Spanning",
+                            "link": "grid:./column-spanning/"
+                        },
+                        "community": true,
+                        "enterprise": true,
+                        "chartsGrid": true
+                    }
+                ]
+            },
+            {
+                "label": {
+                    "name": "Auto-Generate Columns",
+                    "link": "grid:./auto-generate-columns/"
+                },
+                "community": true,
+                "enterprise": true,
+                "chartsGrid": true
+            },
+            {
+                "label": {
+                    "name": "Calculated Columns",
+                    "link": "grid:./calculated-columns/"
+                },
+                "community": false,
+                "enterprise": true,
+                "chartsGrid": true
+            }
+        ]
+    },
+    {
+        "group": {
+            "name": "Filtering"
+        },
+        "items": [
+            {
+                "name": "Basic Column Filters",
+                "isSubGroup": true,
+                "items": [
+                    {
+                        "label": {
+                            "name": "Text Filter",
+                            "link": "grid:./filter-text/"
+                        },
+                        "community": true,
+                        "enterprise": true,
+                        "chartsGrid": true
+                    },
+                    {
+                        "label": {
+                            "name": "Number Filter",
+                            "link": "grid:./filter-number/"
+                        },
+                        "community": true,
+                        "enterprise": true,
+                        "chartsGrid": true
+                    },
+                    {
+                        "label": {
+                            "name": "Date Filter",
+                            "link": "grid:./filter-date/"
+                        },
+                        "community": true,
+                        "enterprise": true,
+                        "chartsGrid": true
+                    }
+                ]
+            },
+            {
+                "label": {
+                    "name": "Quick Filter",
+                    "link": "grid:./filter-quick/"
+                },
+                "community": true,
+                "enterprise": true,
+                "chartsGrid": true
+            },
+            {
+                "label": {
+                    "name": "External Filter",
+                    "link": "grid:./filter-external/"
+                },
+                "community": true,
+                "enterprise": true,
+                "chartsGrid": true
+            },
+            {
+                "name": "Advanced Column Filters",
+                "isSubGroup": true,
+                "items": [
+                    {
+                        "label": {
+                            "name": "Set Filter",
+                            "link": "grid:./filter-set/"
+                        },
+                        "community": false,
+                        "enterprise": true,
+                        "chartsGrid": true
+                    },
+                    {
+                        "label": {
+                            "name": "Multi Filter",
+                            "link": "grid:./filter-multi/"
+                        },
+                        "community": false,
+                        "enterprise": true,
+                        "chartsGrid": true
+                    }
+                ]
+            },
+            {
+                "label": {
+                    "name": "Advanced Filter",
+                    "link": "grid:./filter-advanced/"
+                },
+                "community": false,
+                "enterprise": true,
+                "chartsGrid": true
+            }
+        ]
+    },
+    {
+        "group": {
+            "name": "Selection"
+        },
+        "items": [
+            {
+                "label": {
+                    "name": "Row Selection",
+                    "link": "grid:./row-selection/"
+                },
+                "community": true,
+                "enterprise": true,
+                "chartsGrid": true
+            },
+            {
+                "label": {
+                    "name": "Row Numbers",
+                    "link": "grid:./row-numbers/"
+                },
+                "community": false,
+                "enterprise": true,
+                "chartsGrid": true
+            },
+            {
+                "label": {
+                    "name": "Cell Range Selection",
+                    "link": "grid:./range-selection/"
+                },
+                "community": false,
+                "enterprise": true,
+                "chartsGrid": true
+            },
+            {
+                "label": {
+                    "name": "Fill Handle",
+                    "link": "grid:./range-selection-fill-handle/"
+                },
+                "community": false,
+                "enterprise": true,
+                "chartsGrid": true
+            }
+        ]
+    },
+    {
+        "group": {
+            "name": "Cells"
+        },
+        "items": [
+            {
+                "label": {
+                    "name": "Formulas",
+                    "link": "grid:./formulas"
+                },
+                "community": false,
+                "enterprise": true,
+                "chartsGrid": true
+            },
+            {
+                "label": {
+                    "name": "Find",
+                    "link": "grid:./find"
+                },
+                "community": false,
+                "enterprise": true,
+                "chartsGrid": true
+            },
+            {
+                "label": {
+                    "name": "Cell Notes",
+                    "link": "grid:./notes"
+                },
+                "community": false,
+                "enterprise": true,
+                "chartsGrid": true
+            }
+        ]
+    },
+    {
+        "group": {
+            "name": "Cell Editing"
+        },
+        "items": [
+            {
+                "name": "Basic Cell Editors",
+                "isSubGroup": true,
+                "items": [
+                    {
+                        "label": {
+                            "name": "Text Editor",
+                            "link": "grid:./provided-cell-editors-text/"
+                        },
+                        "community": true,
+                        "enterprise": true,
+                        "chartsGrid": true
+                    },
+                    {
+                        "label": {
+                            "name": "Number Editor",
+                            "link": "grid:./provided-cell-editors-number/"
+                        },
+                        "community": true,
+                        "enterprise": true,
+                        "chartsGrid": true
+                    },
+                    {
+                        "label": {
+                            "name": "Date Editor",
+                            "link": "grid:./provided-cell-editors-date/"
+                        },
+                        "community": true,
+                        "enterprise": true,
+                        "chartsGrid": true
+                    },
+                    {
+                        "label": {
+                            "name": "Checkbox Editor",
+                            "link": "grid:./provided-cell-editors-checkbox/"
+                        },
+                        "community": true,
+                        "enterprise": true,
+                        "chartsGrid": true
+                    },
+                    {
+                        "label": {
+                            "name": "Large Text Editor",
+                            "link": "grid:./provided-cell-editors-large-text/"
+                        },
+                        "community": true,
+                        "enterprise": true,
+                        "chartsGrid": true
+                    },
+                    {
+                        "label": {
+                            "name": "Select Editor",
+                            "link": "grid:./provided-cell-editors-select/"
+                        },
+                        "community": true,
+                        "enterprise": true,
+                        "chartsGrid": true
+                    }
+                ]
+            },
+            {
+                "label": {
+                    "name": "Batch Editing",
+                    "link": "grid:./cell-editing-batch/"
+                },
+                "community": false,
+                "enterprise": true,
+                "chartsGrid": true
+            },
+            {
+                "label": {
+                    "name": "Undo / Redo",
+                    "link": "grid:./undo-redo-edits/"
+                },
+                "community": true,
+                "enterprise": true,
+                "chartsGrid": true
+            },
+            {
+                "label": {
+                    "name": "Advanced Select Editor",
+                    "link": "grid:./provided-cell-editors-rich-select/"
+                },
+                "community": false,
+                "enterprise": true,
+                "chartsGrid": true
+            }
+        ]
+    },
+    {
+        "group": {
+            "name": "Import & Export"
+        },
+        "items": [
+            {
+                "label": {
+                    "name": "CSV Export",
+                    "link": "grid:./csv-export/"
+                },
+                "community": true,
+                "enterprise": true,
+                "chartsGrid": true
+            },
+            {
+                "label": {
+                    "name": "Excel Export",
+                    "link": "grid:./excel-export/"
+                },
+                "community": false,
+                "enterprise": true,
+                "chartsGrid": true
+            },
+            {
+                "label": {
+                    "name": "Clipboard Operations",
+                    "link": "grid:./clipboard/"
+                },
+                "community": false,
+                "enterprise": true,
+                "chartsGrid": true
+            },
+            {
+                "label": {
+                    "name": "Drag & Drop",
+                    "link": "grid:./drag-and-drop/"
+                },
+                "community": true,
+                "enterprise": true,
+                "chartsGrid": true
+            }
+        ]
+    },
+    {
+        "group": {
+            "name": "Group & Pivot"
+        },
+        "items": [
+            {
+                "label": {
+                    "name": "Aggregation",
+                    "link": "grid:./aggregation/"
+                },
+                "community": false,
+                "enterprise": true,
+                "chartsGrid": true
+            },
+            {
+                "label": {
+                    "name": "Row Grouping",
+                    "link": "grid:./grouping/"
+                },
+                "community": false,
+                "enterprise": true,
+                "chartsGrid": true
+            },
+            {
+                "label": {
+                    "name": "Pivoting",
+                    "link": "grid:./pivoting/"
+                },
+                "community": false,
+                "enterprise": true,
+                "chartsGrid": true
+            },
+            {
+                "label": {
+                    "name": "Tree Data",
+                    "link": "grid:./tree-data/"
+                },
+                "community": false,
+                "enterprise": true,
+                "chartsGrid": true
+            },
+            {
+                "label": {
+                    "name": "Master Detail",
+                    "link": "grid:./server-side-model-master-detail/"
+                },
+                "community": false,
+                "enterprise": true,
+                "chartsGrid": true
+            }
+        ]
+    },
+    {
+        "group": {
+            "name": "Server-side Data"
+        },
+        "items": [
+            {
+                "name": "Basic Operations",
+                "isSubGroup": true,
+                "items": [
+                    {
+                        "label": {
+                            "name": "Sorting",
+                            "link": "grid:./infinite-scrolling/#sorting--filtering"
+                        },
+                        "community": true,
+                        "enterprise": true,
+                        "chartsGrid": true
+                    },
+                    {
+                        "label": {
+                            "name": "Filtering",
+                            "link": "grid:./infinite-scrolling/#sorting--filtering"
+                        },
+                        "community": true,
+                        "enterprise": true,
+                        "chartsGrid": true
+                    },
+                    {
+                        "label": {
+                            "name": "Selection",
+                            "link": "grid:./infinite-scrolling/#selection"
+                        },
+                        "community": true,
+                        "enterprise": true,
+                        "chartsGrid": true
+                    },
+                    {
+                        "label": {
+                            "name": "Pagination",
+                            "link": "grid:./infinite-scrolling/#pagination"
+                        },
+                        "community": true,
+                        "enterprise": true,
+                        "chartsGrid": true
+                    }
+                ]
+            },
+            {
+                "name": "Advanced Operations",
+                "isSubGroup": true,
+                "items": [
+                    {
+                        "label": {
+                            "name": "Row Grouping",
+                            "link": "grid:./grouping/"
+                        },
+                        "community": false,
+                        "enterprise": true,
+                        "chartsGrid": true
+                    },
+                    {
+                        "label": {
+                            "name": "Pivoting",
+                            "link": "grid:./pivoting/"
+                        },
+                        "community": false,
+                        "enterprise": true,
+                        "chartsGrid": true
+                    },
+                    {
+                        "label": {
+                            "name": "Tree Data",
+                            "link": "grid:./server-side-model-tree-data/"
+                        },
+                        "community": false,
+                        "enterprise": true,
+                        "chartsGrid": true
+                    },
+                    {
+                        "label": {
+                            "name": "Master Detail",
+                            "link": "grid:./server-side-model-master-detail/"
+                        },
+                        "community": false,
+                        "enterprise": true,
+                        "chartsGrid": true
+                    },
+                    {
+                        "label": {
+                            "name": "Transactions",
+                            "link": "grid:./server-side-model-updating-transactions/"
+                        },
+                        "community": false,
+                        "enterprise": true,
+                        "chartsGrid": true
+                    }
+                ]
+            }
+        ]
+    },
+    {
+        "group": {
+            "name": "Accessories"
+        },
+        "items": [
+            {
+                "label": {
+                    "name": "Column Menu",
+                    "link": "grid:./column-menu/"
+                },
+                "community": false,
+                "enterprise": true,
+                "chartsGrid": true
+            },
+            {
+                "label": {
+                    "name": "Context Menu",
+                    "link": "grid:./context-menu/"
+                },
+                "community": false,
+                "enterprise": true,
+                "chartsGrid": true
+            },
+            {
+                "label": {
+                    "name": "Columns Tool Panel",
+                    "link": "grid:./tool-panel-columns/"
+                },
+                "community": false,
+                "enterprise": true,
+                "chartsGrid": true
+            },
+            {
+                "label": {
+                    "name": "Filters Tool Panel",
+                    "link": "grid:./tool-panel-filters/"
+                },
+                "community": false,
+                "enterprise": true,
+                "chartsGrid": true
+            },
+            {
+                "label": {
+                    "name": "Status Bar",
+                    "link": "grid:./status-bar/"
+                },
+                "community": false,
+                "enterprise": true,
+                "chartsGrid": true
+            }
+        ]
+    },
+    {
+        "group": {
+            "name": "Miscellaneous"
+        },
+        "items": [
+            {
+                "label": {
+                    "name": "Accessibility",
+                    "link": "grid:./accessibility/"
+                },
+                "community": true,
+                "enterprise": true,
+                "chartsGrid": true
+            },
+            {
+                "label": {
+                    "name": "Localisation",
+                    "link": "grid:./localisation/"
+                },
+                "community": true,
+                "enterprise": true,
+                "chartsGrid": true
+            },
+            {
+                "label": {
+                    "name": "Custom Components",
+                    "link": "grid:./components/"
+                },
+                "community": true,
+                "enterprise": true,
+                "chartsGrid": true
+            }
+        ]
+    },
+    {
+        "group": {
+            "name": "Support"
+        },
+        "items": [
+            {
+                "label": {
+                    "name": "Enterprise Support",
+                    "link": "grid:./community-vs-enterprise/"
+                },
+                "community": {
+                    "value": false,
+                    "detail": "Community support via GitHub"
+                },
+                "enterprise": {
+                    "value": true,
+                    "detail": "Enterprise support via Zendesk"
+                },
+                "chartsGrid": {
+                    "value": true,
+                    "detail": "Enterprise support via Zendesk"
+                }
+            },
+            {
+                "label": {
+                    "name": "Perpetual License",
+                    "link": "grid:./community-vs-enterprise/"
+                },
+                "community": {
+                    "value": false,
+                    "detail": "<a href='https://www.ag-grid.com/eula/AG-Grid-Community-License.html'>MIT license</a>"
+                },
+                "enterprise": {
+                    "value": true,
+                    "detail": "Including 1 year of updates (see <a href='https://www.ag-grid.com/eula/AG-Grid-Enterprise-License-Latest.html'>EULA</a>)"
+                },
+                "chartsGrid": {
+                    "value": true,
+                    "detail": "Including 1 year of updates (see <a href='https://www.ag-grid.com/eula/AG-Grid-Enterprise-License-Latest.html'>EULA</a>)"
+                }
+            }
+        ]
+    }
+]

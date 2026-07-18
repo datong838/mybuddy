@@ -1,0 +1,92 @@
+import { RefPlaceholder, _addStylesToElement, _removeAriaSort, _setAriaSort } from 'ag-stack';
+
+import type { HeaderStyle } from '../../../entities/colDef';
+import type { IHeaderComp } from '../../../interfaces/iHeader';
+import type { UserCompDetails } from '../../../interfaces/iUserCompDetails';
+import type { ElementParams } from '../../../utils/element';
+import { AbstractHeaderCellComp } from '../abstractCell/abstractHeaderCellComp';
+import type { HeaderCellCtrl, IHeaderCellComp } from './headerCellCtrl';
+
+const HeaderCellElement: ElementParams = {
+    tag: 'div',
+    cls: 'ag-header-cell',
+    role: 'columnheader',
+    children: [
+        { tag: 'div', ref: 'eResize', cls: 'ag-header-cell-resize', role: 'presentation' },
+        { tag: 'div', ref: 'eHeaderCompWrapper', cls: 'ag-header-cell-comp-wrapper', role: 'presentation' },
+    ],
+};
+export class HeaderCellComp extends AbstractHeaderCellComp<HeaderCellCtrl> {
+    private readonly eResize: HTMLElement = RefPlaceholder;
+    private readonly eHeaderCompWrapper: HTMLElement = RefPlaceholder;
+
+    private headerComp: IHeaderComp | undefined;
+    private headerCompGui: HTMLElement | undefined;
+    private headerCompVersion = 0;
+
+    constructor(ctrl: HeaderCellCtrl) {
+        super(HeaderCellElement, ctrl);
+    }
+
+    public postConstruct(): void {
+        const eGui = this.getGui();
+
+        const refreshSelectAllGui = () => {
+            const selectAllGui = this.ctrl.getSelectAllGui();
+            if (selectAllGui) {
+                this.eResize.insertAdjacentElement('afterend', selectAllGui);
+                this.addDestroyFunc(() => selectAllGui.remove());
+            }
+        };
+
+        const compProxy: IHeaderCellComp = {
+            setWidth: (width) => (eGui.style.width = width),
+            toggleCss: (cssClassName, on) => this.toggleCss(cssClassName, on),
+            setUserStyles: (styles: HeaderStyle) => _addStylesToElement(eGui, styles),
+            setAriaSort: (sort) => (sort ? _setAriaSort(eGui, sort) : _removeAriaSort(eGui)),
+            setUserCompDetails: (compDetails) => this.setUserCompDetails(compDetails),
+            getUserCompInstance: () => this.headerComp,
+            refreshSelectAllGui,
+            removeSelectAllGui: () => this.ctrl.getSelectAllGui()?.remove(),
+        };
+
+        this.ctrl.setComp(compProxy, this.getGui(), this.eResize, this.eHeaderCompWrapper, undefined);
+
+        refreshSelectAllGui();
+    }
+
+    public override destroy(): void {
+        this.destroyHeaderComp();
+        super.destroy();
+    }
+
+    private destroyHeaderComp(): void {
+        if (this.headerComp) {
+            this.headerCompGui?.remove();
+            this.headerComp = this.destroyBean(this.headerComp);
+            this.headerCompGui = undefined;
+        }
+    }
+
+    private setUserCompDetails(compDetails: UserCompDetails): void {
+        this.headerCompVersion++;
+
+        const versionCopy = this.headerCompVersion;
+
+        compDetails.newAgStackInstance().then((comp) => this.afterCompCreated(versionCopy, comp));
+    }
+
+    private afterCompCreated(version: number, headerComp: IHeaderComp): void {
+        if (version != this.headerCompVersion || !this.isAlive()) {
+            this.destroyBean(headerComp);
+            return;
+        }
+
+        this.destroyHeaderComp();
+
+        this.headerComp = headerComp;
+        this.headerCompGui = headerComp.getGui();
+        this.eHeaderCompWrapper.appendChild(this.headerCompGui);
+        this.ctrl.setDragSource(this.getGui());
+    }
+}

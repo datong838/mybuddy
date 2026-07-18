@@ -1,0 +1,18 @@
+#wrapper {
+    height: 100%;
+    width: 100%;
+    display: grid;
+    grid-template-rows: 300px 300px auto;
+    grid-template-columns: 50% 50%;
+    gap: 10px;
+    padding: 10px;
+    box-sizing: border-box;
+}
+
+#areaChart {
+    grid-column: span 2;
+}
+
+#wrapper > div:last-child {
+    grid-column: span 2;
+}

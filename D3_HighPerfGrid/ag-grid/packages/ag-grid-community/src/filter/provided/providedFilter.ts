@@ -1,0 +1,367 @@
+import type { AgPromise } from 'ag-stack';
+import { _debounce } from 'ag-stack';
+
+import type { AgColumn } from '../../entities/agColumn';
+import type { ContainerType, IAfterGuiAttachedParams } from '../../interfaces/iAfterGuiAttachedParams';
+import type {
+    FilterDisplayParams,
+    FilterDisplayState,
+    IDoesFilterPassParams,
+    IFilterComp,
+} from '../../interfaces/iFilter';
+import { PositionableFeature } from '../../rendering/features/positionableFeature';
+import type { ElementParams } from '../../utils/element';
+import type { ComponentSelector } from '../../widgets/component';
+import { Component } from '../../widgets/component';
+import { ManagedFocusFeature } from '../../widgets/managedFocusFeature';
+import type { FilterLocaleTextKey } from '../filterLocaleText';
+import { translateForFilter } from '../filterLocaleText';
+import type {
+    IProvidedFilter,
+    IProvidedFilterParams,
+    ProvidedFilterModel,
+    ProvidedFilterParams,
+} from './iProvidedFilter';
+import { _isUseApplyButton, getDebounceMs } from './providedFilterUtils';
+
+/** temporary type until `ProvidedFilterParams` is updated as breaking change */
+type ProvidedFilterDisplayParams<M extends ProvidedFilterModel> = IProvidedFilterParams &
+    FilterDisplayParams<any, any, M>;
+
+/**
+ * Contains common logic to all provided filters (apply button, clear button, etc).
+ * All the filters that come with AG Grid extend this class. User filters do not
+ * extend this class.
+ *
+ * @param M type of filter-model managed by the concrete sub-class that extends this type
+ * @param V type of value managed by the concrete sub-class that extends this type
+ */
+export abstract class ProvidedFilter<
+    M extends ProvidedFilterModel,
+    // eslint-disable-next-line @typescript-eslint/no-unused-vars
+    V,
+    P extends ProvidedFilterDisplayParams<M> = ProvidedFilterDisplayParams<M>,
+>
+    extends Component
+    implements IProvidedFilter, IFilterComp
+{
+    protected params: P;
+
+    private applyActive = false;
+    // a debounce of the apply method
+    private applyDebounced: () => void;
+    private debouncePending = false;
+    protected state: FilterDisplayState<M>;
+    protected lastContainerType?: ContainerType;
+
+    private positionableFeature: PositionableFeature | undefined;
+
+    constructor(
+        private readonly filterNameKey: FilterLocaleTextKey,
+        private readonly cssIdentifier: string
+    ) {
+        super();
+    }
+
+    protected abstract updateUiVisibility(): void;
+
+    protected abstract createBodyTemplate(): ElementParams | null;
+    protected abstract getAgComponents(): ComponentSelector[];
+    protected abstract setModelIntoUi(model: M | null, isInitialLoad?: boolean): AgPromise<void>;
+    protected abstract areNonNullModelsEqual(a: M, b: M): boolean;
+
+    /** Used to get the filter type for filter models. */
+    public abstract readonly filterType: 'text' | 'number' | 'bigint' | 'date' | 'set' | 'multi';
+
+    public postConstruct(): void {
+        const element: ElementParams = {
+            tag: 'div',
+            cls: `ag-filter-body-wrapper ag-${this.cssIdentifier}-body-wrapper`,
+            children: [this.createBodyTemplate()],
+        };
+        this.setTemplate(element, this.getAgComponents());
+        this.createManagedBean(
+            new ManagedFocusFeature(this.getFocusableElement(), {
+                handleKeyDown: this.handleKeyDown.bind(this),
+            })
+        );
+
+        this.positionableFeature = this.createBean(
+            new PositionableFeature(this.getPositionableElement(), {
+                forcePopupParentAsOffsetParent: true,
+            })
+        );
+    }
+
+    protected handleKeyDown(_e: KeyboardEvent): void {}
+
+    public abstract getModelFromUi(): M | null;
+
+    public init(legacyParams: ProvidedFilterParams): void {
+        const params = legacyParams as unknown as P;
+        this.setParams(params);
+
+        this.setModelIntoUi(params.state.model, true).then(() => this.updateUiVisibility());
+    }
+
+    protected areStatesEqual(stateA: any, stateB: any): boolean {
+        return stateA === stateB;
+    }
+
+    public refresh(legacyNewParams: ProvidedFilterParams): boolean {
+        const newParams = legacyNewParams as unknown as P;
+        const oldParams = this.params;
+
+        this.params = newParams;
+
+        const { source, state: newState, additionalEventAttributes } = newParams;
+
+        if (source === 'colDef') {
+            this.updateParams(newParams, oldParams);
+        }
+
+        const oldState = this.state;
+        this.state = newState;
+
+        const fromAction = additionalEventAttributes?.fromAction;
+
+        if (
+            (fromAction && fromAction !== 'apply') ||
+            newState.model !== oldState.model ||
+            !this.areStatesEqual(newState.state, oldState.state)
+        ) {
+            this.setModelIntoUi(newState.model);
+        }
+
+        return true;
+    }
+
+    /** Called on init only. Override in subclasses */
+    protected setParams(params: P): void {
+        this.params = params;
+        this.state = params.state;
+        this.commonUpdateParams(params);
+    }
+
+    /** Called on refresh only. Override in subclasses */
+    protected updateParams(newParams: P, oldParams: P): void {
+        this.commonUpdateParams(newParams, oldParams);
+    }
+
+    private commonUpdateParams(newParams: P, _oldParams?: P): void {
+        this.applyActive = _isUseApplyButton(newParams);
+        this.setupApplyDebounced();
+    }
+
+    /**
+     * @deprecated v34 Use the same method on the filter handler (`api.getColumnFilterHandler()`) instead.
+     */
+    public doesFilterPass(params: IDoesFilterPassParams): boolean {
+        this.beans.log.warn(283);
+        const { getHandler, model, column } = this.params;
+        return getHandler().doesFilterPass({
+            ...params,
+            model: model!,
+            handlerParams: this.beans.colFilter!.getHandlerParams(column)!,
+        });
+    }
+
+    public getFilterTitle(): string {
+        return this.translate(this.filterNameKey);
+    }
+
+    /**
+     * @deprecated v34 Filters are active when they have a model. Use `api.getColumnFilterModel()` instead.
+     */
+    public isFilterActive(): boolean {
+        this.beans.log.warn(284);
+        return this.params.model != null;
+    }
+
+    // subclasses can override this to provide alternative debounce defaults
+    protected defaultDebounceMs: number = 0;
+
+    private setupApplyDebounced(): void {
+        const debounceMs = getDebounceMs(this.beans.log, this.params, this.defaultDebounceMs);
+        const debounceFunc = _debounce(this, this.checkApplyDebounce.bind(this), debounceMs);
+        this.applyDebounced = () => {
+            this.debouncePending = true;
+            debounceFunc();
+        };
+    }
+
+    private checkApplyDebounce(): void {
+        if (this.debouncePending) {
+            // May already have been applied, so don't apply again (e.g. closing filter before debounce timeout)
+            this.debouncePending = false;
+            this.doApplyModel();
+        }
+    }
+
+    /**
+     * @deprecated v34 Use (`api.getColumnFilterModel()`) instead.
+     */
+    public getModel(): M | null {
+        this.beans.log.warn(285);
+        return this.params.model;
+    }
+
+    /**
+     * @deprecated v34 Use (`api.setColumnFilterModel()`) instead.
+     */
+    public setModel(model: M | null, suppressDeprecationWarning?: boolean): AgPromise<void> {
+        if (!suppressDeprecationWarning) {
+            this.beans.log.warn(286);
+        }
+        const { beans, params } = this;
+        return beans.colFilter!.setModelForColumnLegacy(params.column as AgColumn, model);
+    }
+
+    /**
+     * Applies changes made in the UI to the filter, and returns true if the model has changed.
+     */
+    public applyModel(_source: 'api' | 'ui' | 'rowDataUpdated' = 'api'): boolean {
+        return this.doApplyModel();
+    }
+
+    protected canApply(_model: M | null): boolean {
+        return true;
+    }
+
+    private doApplyModel(additionalEventAttributes?: any): boolean {
+        const {
+            params,
+            state: { valid = true, model },
+        } = this;
+
+        // Don't apply invalid model
+        if (!valid) {
+            return false;
+        }
+
+        const changed = !this.areModelsEqual(params.model, model);
+        if (changed) {
+            params.onAction('apply', additionalEventAttributes);
+        }
+        return changed;
+    }
+
+    /**
+     * @deprecated v34 Internal method - should only be called by the grid.
+     */
+    public onNewRowsLoaded(): void {
+        // we don't warn here because the multi filter can call this
+    }
+
+    /**
+     * By default, if the change came from a floating filter it will be applied immediately, otherwise if there is no
+     * apply button it will be applied after a debounce, otherwise it will not be applied at all. This behaviour can
+     * be adjusted by using the apply parameter.
+     */
+    protected onUiChanged(apply?: 'immediately' | 'debounce' | 'prevent', afterFloatingFilter = false): void {
+        this.updateUiVisibility();
+        const model = this.getModelFromUi();
+        const state = {
+            model,
+            state: this.getState(),
+            valid: this.canApply(model),
+        };
+        this.state = state;
+
+        const { params, gos, eventSvc, applyActive } = this;
+
+        params.onStateChange(state);
+        params.onUiChange(this.getUiChangeEventParams());
+
+        if (!gos.get('enableFilterHandlers')) {
+            eventSvc.dispatchEvent({
+                type: 'filterModified',
+                column: params.column,
+                filterInstance: this,
+            });
+        }
+
+        // Don't apply an invalid model
+        if (!state.valid) {
+            return;
+        }
+
+        apply ??= applyActive ? undefined : 'debounce';
+        if (apply === 'immediately') {
+            this.doApplyModel({ afterFloatingFilter, afterDataChange: false });
+        } else if (apply === 'debounce') {
+            this.applyDebounced();
+        }
+    }
+
+    protected getState(): any {
+        return undefined;
+    }
+
+    protected getUiChangeEventParams(): any {
+        return undefined;
+    }
+
+    public afterGuiAttached(params?: IAfterGuiAttachedParams): void {
+        this.lastContainerType = params?.container;
+        this.refreshFilterResizer(params?.container);
+    }
+
+    private refreshFilterResizer(containerType?: ContainerType): void {
+        // tool panel is scrollable, so don't need to size
+        const { positionableFeature, gos } = this;
+        if (!positionableFeature) {
+            return;
+        }
+
+        const isResizable = containerType === 'floatingFilter' || containerType === 'columnFilter';
+
+        if (isResizable) {
+            positionableFeature.restoreLastSize();
+            positionableFeature.setResizable(
+                gos.get('enableRtl')
+                    ? { bottom: true, bottomLeft: true, left: true }
+                    : { bottom: true, bottomRight: true, right: true }
+            );
+        } else {
+            positionableFeature.removeSizeFromEl();
+            positionableFeature.setResizable(false);
+        }
+        positionableFeature.constrainSizeToAvailableHeight(isResizable);
+    }
+
+    public afterGuiDetached(): void {
+        this.checkApplyDebounce();
+
+        this.positionableFeature?.constrainSizeToAvailableHeight(false);
+    }
+
+    public override destroy(): void {
+        this.positionableFeature = this.destroyBean(this.positionableFeature);
+
+        super.destroy();
+    }
+
+    protected translate(key: FilterLocaleTextKey, variableValues?: string[]): string {
+        return translateForFilter(this, key, variableValues);
+    }
+
+    // override to control positionable feature
+    protected getPositionableElement(): HTMLElement {
+        return this.getGui();
+    }
+
+    private areModelsEqual(a: M | null, b: M | null): boolean {
+        // same or both missing
+        if (a === b || (a == null && b == null)) {
+            return true;
+        }
+
+        // one is missing, other present
+        if (a == null || b == null) {
+            return false;
+        }
+
+        return this.areNonNullModelsEqual(a, b);
+    }
+}

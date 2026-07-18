@@ -1,0 +1,104 @@
+@use '../../design-system' as *;
+@use '../site-header/breakpoints' as *;
+
+// .headerSearchBox is the inline search trigger rendered directly in the header row
+// (see Search.tsx) -- it queries the same "site-header" container as the rest of the
+// header. Note: SearchModal/SearchControls (the full-screen results overlay this
+// button opens) is intentionally NOT on this container -- a full-screen dialog's own
+// sizing is a viewport concern, not a header-width one.
+.headerSearchBox {
+    display: flex;
+    align-items: center;
+    position: relative;
+    width: 100%;
+    max-width: 100%;
+    margin-left: auto;
+    margin-right: auto;
+    padding: $spacing-size-2 $spacing-size-3;
+    border-radius: var(--radius-lg);
+    background-color: rgba(255, 255, 255, 0.15);
+    color: var(--color-fg-white);
+    cursor: pointer;
+    transition:
+        background-color 0.5s ease-in-out,
+        border 0.5s ease-in-out,
+        box-shadow 0.5s ease-in-out;
+    border: 1px solid rgba(255, 255, 255, 0.05);
+    font-weight: var(--text-semibold);
+
+    @container site-header (min-width: #{$docs-search-inline}) {
+        max-width: 372px;
+    }
+
+    #{$selector-darkmode} & {
+        background-color: rgba(255, 255, 255, 0.1);
+        border: 1px solid color-mix(in srgb, var(--color-brand-200), var(--color-bg-primary) 90%);
+    }
+
+    &:hover {
+        background-color: rgba(255, 255, 255, 0.15);
+        transition: all 0.5s;
+        box-shadow: var(--shadow-lg);
+        border: 1px solid rgba(255, 255, 255, 0.2);
+    }
+
+    &::-webkit-search-decoration,
+    &::-webkit-search-cancel-button {
+        display: none;
+    }
+
+    &:hover .placeholder,
+    &:hover :global(.icon) {
+        opacity: 1;
+    }
+
+    &:hover .kbdShortcut {
+        opacity: 0.9;
+        box-shadow: var(--shadow-lg);
+    }
+
+    > * {
+        transition: opacity $transition-default-timing;
+    }
+
+    :global(.icon) {
+        --icon-size: 18px;
+        --icon-color: var(--color-fg-white);
+
+        margin-right: $spacing-size-1;
+        opacity: 1;
+    }
+}
+
+.placeholder {
+    opacity: 0.9;
+}
+
+.kbdShortcut {
+    margin-left: auto;
+    opacity: 1;
+    font-size: var(--text-fs-sm);
+    animation: fadeIn 0.2s;
+
+    font-weight: var(--text-semibold);
+    background-color: rgba(255, 255, 255, 0.2);
+    color: var(--color-fg-white);
+    padding-right: $spacing-size-1;
+    padding-left: $spacing-size-1;
+    border-radius: var(--radius-sm);
+
+    #{$selector-darkmode} & {
+        color: var(--color-fg-white);
+        background-color: rgba(255, 255, 255, 0.2);
+    }
+}
+
+@keyframes fadeIn {
+    from {
+        opacity: 0;
+    }
+
+    to {
+        opacity: 1;
+    }
+}

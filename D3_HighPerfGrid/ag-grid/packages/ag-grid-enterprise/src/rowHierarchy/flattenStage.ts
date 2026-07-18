@@ -1,0 +1,179 @@
+import type {
+    ClientSideRowModelStage,
+    GridOptions,
+    NamedBean,
+    RowNode,
+    _IRowNodeFlattenStage,
+} from 'ag-grid-community';
+import { BeanStub, _getGrandTotalPinnedFloat } from 'ag-grid-community';
+
+import { _createRowNodeFooter, _destroyRowNodeFooter } from '../aggregation/footerUtils';
+import type { FlattenDetails } from './flattenUtils';
+import {
+    _getFlattenDetails,
+    _isRemovedLowestSingleChildrenGroup,
+    _isRemovedSingleChildrenGroup,
+    _shouldRowBeRendered,
+} from './flattenUtils';
+
+export class FlattenStage extends BeanStub implements _IRowNodeFlattenStage, NamedBean {
+    beanName = 'flattenStage' as const;
+
+    public readonly step: ClientSideRowModelStage = 'map';
+    public readonly refreshProps: (keyof GridOptions<any>)[] = [
+        'groupHideParentOfSingleChild',
+        'groupRemoveSingleChildren',
+        'groupRemoveLowestSingleChildren',
+        'groupTotalRow',
+        'masterDetail',
+    ];
+
+    public execute(): RowNode[] {
+        const { beans, gos } = this;
+
+        // even if not doing grouping, we do the mapping, as the client might
+        // of passed in data that already has a grouping in it somewhere
+        const result: RowNode[] = [];
+
+        const rootNode = beans.rowModel.rootNode;
+        if (!rootNode) {
+            return result; // destroyed
+        }
+
+        const skipLeafNodes = beans.colModel.pivotMode;
+        // if we are reducing, and not grouping, then we want to show the root node, as that
+        // is where the pivot values are
+
+        const showRootNode = skipLeafNodes && rootNode.leafGroup && rootNode.aggData;
+        const topList = showRootNode ? [rootNode] : rootNode.childrenAfterSort;
+
+        const details = _getFlattenDetails(gos);
+
+        this.recursivelyAddToRowsToDisplay(details, topList, result, skipLeafNodes, 0);
+
+        // we do not want the footer total if the grid is empty
+        const atLeastOneRowPresent = result.length > 0;
+        const grandTotalRow = details.grandTotalRow;
+
+        const includeGrandTotalRow =
+            !showRootNode &&
+            // don't show total footer when showRootNode is true (i.e. in pivot mode and no groups)
+            atLeastOneRowPresent &&
+            grandTotalRow;
+
+        if (includeGrandTotalRow) {
+            const footerNode = _createRowNodeFooter(rootNode, beans);
+            const pinnedFloat = _getGrandTotalPinnedFloat(grandTotalRow);
+            if (pinnedFloat) {
+                this.beans.pinnedRowModel?.setGrandTotalPinned(pinnedFloat);
+            } else {
+                this.addRowNodeToRowsToDisplay(details, footerNode, result, 0, grandTotalRow === 'top');
+            }
+        }
+
+        return result;
+    }
+
+    private recursivelyAddToRowsToDisplay(
+        details: FlattenDetails,
+        rowsToFlatten: RowNode[] | null,
+        result: RowNode[],
+        skipLeafNodes: boolean,
+        uiLevel: number
+    ) {
+        if (!rowsToFlatten?.length) {
+            return;
+        }
+
+        const masterDetailSvc = this.beans.masterDetailSvc;
+
+        for (let i = 0; i < rowsToFlatten.length; i++) {
+            const rowNode = rowsToFlatten[i];
+
+            // check all these cases, for working out if this row should be included in the final mapped list
+            const isParent = rowNode.hasChildren();
+
+            const isRemovedSingleChildrenGroup = _isRemovedSingleChildrenGroup(details, rowNode, isParent);
+
+            const isRemovedLowestSingleChildrenGroup = _isRemovedLowestSingleChildrenGroup(details, rowNode, isParent);
+
+            const thisRowShouldBeRendered = _shouldRowBeRendered(
+                details,
+                rowNode,
+                isParent,
+                skipLeafNodes,
+                isRemovedSingleChildrenGroup,
+                isRemovedLowestSingleChildrenGroup
+            );
+
+            if (thisRowShouldBeRendered) {
+                this.addRowNodeToRowsToDisplay(details, rowNode, result, uiLevel);
+            }
+
+            // if we are pivoting, we never map below the leaf group
+            if (skipLeafNodes && rowNode.leafGroup) {
+                continue;
+            }
+
+            if (isParent) {
+                const excludedParent = isRemovedSingleChildrenGroup || isRemovedLowestSingleChildrenGroup;
+
+                // we traverse the group if it is expended, however we always traverse if the parent node
+                // was removed (as the group will never be opened if it is not displayed, we show the children instead)
+                if (rowNode.expanded || excludedParent) {
+                    const doesRowShowFooter = details.groupTotalRow({ node: rowNode });
+                    if (!doesRowShowFooter) {
+                        _destroyRowNodeFooter(rowNode);
+                    }
+
+                    // if the parent was excluded, then ui level is that of the parent
+                    const uiLevelForChildren = excludedParent ? uiLevel : uiLevel + 1;
+                    let footerNode: RowNode | undefined;
+                    if (doesRowShowFooter === 'top') {
+                        footerNode = _createRowNodeFooter(rowNode, this.beans);
+                        this.addRowNodeToRowsToDisplay(details, footerNode, result, uiLevelForChildren);
+                    }
+
+                    const detailNode = masterDetailSvc?.getDetail(rowNode);
+                    if (detailNode) {
+                        this.addRowNodeToRowsToDisplay(details, detailNode, result, uiLevel);
+                    }
+
+                    this.recursivelyAddToRowsToDisplay(
+                        details,
+                        rowNode.childrenAfterSort,
+                        result,
+                        skipLeafNodes,
+                        uiLevelForChildren
+                    );
+
+                    if (doesRowShowFooter === 'bottom') {
+                        footerNode = _createRowNodeFooter(rowNode, this.beans);
+                        this.addRowNodeToRowsToDisplay(details, footerNode, result, uiLevelForChildren);
+                    }
+                }
+            } else {
+                const detailNode = masterDetailSvc?.getDetail(rowNode);
+                if (detailNode) {
+                    this.addRowNodeToRowsToDisplay(details, detailNode, result, uiLevel);
+                }
+            }
+        }
+    }
+
+    // duplicated method, it's also in floatingRowModel
+    private addRowNodeToRowsToDisplay(
+        details: FlattenDetails,
+        rowNode: RowNode,
+        result: RowNode[],
+        uiLevel: number,
+        addToTop?: boolean
+    ): void {
+        if (addToTop) {
+            result.unshift(rowNode);
+        } else {
+            result.push(rowNode);
+        }
+        rowNode.setUiLevel(details.isGroupMultiAutoColumn ? 0 : uiLevel);
+    }
+}

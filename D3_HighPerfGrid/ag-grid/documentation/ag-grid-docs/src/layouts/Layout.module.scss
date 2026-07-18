@@ -1,0 +1,24 @@
+@use 'design-system' as *;
+
+html {
+    overflow-x: hidden;
+}
+
+.mainContainer {
+    display: flex;
+    flex-direction: column;
+    width: 100%;
+    min-height: 100vh;
+    padding: 0;
+
+    @media screen and (max-width: $breakpoint-docs-nav-medium) {
+        overflow-x: hidden;
+    }
+}
+
+// The <main> landmark wraps the page slot for accessibility. `display: contents`
+// removes its box so the page sections remain direct flex children of .mainContainer,
+// preserving the existing layout while still exposing a single main landmark.
+.pageMain {
+    display: contents;
+}

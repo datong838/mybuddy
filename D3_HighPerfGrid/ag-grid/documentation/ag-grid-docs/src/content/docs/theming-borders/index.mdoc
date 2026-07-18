@@ -1,0 +1,31 @@
+---
+title: "Theming API: Customising Borders"
+---
+
+Control the borders around rows, cells and UI elements.
+
+Borders are controlled using theme parameters ending `Border`. See the [Borders section](./theming-api/#reference-borders) of the parameters reference for the core border parameters, or search "border" in the "All Parameters" section of the [Theme Builder](/theme-builder/) for a full list of border parameters.
+
+The most important parameters relating to borders are:
+
+- `borderColor` and `borderWidth` - sets the default color and width for all borders, which can be overridden for individual borders using the parameters below
+- `rowBorder` and `headerRowBorder` - sets the horizontal borders between rows in the grid and header
+- `columnBorder` and `headerColumnBorder` - sets the vertical borders between columns in the grid and header
+- `wrapperBorder` - sets the border around the grid itself
+
+## Example: row borders
+
+```js
+const myTheme = themeQuartz.withParams({
+    wrapperBorder: false,
+    headerRowBorder: false,
+    rowBorder: { style: 'dotted', width: 3, color: '#9696C8' },
+    columnBorder: { style: 'dashed', color: '#9696C8' },
+});
+```
+
+{% gridExampleRunner title="Border Customisation" name="border-customisation"  exampleHeight=450 /%}
+
+### Borders between header cells
+
+Column borders between header cells have adjustable height, and there is also the option of styling the resize handle which is only present on resizable columns. See [Customising Headers](./theming-headers/) for more information.

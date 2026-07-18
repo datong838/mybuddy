@@ -1,0 +1,521 @@
+import type { ExecutorContext } from '@nx/devkit';
+import { readFile, readJSONFile, writeFile } from 'ag-shared/plugin-utils';
+import fs from 'fs/promises';
+import path from 'path';
+
+import { getGridOptionsType } from '../../../gridOptionsTypes/buildGridOptionsType';
+import { SOURCE_ENTRY_FILE_NAME } from './generator/constants';
+import gridVanillaSrcParser from './generator/transformation-scripts/grid-vanilla-src-parser';
+import {
+    DARK_INTEGRATED_START,
+    getEnableAGTestIdLogic,
+    getIntegratedDarkModeCode,
+    getInterfaceFileContents,
+    removeModuleRegistration,
+} from './generator/transformation-scripts/parser-utils';
+import type { ExampleConfig, GeneratedContents, GridOptionsType, InternalFramework } from './generator/types';
+import { FRAMEWORKS, TYPESCRIPT_INTERNAL_FRAMEWORKS } from './generator/types';
+import { formatFile } from './generator/utils/fileFormatUtils';
+import {
+    convertTsxToJsx,
+    getBoilerPlateFiles,
+    getEntryFileName,
+    getHasExampleConsoleLog,
+    getHasSimpleHtml,
+    getIsEnterprise,
+    getIsLocale,
+    getMainFileName,
+    getProvidedExampleFiles,
+    getProvidedExampleFolder,
+    getScriptNonce,
+    getTransformTsFileExt,
+} from './generator/utils/fileUtils';
+import { frameworkFilesGenerator } from './generator/utils/frameworkFilesGenerator';
+import type { TransformEntryFile } from './generator/utils/frameworkFilesGenerator';
+import { getConsoleLogSnippet } from './generator/utils/getConsoleLogSnippet';
+import { getHtmlFiles } from './generator/utils/getHtmlFiles';
+import { getOtherScriptFiles, getUseFetchJsonFile } from './generator/utils/getOtherScriptFiles';
+import { getPackageJson } from './generator/utils/getPackageJson';
+import { getStyleFiles } from './generator/utils/getStyleFiles';
+
+export type ExecutorOptions = {
+    mode: 'dev' | 'prod';
+    outputPath: string;
+    examplePath: string;
+    inputs: string[];
+    output: string;
+    writeFiles: boolean;
+};
+
+export default async function (
+    options: ExecutorOptions,
+    _ctx: ExecutorContext,
+    gridOptionsTypes = getGridOptionsType()
+) {
+    try {
+        await generateFiles(options, gridOptionsTypes);
+
+        return { success: true, terminalOutput: `Generating example [${options.examplePath}]` };
+    } catch (e) {
+        console.error(e);
+        return { success: false };
+    }
+}
+
+const getExampleFolderParts = ({ exampleFolder }: { exampleFolder: string }) => {
+    const folders = exampleFolder.split('/');
+    const pageName = folders[folders.length - 3];
+    const exampleName = folders[folders.length - 1];
+
+    return {
+        pageName,
+        exampleName,
+    };
+};
+
+async function getSourceFileList(folderPath: string): Promise<string[]> {
+    const sourceFileList = await fs.readdir(folderPath);
+    if (!sourceFileList.includes(SOURCE_ENTRY_FILE_NAME)) {
+        throw new Error('Unable to find example entry-point at: ' + folderPath);
+    }
+    return sourceFileList;
+}
+
+async function getProvidedFiles(folderPath: string) {
+    const frameworkProvidedExamples = {};
+
+    for await (const internalFramework of FRAMEWORKS) {
+        const files = getProvidedExampleFiles({ folderPath, internalFramework });
+
+        if (files.length > 0) {
+            const providedExampleBasePath = getProvidedExampleFolder({
+                folderPath,
+                internalFramework,
+            });
+            const providedExampleEntries = await Promise.all(
+                files.map(async (fileName) => {
+                    const contents = (await fs.readFile(path.join(providedExampleBasePath, fileName))).toString(
+                        'utf-8'
+                    );
+                    return [fileName, contents];
+                })
+            );
+            const asObj = Object.fromEntries(providedExampleEntries);
+            frameworkProvidedExamples[internalFramework] = asObj;
+        }
+    }
+    return frameworkProvidedExamples;
+}
+
+export async function generateFiles(options: ExecutorOptions, gridOptionsTypes: Record<string, GridOptionsType>) {
+    const isDev = options.mode === 'dev';
+    const folderPath = options.examplePath;
+    const { pageName, exampleName } = getExampleFolderParts({ exampleFolder: folderPath });
+
+    if (!pageName || !exampleName) {
+        throw new Error('Invalid example folder path: ' + folderPath);
+    }
+
+    const sourceFileList = await getSourceFileList(folderPath);
+    if (sourceFileList === undefined) {
+        return { files: {} } as any;
+    }
+
+    let exampleConfig: ExampleConfig = {};
+    if (sourceFileList.includes('exampleConfig.json')) {
+        exampleConfig = await readJSONFile(path.join(folderPath, 'exampleConfig.json'));
+    }
+    const entryFilePath = path.join(folderPath, SOURCE_ENTRY_FILE_NAME);
+
+    const [entryFile, indexHtml, styleFiles] = await Promise.all([
+        readFile(entryFilePath),
+        readFile(path.join(folderPath, 'index.html')),
+        getStyleFiles({ folderPath, sourceFileList }),
+    ]);
+    const htmlFiles = await getHtmlFiles({ folderPath, sourceFileList });
+
+    const isEnterprise = getIsEnterprise({ entryFile });
+    const isLocale = getIsLocale({ entryFile });
+
+    const frameworkProvidedExamples = sourceFileList.includes('provided') ? await getProvidedFiles(folderPath) : {};
+
+    const { bindings, typedBindings } = gridVanillaSrcParser(
+        folderPath,
+        entryFile,
+        indexHtml,
+        frameworkProvidedExamples,
+        gridOptionsTypes
+    );
+
+    const isIntegratedCharts = typedBindings.imports.some((m) => m.module.includes('ag-charts'));
+
+    let interfaceFile = undefined;
+    if (sourceFileList.includes('interfaces.ts')) {
+        interfaceFile = await readFile(path.join(folderPath, 'interfaces.ts'));
+    }
+    const interfaces = getInterfaceFileContents(typedBindings, interfaceFile);
+    let interfaceContents = undefined;
+    if (interfaces) {
+        interfaceContents = {
+            'interfaces.ts': interfaces,
+        };
+    }
+
+    for (const internalFramework of FRAMEWORKS) {
+        if (exampleConfig.supportedFrameworks && !exampleConfig.supportedFrameworks.includes(internalFramework)) {
+            const result = { excluded: true, ...exampleConfig } as any;
+            writeContents(options, internalFramework, result);
+            continue;
+        }
+
+        const getFrameworkFiles = frameworkFilesGenerator[internalFramework];
+        if (!getFrameworkFiles) {
+            throw new Error(`No entry file config generator for '${internalFramework}'`);
+        }
+
+        const boilerPlateFiles = await getBoilerPlateFiles(isDev, internalFramework);
+        const entryFileName = getEntryFileName(internalFramework)!;
+        const mainFileName = getMainFileName(internalFramework)!;
+        const scriptNonce = getScriptNonce(htmlFiles)!;
+        const provideFrameworkFiles = getProvidedFrameworkFiles(internalFramework, frameworkProvidedExamples);
+
+        const packageJson = getPackageJson({
+            isLocale,
+            internalFramework,
+            isIntegratedCharts,
+        });
+        const frameworkExampleConfig = {
+            ...exampleConfig,
+            ...(provideFrameworkFiles ? provideFrameworkFiles['exampleConfig.json'] : {}),
+        };
+
+        const [otherScriptFiles, componentScriptFiles] = await getOtherScriptFiles({
+            folderPath,
+            sourceFileList,
+            transformTsFileExt: getTransformTsFileExt(internalFramework),
+            internalFramework,
+        });
+        const hasExampleConsoleLog = exampleConfig.hideConsoleLogger
+            ? false
+            : [
+                  entryFile,
+                  ...Object.values(otherScriptFiles),
+                  ...Object.values(componentScriptFiles),
+                  ...(provideFrameworkFiles ? Object.values(provideFrameworkFiles) : []),
+              ].some((file: string) => {
+                  return getHasExampleConsoleLog({ contents: file });
+              });
+        const hasSimpleHtml = getHasSimpleHtml({ contents: indexHtml });
+
+        const transformEntryFile: TransformEntryFile = ({ entryFile }) => {
+            let transformedEntryFile = entryFile;
+
+            if (hasExampleConsoleLog) {
+                transformedEntryFile =
+                    getConsoleLogSnippet({ pageName, exampleName, logError: isDev }) + '\n' + transformedEntryFile;
+            }
+
+            return transformedEntryFile;
+        };
+
+        let files = {};
+        let scriptFiles = [];
+        const mergedStyleFiles = { ...styleFiles };
+        if (provideFrameworkFiles === undefined) {
+            try {
+                const result = await getFrameworkFiles({
+                    entryFile,
+                    indexHtml,
+                    isEnterprise,
+                    bindings,
+                    typedBindings,
+                    componentScriptFiles,
+                    otherScriptFiles,
+                    styleFiles,
+                    ignoreDarkMode: false,
+                    transformEntryFile,
+                    isDev,
+                    exampleConfig: frameworkExampleConfig,
+                });
+                files = result.files;
+                scriptFiles = result.scriptFiles;
+            } catch (e) {
+                throw new Error(`Error generating files for ${internalFramework} in '${folderPath}': ${e}`, {
+                    cause: e,
+                });
+            }
+        } else {
+            scriptFiles = await processProvidedFiles(
+                internalFramework,
+                scriptFiles,
+                entryFileName,
+                provideFrameworkFiles,
+                mergedStyleFiles,
+                transformEntryFile,
+                isDev,
+                isIntegratedCharts,
+                mainFileName,
+                folderPath
+            );
+        }
+
+        let styleFilesKeys = [];
+        let mergedFiles = {
+            ...mergedStyleFiles,
+            ...htmlFiles,
+            ...files,
+            ...provideFrameworkFiles,
+            ...interfaceContents,
+        };
+        if ((['typescript', 'vanilla'] as InternalFramework[]).includes(internalFramework)) {
+            styleFilesKeys = Object.keys(mergedStyleFiles);
+        }
+
+        if (internalFramework === 'reactFunctional' || internalFramework === 'reactFunctionalTs') {
+            if (mergedFiles[mainFileName].includes('useFetchJson')) {
+                mergedFiles['useFetchJson.' + (internalFramework === 'reactFunctionalTs' ? 'tsx' : 'jsx')] =
+                    getUseFetchJsonFile(internalFramework);
+            }
+        }
+
+        // Keep the spec files from the main script files
+        const specFiles = scriptFiles?.filter((file) => file.endsWith('.spec.ts') || file.endsWith('.spec.js')) ?? [];
+        scriptFiles = scriptFiles?.filter((file) => !specFiles.includes(file));
+
+        // Stable random for tests and examples but not for examples that have a web worker as they can't access window.agRandom
+        if (!exampleConfig.usesWebWorker) {
+            scriptFiles = useAgRandom(scriptFiles);
+            mergedFiles = useAgRandom(mergedFiles);
+        }
+
+        // Replace EXAMPLE_ENV placeholders from environment
+        const exampleEnvVars: Record<string, string | undefined> = {
+            AI_API_URL: process.env.AG_AI_API_URL,
+            AI_API_TOKEN: process.env.AG_AI_API_DEV_TOKEN,
+        };
+        for (const [fileName, content] of Object.entries(mergedFiles)) {
+            if (typeof content !== 'string') {
+                continue;
+            }
+            const updated = content.replace(/\{\{EXAMPLE_ENV:([^}]+)\}\}/g, (_match, key) => {
+                return exampleEnvVars[key] ?? '';
+            });
+            if (updated !== content) {
+                mergedFiles[fileName] = updated;
+            }
+        }
+
+        // Replace files with provided examples
+        const result: GeneratedContents = {
+            isEnterprise,
+            isLocale,
+            isIntegratedCharts,
+            hasExampleConsoleLog,
+            hasSimpleHtml,
+            scriptNonce,
+            entryFileName,
+            mainFileName,
+            sourceFileList,
+            scriptFiles: scriptFiles!,
+            specFiles,
+            styleFiles: styleFilesKeys,
+            htmlFiles: Object.keys(htmlFiles),
+            files: mergedFiles,
+            boilerPlateFiles,
+            packageJson,
+            ...frameworkExampleConfig,
+        };
+
+        await writeContents(options, internalFramework, result);
+    }
+}
+
+function getProvidedFrameworkFiles(
+    internalFramework: string,
+    frameworkProvidedExamples: any
+): Record<string, any> | undefined {
+    const providedFramework = internalFramework === 'reactFunctional' ? 'reactFunctionalTs' : internalFramework;
+    const provideFrameworkFiles = frameworkProvidedExamples[providedFramework]
+        ? { ...frameworkProvidedExamples[providedFramework] }
+        : undefined;
+    return provideFrameworkFiles;
+}
+
+// process the provided files and updates the file collections passed into it
+async function processProvidedFiles(
+    internalFramework: InternalFramework,
+    scriptFiles: any[],
+    entryFileName: string,
+    provideFrameworkFiles: any,
+    mergedStyleFiles: { [x: string]: string },
+    transformEntryFile: TransformEntryFile,
+    isDev: boolean,
+    isIntegratedCharts: boolean,
+    mainFileName: string,
+    folderPath: string
+) {
+    if (internalFramework === 'vanilla') {
+        // NOTE: Vanilla provided examples, we need to include the entryfile
+        scriptFiles = [entryFileName];
+    }
+
+    for (const fileName of Object.keys(provideFrameworkFiles)) {
+        let writeToFileName = fileName;
+        if (internalFramework === 'reactFunctional') {
+            // convert tsx files to jsx
+            writeToFileName = fileName.replace('.tsx', '.jsx');
+        }
+        if (fileName.endsWith('.css')) {
+            mergedStyleFiles[fileName] = provideFrameworkFiles[fileName];
+        } else {
+            let fileContent = provideFrameworkFiles[fileName];
+            if (fileContent) {
+                if (internalFramework === 'vanilla') {
+                    fileContent = removeModuleRegistration(fileContent);
+                }
+
+                provideFrameworkFiles[writeToFileName] = fileContent;
+
+                if (internalFramework === 'reactFunctional' && fileName.endsWith('.tsx')) {
+                    // convert tsx files to jsx
+                    provideFrameworkFiles[writeToFileName] = convertTsxToJsx(provideFrameworkFiles[writeToFileName]);
+                    // remove the tsx file version
+                    delete provideFrameworkFiles[fileName];
+                }
+            }
+        }
+
+        if (internalFramework === 'reactFunctional' && fileName === 'interfaces.ts') {
+            // interfaces.ts is just a type file so delete it
+            delete provideFrameworkFiles[fileName];
+        }
+
+        if (!isDev && provideFrameworkFiles[writeToFileName]?.length > 0 && !writeToFileName.endsWith('.css')) {
+            provideFrameworkFiles[writeToFileName] = await formatFile(
+                internalFramework,
+                provideFrameworkFiles[writeToFileName]
+            );
+        }
+
+        if (internalFramework === 'reactFunctional' || internalFramework === 'reactFunctionalTs') {
+            // add use client to the provided files if they contain AgGridReact
+            let fileContent = provideFrameworkFiles[writeToFileName];
+            if (!fileContent) {
+                // console.log(`No content for ${writeToFileName} ${fileName}, ${internalFramework}`);
+            } else {
+                // if the useFetchJson hook is used in the provided files, add the import
+                if (fileContent.includes('useFetchJson') && !fileContent.includes('./useFetchJson')) {
+                    const importStr = "import { useFetchJson } from './useFetchJson';\n";
+                    fileContent = importStr + fileContent;
+                }
+                if (fileContent.includes('AgGridReact') && !fileContent.includes('use client')) {
+                    const useClientCode = "'use client';\n";
+                    fileContent = useClientCode + fileContent;
+                }
+                provideFrameworkFiles[writeToFileName] = fileContent;
+            }
+        }
+
+        // Add Dark Mode code to the provided files if they are an integrated example
+        if (isIntegratedCharts && writeToFileName === mainFileName) {
+            const code =
+                getIntegratedDarkModeCode(folderPath, TYPESCRIPT_INTERNAL_FRAMEWORKS.includes(internalFramework)) ?? '';
+            const fileContent = provideFrameworkFiles[writeToFileName];
+            const providedPlaceholder = '/** PROVIDED EXAMPLE DARK INTEGRATED **/';
+            if (
+                !fileContent.includes(providedPlaceholder) &&
+                !fileContent.includes(DARK_INTEGRATED_START) // might have already been replaced
+            ) {
+                throw new Error(
+                    `Provided example ${folderPath}/provided/${internalFramework}/${writeToFileName} does not contain the expected comment: ${providedPlaceholder} in gridReady code for an example that includes integrated charts`
+                );
+            }
+            provideFrameworkFiles[writeToFileName] = provideFrameworkFiles[writeToFileName].replace(
+                providedPlaceholder,
+                code
+            );
+        }
+
+        if (writeToFileName === mainFileName) {
+            // Add testId setup to the main file for provided examples
+            const isUmd = internalFramework === 'vanilla';
+            const testIdSetup = getEnableAGTestIdLogic(isUmd);
+            provideFrameworkFiles[writeToFileName] = testIdSetup + '\n\n' + provideFrameworkFiles[writeToFileName];
+        }
+    }
+
+    // Transform entry file
+    const transformMainFile = internalFramework === 'angular' ? mainFileName : entryFileName;
+    provideFrameworkFiles[transformMainFile] = transformEntryFile({
+        entryFile: provideFrameworkFiles[transformMainFile],
+    });
+
+    return scriptFiles;
+}
+
+async function writeContents(
+    options: ExecutorOptions,
+    internalFramework: InternalFramework,
+    result: GeneratedContents
+) {
+    if (options.writeFiles) {
+        for (const file in result.files) {
+            const value = result.files[file];
+            if (value !== undefined) {
+                await writeFile(path.join(options.outputPath, internalFramework, file), value);
+            }
+        }
+    }
+    const outputPath = path.join(options.outputPath, internalFramework, 'contents.json');
+    await writeFile(outputPath, JSON.stringify(result));
+
+    const errors: string[] = [];
+    for (const name in result.files) {
+        const value = result.files[name];
+        if (value !== undefined && typeof value !== 'string') {
+            errors.push(`${outputPath}: non-string file content, ${name} ${typeof value}`);
+        }
+    }
+    if (errors.length > 0) {
+        throw new Error(errors.join('\n'));
+    }
+}
+
+// We want to replace Math.random() calls with agRandom() calls in the example runner so that tests are predictable.
+function useAgRandom<T extends string[] | Record<string, string>>(scripts: T): T {
+    if (!scripts) {
+        return scripts;
+    }
+
+    const replacer = (value: string) => value.replace(/Math\.random\(\)/g, 'window.agRandom()');
+
+    if (Array.isArray(scripts)) {
+        for (let i = 0; i < scripts.length; i++) {
+            scripts[i] = replacer(scripts[i]);
+        }
+        return scripts;
+    }
+
+    Object.keys(scripts).forEach((key) => {
+        const value = scripts[key];
+        if (typeof value === 'string') {
+            scripts[key] = replacer(value);
+        }
+    });
+    return scripts;
+}
+
+// nx run ag-grid-docs:generate-examples --skip-nx-cache
+// node --inspect-brk ./plugins/ag-grid-generate-example-files/dist/src/executors/generate/executor.js
+// console.log('should generate');
+// generateFiles(
+//     {
+//         examplePath: 'documentation/ag-grid-docs/src/content/docs/tree-data-group-column/_examples/custom-component',
+//         mode: 'dev',
+//         inputs: [],
+//         output: '',
+//         outputPath: 'dist/generated-examples/ag-grid-docs/docs/tree-data-group-column/_examples/custom-component',
+//         writeFiles: true,
+//     },
+//     {}
+// ).then(() => console.log('done'));

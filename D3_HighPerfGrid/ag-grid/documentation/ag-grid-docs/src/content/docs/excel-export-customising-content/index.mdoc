@@ -1,0 +1,89 @@
+---
+title: "Excel Export - Customising Content"
+enterprise: true
+---
+
+## Customising Cell and Row Group values
+
+By default, the values exported to Excel will be formatted via the [Using the Value Formatter for Export](./value-formatters/#formatting-for-export) feature.
+
+The grid cell and row group values can be customised specifically for Excel export using the following function params for a call to `exportDataAsExcel` API method or in the `defaultExcelExportParams`.
+
+```{% frameworkTransform=true %}
+gridApi.exportDataAsExcel({
+    processCellCallback(params) {
+        const value = params.value
+        return value === undefined ? '' : `_${value}_`
+    },
+    processRowGroupCallback(params) {
+        return `row group: ${params.node.key}`
+    }
+})
+```
+
+{% interfaceDocumentation interfaceName="ExcelExportParams" names=["processRowGroupCallback", "processCellCallback"] config={"description":"See below the functions on the `ExcelExportParams` interface to customise exported grid cell and row group values."} /%}
+
+The following example shows Excel customisations where the exported document has the following:
+
+- All row groups with the prefix `row group: `
+- All cell values surrounded by `_`, unless they are `undefined`, in which case they are empty
+
+{% note %}
+When using row grouping while [hiding open parents](./grouping-multiple-group-columns/#hiding-expanded-parent-rows) (`groupHideOpenParents=true`), export to Excel doesn't export the group rows as collapsible groups in Excel. Instead, all exported rows are on the same level and cannot be expanded/collapsed in Excel.
+{% /note %}
+
+{% gridExampleRunner title="Excel Export - Customising Row Groups" name="excel-export-customising-row-groups" /%}
+
+## Customising Column Headers and Group Header Values
+
+The column headers and group headers exported to Excel can be customised using the following function params for a call to `exportDataAsExcel` API method or in the `defaultExcelExportParams`.
+
+```{% frameworkTransform=true %}
+gridApi.exportDataAsExcel({
+    processGroupHeaderCallback(params) {
+        return `group header: ${params.api.getDisplayNameForColumnGroup(params.columnGroup, null)}`
+    },
+    processHeaderCallback(params) {
+        return `header: ${params.api.getDisplayNameForColumn(params.column, null)}`
+    }
+});
+```
+
+{% interfaceDocumentation interfaceName="ExcelExportParams" names=["processGroupHeaderCallback", "processHeaderCallback"] config={"description":"See below the functions on the `ExcelExportParams` interface to customise exported column group headers and headers."} /%}
+
+The following example shows Excel customisations where the exported document has the following:
+
+- Group headers with the prefix `group header: `
+- Headers with the prefix `header: `
+
+{% gridExampleRunner title="Excel Export - Customising Column Group Headers" name="excel-export-customising-column-group-headers" /%}
+
+## Custom Metadata
+
+Use `customMetadata` to write custom document properties to the exported file. The values are added as metadata to the Excel file and serialised as strings.
+
+This is useful for attaching internal identifiers, workflow hints, or metadata consumed by downstream systems.
+
+Use cases for custom metadata may include:
+
+- Internal workflow tagging (for example, adding `ExportID` or `GeneratedBy` for tracking in automation scripts).
+- Integration with document management systems (for example, embedding `ContractType` or `ExpirationDate` for indexing in SharePoint or similar tools).
+- Integration with third-party analytics tools (for example, passing `CampaignID` for BI dashboard automation).
+
+```{% frameworkTransform=true %}
+gridApi.exportDataAsExcel({
+    customMetadata: {
+        ExportID: 'EXP-2026-001',
+        ExpirationDate: '2025-01-01T12:00:00Z',
+        Disclaimer: 'Preliminary data; subject to audit',
+    },
+});
+```
+
+{% interfaceDocumentation interfaceName="ExcelExportParams" names=["customMetadata"] /%}
+
+{% note %}
+The Grid does not interpret these values or apply labels; it only writes the custom properties provided in the `customMetadata` parameter. This feature does not replace or integrate with officially endorsed labelling systems, such as Microsoft Purview Sensitivity Labels, which require specific SDKs or APIs for enforcement, encryption, and compliance.
+{% /note %}
+
+{% gridExampleRunner title="Excel Export - Custom Metadata" name="excel-export-customising-custom-metadata" /%}

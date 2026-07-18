@@ -1,0 +1,22 @@
+// SPDX-License-Identifier: MIT
+// Copyright contributors to the kepler.gl project
+
+// test reducers
+import './map-state-test';
+import './map-style-test';
+import './vis-state-test';
+import './ui-state-test';
+import './composer-state-test';
+import './provider-state-test';
+import './root-test';
+
+// test mergers
+import './vis-state-merger-test';
+import './annotation-merger-test';
+
+// test annotation updaters
+import './annotation-updater-test';
+
+// test layer groups
+import './layer-group-test';
+import './layer-group-updaters-test';

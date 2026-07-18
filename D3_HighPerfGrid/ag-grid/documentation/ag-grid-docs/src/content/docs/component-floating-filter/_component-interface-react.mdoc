@@ -1,0 +1,31 @@
+{% if isFramework("react") %}
+Custom floating filter components are controlled components, which receive a filter model as part of the props, and pass model updates back to the grid via the `onModelChange` callback. A filter model of `null` means that no filter is applied (the filter displays as inactive). Note that the filter is applied immediately when `onModelChange` is called.
+
+```jsx
+export default ({ model, onModelChange }) => {
+    return (
+        <div>
+            <input
+                type="text"
+                value={model || ''}
+                onChange={({ target: { value }}) => onModelChange(value === '' ? null : value)}
+            />
+        </div>
+    );
+}
+```
+
+## Custom Floating Filter Parameters
+
+### Floating Filter Props
+
+The following props are passed to the custom floating filter components (`CustomFloatingFilterDisplayProps` interface). If custom props are provided via the `colDef.floatingFilterComponentParams` property, these will be additionally added to the props object, overriding items of the same name if a name clash exists.
+
+{% interfaceDocumentation interfaceName="CustomFloatingFilterDisplayProps" config={ "description": "" } /%}
+
+### Floating Filter Callbacks
+
+The following callbacks can be passed to the `useGridFloatingFilter` hook (`CustomFloatingFilterCallbacks` interface). All the callbacks are optional, and the hook only needs to be used if callbacks are provided.
+
+{% interfaceDocumentation interfaceName="CustomFloatingFilterCallbacks" config={ "description": "" } /%}
+{% /if %}

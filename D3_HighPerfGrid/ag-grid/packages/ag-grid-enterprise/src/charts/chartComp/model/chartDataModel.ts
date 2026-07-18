@@ -1,0 +1,724 @@
+import type { AgCartesianAxisType } from 'ag-charts-types';
+
+import type {
+    AgColumn,
+    AgColumnGroup,
+    BeanCollection,
+    CellRange,
+    ChartType,
+    IAggFunc,
+    IRangeService,
+    PartialCellRange,
+    SeriesChartType,
+    SeriesGroupType,
+    SortModelItem,
+    SortOption,
+} from 'ag-grid-community';
+import {
+    BeanStub,
+    CellRangeType,
+    _normalizeSortType,
+    _resolveSortOptions,
+    isColumnGroupAutoCol,
+} from 'ag-grid-community';
+
+import type { ChartDatasourceParams } from '../datasource/chartDatasource';
+import { ChartDatasource } from '../datasource/chartDatasource';
+import { ChartColumnService } from '../services/chartColumnService';
+import type { ChartTranslationService } from '../services/chartTranslationService';
+import { getMaxNumSeries, getSeriesType, isComboChart, isHierarchical, isStatistical } from '../utils/seriesTypeMapper';
+import { ComboChartModel } from './comboChartModel';
+
+export interface ColState {
+    column?: AgColumn;
+    colId: string;
+    displayName: string | null;
+    selected?: boolean;
+    order: number;
+}
+
+export interface ChartModelParams {
+    chartId: string;
+    pivotChart?: boolean;
+    chartType: ChartType;
+    chartThemeName: string;
+    switchCategorySeries?: boolean;
+    aggFunc?: string | IAggFunc;
+    cellRange: PartialCellRange;
+    suppressChartRanges?: boolean;
+    unlinkChart?: boolean;
+    crossFiltering?: boolean;
+    crossFilteringSort?: SortModelItem[] | boolean;
+    seriesChartTypes?: SeriesChartType[];
+    seriesGroupType?: SeriesGroupType;
+    useGroupColumnAsCategory?: boolean;
+}
+
+export const DEFAULT_CHART_CATEGORY = 'AG-GRID-DEFAULT-CATEGORY';
+
+export class ChartDataModel extends BeanStub {
+    private rangeSvc: IRangeService;
+    private chartTranslation: ChartTranslationService;
+
+    public wireBeans(beans: BeanCollection): void {
+        this.rangeSvc = beans.rangeSvc!;
+        this.chartTranslation = beans.chartTranslation as ChartTranslationService;
+    }
+
+    public readonly params: ChartModelParams;
+
+    // this is used to associate chart ranges with charts
+    public readonly chartId: string;
+
+    public suppressChartRanges: boolean;
+    public switchCategorySeries: boolean;
+    public aggFunc?: string | IAggFunc;
+    public pivotChart: boolean;
+    public categoryAxisType?: AgCartesianAxisType;
+
+    public chartType: ChartType;
+    public chartThemeName: string;
+    public unlinked = false;
+    public chartData: any[] = [];
+    public groupChartData: any[] | undefined;
+    public valueColState: ColState[] = [];
+    public dimensionColState: ColState[] = [];
+    public colNames: { [p: string]: string[] } = {};
+
+    public valueCellRange?: CellRange;
+    public dimensionCellRange?: CellRange;
+
+    public comboChartModel: ComboChartModel;
+    private chartColSvc: ChartColumnService;
+    private datasource: ChartDatasource;
+
+    public referenceCellRange: PartialCellRange;
+    public suppliedCellRange: PartialCellRange;
+
+    public crossFiltering = false;
+    public crossFilteringSort: SortModelItem[] | boolean = true;
+
+    private grouping = false;
+
+    public seriesGroupType?: SeriesGroupType;
+    public useGroupColumnAsCategory: boolean = false;
+
+    public constructor(params: ChartModelParams) {
+        super();
+
+        this.params = params;
+        this.chartId = params.chartId;
+        this.setParams(params);
+    }
+
+    private setParams(params: ChartModelParams): void {
+        const {
+            chartType,
+            pivotChart,
+            chartThemeName,
+            switchCategorySeries,
+            aggFunc,
+            cellRange,
+            suppressChartRanges,
+            unlinkChart,
+            crossFiltering,
+            crossFilteringSort,
+            seriesGroupType,
+            useGroupColumnAsCategory,
+        } = params;
+        this.chartType = chartType;
+        this.pivotChart = pivotChart ?? false;
+        this.chartThemeName = chartThemeName;
+        this.switchCategorySeries = !!switchCategorySeries;
+        this.aggFunc = aggFunc;
+        this.referenceCellRange = cellRange;
+        this.suppliedCellRange = cellRange;
+        this.suppressChartRanges = suppressChartRanges ?? false;
+        this.unlinked = !!unlinkChart;
+        this.crossFiltering = !!crossFiltering;
+        this.crossFilteringSort = crossFilteringSort ?? true;
+        this.seriesGroupType = seriesGroupType;
+        this.useGroupColumnAsCategory = !!useGroupColumnAsCategory;
+    }
+
+    public postConstruct(): void {
+        this.datasource = this.createManagedBean(new ChartDatasource());
+        this.chartColSvc = this.createManagedBean(new ChartColumnService());
+        this.comboChartModel = this.createManagedBean(new ComboChartModel(this));
+        this.updateCellRanges({ setColsFromRange: true });
+        this.updateData();
+    }
+
+    public updateModel(params: ChartModelParams): void {
+        const { cellRange, seriesChartTypes } = params;
+        const isExplicitRangeChange = cellRange !== this.suppliedCellRange;
+
+        if (isExplicitRangeChange) {
+            this.dimensionCellRange = undefined;
+            this.valueCellRange = undefined;
+        }
+
+        this.setParams(params);
+
+        this.updateSelectedDimensions(cellRange?.columns as AgColumn[]);
+        this.updateCellRanges({ setColsFromRange: true, isExplicitRangeChange });
+
+        const shouldUpdateComboModel = this.isComboChart() || seriesChartTypes;
+        if (shouldUpdateComboModel) {
+            this.comboChartModel.update(seriesChartTypes);
+        }
+
+        if (!this.unlinked) {
+            this.updateData();
+        }
+    }
+
+    public updateCellRanges(params?: {
+        updatedColState?: ColState;
+        resetOrder?: boolean;
+        maintainColState?: boolean;
+        setColsFromRange?: boolean;
+        updateOrder?: boolean;
+        // A caller-supplied cellRange, distinct from the range auto-shrinking to drop a hidden column - see
+        // resetColumnState for why this (not setColsFromRange) is what should suppress hidden-column retention.
+        isExplicitRangeChange?: boolean;
+    }): void {
+        const { updatedColState, resetOrder, maintainColState, setColsFromRange, updateOrder, isExplicitRangeChange } =
+            params ?? {};
+        if (this.valueCellRange) {
+            this.referenceCellRange = this.valueCellRange;
+        }
+
+        const { dimensionCols, valueCols } = this.chartColSvc.getChartColumns();
+        const allColsFromRanges = this.getAllColumnsFromRanges();
+
+        if (updatedColState) {
+            this.updateColumnState(updatedColState, resetOrder);
+        }
+
+        this.setDimensionCellRange(dimensionCols, allColsFromRanges, updatedColState);
+        this.setValueCellRange(valueCols, allColsFromRanges, setColsFromRange);
+
+        if (!updatedColState && !maintainColState) {
+            this.resetColumnState(updateOrder, isExplicitRangeChange);
+            // dimension / category cell range could be out of sync after resetting column state when row grouping
+            this.syncDimensionCellRange();
+        }
+
+        this.comboChartModel.updateSeriesChartTypes();
+    }
+
+    public updateData(): void {
+        const { startRow, endRow } = this.getRowIndexes();
+
+        if (this.pivotChart) {
+            this.resetColumnState();
+        }
+
+        this.grouping = this.isGrouping();
+
+        const params: ChartDatasourceParams = {
+            aggFunc: this.aggFunc,
+            dimensionCols: this.getSelectedDimensions(),
+            grouping: this.grouping,
+            pivoting: this.isPivotActive(),
+            crossFiltering: this.crossFiltering,
+            crossFilteringSort: this.getCrossFilteringSort(),
+            valueCols: this.getSelectedValueCols(),
+            startRow,
+            endRow,
+            isScatter: ['scatter', 'bubble'].includes(this.chartType),
+            combineGroupValues: isStatistical(getSeriesType(this.chartType)),
+        };
+
+        const { chartData, colNames, groupChartData } = this.datasource.getData(params);
+
+        this.chartData = chartData;
+        this.groupChartData = groupChartData;
+        this.colNames = colNames;
+        this.categoryAxisType = undefined;
+    }
+
+    public isGrouping(): boolean {
+        const usingTreeData = this.gos.get('treeData');
+        const groupedCols = usingTreeData ? null : this.chartColSvc.getRowGroupColumns();
+        const isGroupActive = usingTreeData || (groupedCols && groupedCols.length > 0);
+
+        // charts only group when the selected category is a group column
+        const colIds = this.getSelectedDimensions().map(({ colId }) => colId);
+        const displayedGroupCols = this.chartColSvc.getGroupDisplayColumns();
+        const groupDimensionSelected = displayedGroupCols.map((col) => col.colId).some((id) => colIds.includes(id));
+        return !!isGroupActive && groupDimensionSelected;
+    }
+
+    private getSelectedValueCols(): AgColumn[] {
+        return this.valueColState.filter((cs) => cs.selected).map((cs) => cs.column!);
+    }
+
+    public getSelectedDimensions(): ColState[] {
+        return this.dimensionColState.filter((cs) => cs.selected);
+    }
+
+    public getValueColState(): ColState[] {
+        return this.valueColState.map(this.displayNameMapper.bind(this));
+    }
+
+    private displayNameMapper(col: ColState): ColState {
+        const { column } = col;
+        if (column) {
+            const columnDisplayName = this.getColDisplayName(column);
+            col.displayName = this.isPivotMode()
+                ? this.getPivotDisplayName(column, columnDisplayName)
+                : columnDisplayName;
+        } else {
+            const colNames = this.colNames[col.colId];
+            col.displayName = colNames ? colNames.join(' - ') : this.getColDisplayName(column!);
+        }
+        return col;
+    }
+
+    private getPivotDisplayName(column: AgColumn, columnDisplayName: string | null): string {
+        let attemptFallbackToColNames = false;
+        let displayNames = [columnDisplayName];
+        const getDisplayName = (colGroup: AgColumnGroup | null) => {
+            if (!colGroup) {
+                return;
+            }
+            const colGroupName = this.chartColSvc.getColGroupDisplayName(colGroup);
+            if (colGroupName?.length) {
+                displayNames.unshift(colGroupName);
+                getDisplayName(colGroup.getParent());
+            } else {
+                attemptFallbackToColNames = true;
+            }
+        };
+        getDisplayName(column.getParent());
+        if (attemptFallbackToColNames) {
+            // one of the column groups doesn't have a name. Try and use the internal name map instead
+            const colNames = this.colNames[column.colId];
+            if (colNames) {
+                displayNames = colNames;
+            }
+        }
+        return displayNames.join(' - ');
+    }
+
+    private getColDisplayName(col: AgColumn): string | null {
+        return this.chartColSvc.getColDisplayName(col);
+    }
+
+    public isPivotMode(): boolean {
+        return this.chartColSvc.isPivotMode();
+    }
+
+    public getChartDataType(colId: string): string | undefined {
+        const column = this.chartColSvc.getColumn(colId);
+        return column ? column.colDef.chartDataType : undefined;
+    }
+
+    public getConvertTime(colId: string): ((date: string | undefined) => Date | undefined) | undefined {
+        const column = this.chartColSvc.getColumn(colId);
+        if (column?.colDef.cellDataType === 'dateString') {
+            return this.beans.dataTypeSvc?.getDateParserFunction(column);
+        }
+        return undefined;
+    }
+
+    private isPivotActive(): boolean {
+        return this.chartColSvc.isPivotActive();
+    }
+
+    private createCellRange(type: CellRangeType, ...columns: AgColumn[]): CellRange {
+        return {
+            id: this.chartId, // set range ID to match chart ID so we can identify changes to the ranges for this chart
+            startRow: this.referenceCellRange.startRow,
+            endRow: this.referenceCellRange.endRow,
+            columns,
+            startColumn:
+                type === CellRangeType.DIMENSION || this.referenceCellRange.startColumn == null
+                    ? columns[0]
+                    : this.referenceCellRange.startColumn,
+            type,
+        };
+    }
+
+    private getAllColumnsFromRanges(): Set<AgColumn> {
+        if (this.pivotChart) {
+            // Pivot charts have no manual column selection UI - their columns always mirror the grid's
+            // currently displayed columns 1:1, so `includeHiddenColumnsInCharts` does not apply here.
+            return new Set(this.chartColSvc.getAllDisplayedColumns());
+        }
+
+        const columns = this.dimensionCellRange || this.valueCellRange ? [] : this.referenceCellRange.columns;
+
+        if (this.dimensionCellRange) {
+            columns.push(...this.dimensionCellRange.columns);
+        }
+
+        if (this.valueCellRange) {
+            columns.push(...this.valueCellRange.columns);
+        }
+
+        return new Set(columns as AgColumn[]);
+    }
+
+    private getRowIndexes(): { startRow: number; endRow: number } {
+        let startRow = 0,
+            endRow = 0;
+        const { rangeSvc, valueCellRange, dimensionCellRange } = this;
+
+        // Not all chart types require a value series (e.g. hierarchical charts),
+        // so fall back to using the dimension cell range for inferring row indices
+        const cellRange = valueCellRange || dimensionCellRange;
+
+        if (rangeSvc && cellRange) {
+            startRow = rangeSvc.getRangeStartRow(cellRange).rowIndex;
+
+            // when the last row the cell range is a pinned 'bottom' row, the `endRow` index is set to -1 which results
+            // in the ChartDatasource processing all non pinned rows from the `startRow` index.
+            const endRowPosition = rangeSvc.getRangeEndRow(cellRange);
+            endRow = endRowPosition.rowPinned === 'bottom' ? -1 : endRowPosition.rowIndex;
+        }
+
+        return { startRow, endRow };
+    }
+
+    private getSelectedColIds(colState: ColState[]): Set<string> {
+        return new Set(colState.filter((cs) => cs.selected).map((cs) => cs.colId));
+    }
+
+    private isColumnSelectable(
+        column: AgColumn,
+        allCols: Set<AgColumn>,
+        includeHiddenCols: boolean,
+        previouslySelectedColIds: ReadonlySet<string>
+    ): boolean {
+        if (includeHiddenCols && !column.isVisible() && previouslySelectedColIds.has(column.colId)) {
+            return true;
+        }
+        return allCols.has(column) && (includeHiddenCols || column.isVisible());
+    }
+
+    // `updateOrder` re-derives series order from the grid column order (column drag); otherwise the user-defined order is preserved.
+    // `isExplicitRangeChange` means the caller just supplied a fresh, authoritative range (chart creation or an
+    // explicit range/columns update) - selection must be derived strictly from that range, with no carry-over from
+    // before. This is distinct from the range merely auto-shrinking because a charted column became hidden.
+    private resetColumnState(updateOrder?: boolean, isExplicitRangeChange?: boolean): void {
+        const { dimensionCols, valueCols } = this.chartColSvc.getChartColumns();
+        const allCols = this.getAllColumnsFromRanges();
+        const isInitialising = this.valueColState.length < 1;
+
+        const savedValueOrder =
+            isInitialising || updateOrder ? undefined : new Map(this.valueColState.map((cs) => [cs.colId, cs.order]));
+
+        // A hidden column's grid range shrinks to exclude it, dropping it from `allCols`. With
+        // `includeHiddenColumnsInCharts` on, a selected column must stay selected once hidden despite that -
+        // unless a fresh range was just supplied, in which case that range alone is authoritative. Pivot charts
+        // have no manual column selection, so the option doesn't apply to them (see getAllColumnsFromRanges).
+        const includeHiddenCols = !this.pivotChart && this.gos.get('includeHiddenColumnsInCharts');
+        const previouslySelectedDimensions = isExplicitRangeChange
+            ? new Set<string>()
+            : this.getSelectedColIds(this.dimensionColState);
+        const previouslySelectedValueCols = isExplicitRangeChange
+            ? new Set<string>()
+            : this.getSelectedColIds(this.valueColState);
+
+        this.dimensionColState = [];
+        this.valueColState = [];
+
+        const supportsMultipleDimensions = isHierarchical(getSeriesType(this.chartType));
+        let hasSelectedDimension = false;
+        let order = 1;
+
+        const aggFuncDimension = this.suppliedCellRange.columns[0];
+
+        // Determine whether grouping is active (row grouping or tree data)
+        const usingTreeData = this.gos.get('treeData');
+        const rowGroupCols = usingTreeData ? null : this.chartColSvc.getRowGroupColumns();
+        const groupingActive = usingTreeData || (rowGroupCols && rowGroupCols.length > 0);
+
+        dimensionCols.forEach((column) => {
+            const autoGroup = isColumnGroupAutoCol(column);
+
+            const selected =
+                this.crossFiltering && this.aggFunc
+                    ? aggFuncDimension.getColId() === column.colId
+                    : (this.useGroupColumnAsCategory && groupingActive && autoGroup) ||
+                      ((!hasSelectedDimension || supportsMultipleDimensions) &&
+                          this.isColumnSelectable(column, allCols, includeHiddenCols, previouslySelectedDimensions));
+
+            this.dimensionColState.push({
+                column,
+                colId: column.colId,
+                displayName: this.getColDisplayName(column),
+                selected,
+                order: order++,
+            });
+
+            if (selected) {
+                hasSelectedDimension = true;
+            }
+        });
+
+        const defaultCategory = {
+            colId: DEFAULT_CHART_CATEGORY,
+            displayName: this.chartTranslation.translate('defaultCategory'),
+            selected: !hasSelectedDimension, // if no dimensions in range select the default
+            order: 0,
+        };
+
+        this.dimensionColState.unshift(defaultCategory);
+
+        const valueColumnsFromReferenceRange = (this.referenceCellRange.columns as AgColumn[]).filter((c) =>
+            valueCols.has(c)
+        );
+
+        valueCols.forEach((column) => {
+            // first time the value cell range is set, preserve the column order from the supplied range
+            if (isInitialising && this.referenceCellRange.columns.includes(column)) {
+                column = valueColumnsFromReferenceRange.shift()!;
+            }
+
+            this.valueColState.push({
+                column,
+                colId: column.colId,
+                displayName: this.getColDisplayName(column),
+                selected: this.isColumnSelectable(column, allCols, includeHiddenCols, previouslySelectedValueCols),
+                order: order++,
+            });
+        });
+
+        if (savedValueOrder) {
+            let nextOrder = Math.max(...savedValueOrder.values()) + 1;
+            this.valueColState.forEach((cs) => {
+                cs.order = savedValueOrder.has(cs.colId) ? savedValueOrder.get(cs.colId)! : nextOrder++;
+            });
+            this.valueColState.sort((a, b) => a.order - b.order);
+        }
+    }
+
+    private updateColumnState(updatedCol: ColState, resetOrder?: boolean): void {
+        const idsMatch = (cs: ColState) => cs.colId === updatedCol.colId;
+        const { dimensionColState, valueColState } = this;
+
+        // Determine whether the specified column is a dimension or value column
+        const matchedDimensionColState = dimensionColState.find(idsMatch);
+        const matchedValueColState = valueColState.find(idsMatch);
+
+        if (matchedDimensionColState) {
+            // For non-hierarchical chart types, only one dimension can be selected
+            const supportsMultipleDimensions = isHierarchical(getSeriesType(this.chartType));
+            if (!supportsMultipleDimensions) {
+                // Determine which column should end up selected, if any
+                const selectedColumnState = updatedCol.selected
+                    ? matchedDimensionColState
+                    : dimensionColState
+                          .filter((cs) => cs !== matchedDimensionColState)
+                          .find(({ selected }) => selected);
+                // Update the selection state of all dimension columns
+                dimensionColState.forEach((cs) => (cs.selected = cs === selectedColumnState));
+            } else {
+                // Update the selection state of the specified dimension column
+                matchedDimensionColState.selected = updatedCol.selected;
+            }
+        } else if (matchedValueColState) {
+            // Update the selection state of the specified value column
+            matchedValueColState.selected = updatedCol.selected;
+        }
+
+        const allColumns = [...dimensionColState, ...valueColState];
+        const orderedColIds: string[] = [];
+
+        if (!resetOrder) {
+            // calculate new order
+            allColumns.forEach((col: ColState, i: number) => {
+                if (i === updatedCol.order) {
+                    orderedColIds.push(updatedCol.colId);
+                }
+
+                if (col.colId !== updatedCol.colId) {
+                    orderedColIds.push(col.colId);
+                }
+            });
+
+            // update col state with new order
+            allColumns.forEach((col) => {
+                const order = orderedColIds.indexOf(col.colId);
+                col.order = order >= 0 ? orderedColIds.indexOf(col.colId) : allColumns.length - 1;
+            });
+        }
+
+        this.reorderColState();
+    }
+
+    private reorderColState(): void {
+        const ascColStateOrder = (a: ColState, b: ColState) => a.order - b.order;
+        this.dimensionColState.sort(ascColStateOrder);
+        this.valueColState.sort(ascColStateOrder);
+    }
+
+    private setDimensionCellRange(
+        dimensionCols: Set<AgColumn>,
+        colsInRange: Set<AgColumn>,
+        updatedColState?: ColState
+    ): void {
+        this.dimensionCellRange = undefined;
+        const supportsMultipleDimensions = isHierarchical(getSeriesType(this.chartType));
+
+        if (!updatedColState && !this.dimensionColState.length) {
+            const selectedCols = new Array<AgColumn>();
+            // use first dimension column in range by default, or all dimension columns for hierarchical charts
+            dimensionCols.forEach((col) => {
+                if ((selectedCols.length > 0 && !supportsMultipleDimensions) || !colsInRange.has(col)) {
+                    return;
+                }
+                selectedCols.push(col);
+            });
+            if (selectedCols.length > 0) {
+                this.dimensionCellRange = this.createCellRange(CellRangeType.DIMENSION, ...selectedCols);
+            }
+            return;
+        }
+
+        let selectedDimensionColStates = updatedColState ? [updatedColState] : [];
+        if (this.crossFiltering && this.aggFunc) {
+            const aggFuncDimension = this.suppliedCellRange.columns[0];
+            selectedDimensionColStates = this.dimensionColState.filter(
+                (cs) => cs.colId === aggFuncDimension.getColId()
+            );
+        } else if (
+            supportsMultipleDimensions ||
+            selectedDimensionColStates.length === 0 ||
+            selectedDimensionColStates.some(({ column }) => !column || !dimensionCols.has(column))
+        ) {
+            selectedDimensionColStates = this.dimensionColState.filter((cs) => cs.selected);
+        }
+
+        const isDefaultCategory =
+            selectedDimensionColStates.length === 1
+                ? selectedDimensionColStates[0].colId === DEFAULT_CHART_CATEGORY
+                : false;
+        const selectedColumns = selectedDimensionColStates
+            .map(({ column }) => column)
+            .filter((value): value is NonNullable<typeof value> => value != null);
+        if (selectedColumns.length > 0 && !isDefaultCategory) {
+            this.dimensionCellRange = this.createCellRange(CellRangeType.DIMENSION, ...selectedColumns);
+        }
+    }
+
+    private setValueCellRange(valueCols: Set<AgColumn>, colsInRange: Set<AgColumn>, setColsFromRange?: boolean): void {
+        this.valueCellRange = undefined;
+
+        const selectedValueCols: AgColumn[] = [];
+
+        const maxSelection = getMaxNumSeries(this.chartType);
+        let numSelected = 0;
+
+        valueCols.forEach((col) => {
+            if (setColsFromRange) {
+                if ((maxSelection == null || numSelected < maxSelection) && colsInRange.has(col)) {
+                    selectedValueCols.push(col);
+                    numSelected++;
+                }
+            } else if (this.valueColState.some((colState) => colState.selected && colState.colId === col.colId)) {
+                selectedValueCols.push(col);
+            }
+        });
+
+        if (selectedValueCols.length > 0) {
+            let orderedColIds: string[] = [];
+
+            if (this.valueColState.length > 0) {
+                orderedColIds = this.valueColState.map((c) => c.colId);
+            } else {
+                colsInRange.forEach((c) => orderedColIds.push(c.colId));
+            }
+
+            selectedValueCols.sort((a, b) => orderedColIds.indexOf(a.colId) - orderedColIds.indexOf(b.colId));
+
+            this.valueCellRange = this.createCellRange(CellRangeType.VALUE, ...selectedValueCols);
+        }
+    }
+
+    public resetCellRanges(dimension: boolean, value: boolean): void {
+        if (!dimension && !value) {
+            return;
+        }
+        const { dimensionCols, valueCols } = this.chartColSvc.getChartColumns();
+        const allColsFromRanges = this.getAllColumnsFromRanges();
+        if (dimension) {
+            this.setDimensionCellRange(dimensionCols, allColsFromRanges);
+        }
+        if (value) {
+            this.setValueCellRange(valueCols, allColsFromRanges);
+        }
+    }
+
+    private updateSelectedDimensions(columns: AgColumn[]): void {
+        const colIdSet = new Set(columns.map((column) => column.colId));
+
+        // For non-hierarchical chart types, only one dimension can be selected
+        const supportsMultipleDimensions = isHierarchical(getSeriesType(this.chartType));
+        if (!supportsMultipleDimensions) {
+            // Determine which column should end up selected, if any
+            // if no dimension found in supplied columns use the default category (always index = 0)
+            const foundColState =
+                this.dimensionColState.find((colState) => colIdSet.has(colState.colId)) || this.dimensionColState[0];
+            const selectedColumnId = foundColState.colId;
+            // Update the selection state of all dimension columns
+            this.dimensionColState = this.dimensionColState.map((colState) => ({
+                ...colState,
+                selected: colState.colId === selectedColumnId,
+            }));
+        } else {
+            // Update the selection state of all dimension columns, selecting only the provided columns from the chart model
+            const foundColStates = this.dimensionColState.filter((colState) => colIdSet.has(colState.colId));
+            const selectedColumnIds = new Set(foundColStates.map((colState) => colState.colId));
+            this.dimensionColState = this.dimensionColState.map((colState) => ({
+                ...colState,
+                selected: selectedColumnIds.has(colState.colId),
+            }));
+        }
+    }
+
+    private syncDimensionCellRange() {
+        const selectedDimensions = this.getSelectedDimensions();
+        if (selectedDimensions.length === 0) {
+            return;
+        }
+        const selectedCols = selectedDimensions
+            .map(({ column }) => column)
+            .filter((value): value is NonNullable<typeof value> => value != null);
+        if (selectedCols.length > 0) {
+            this.dimensionCellRange = this.createCellRange(CellRangeType.DIMENSION, ...selectedCols);
+        }
+    }
+
+    public isComboChart(chartType?: ChartType): boolean {
+        return isComboChart(chartType ?? this.chartType);
+    }
+
+    private getCrossFilteringSort(): SortOption[] | boolean {
+        const sort = this.crossFilteringSort;
+        if (typeof sort === 'boolean') {
+            return sort;
+        }
+        const sortOptions: SortOption[] = [];
+        sort.forEach(({ sort, colId }) => {
+            const column = this.chartColSvc.getColumn(colId);
+            if (column) {
+                sortOptions.push({
+                    sort,
+                    column,
+                    type: _normalizeSortType(column.getSortDef()?.type),
+                    colComparator: undefined,
+                    leafComparator: undefined,
+                    descending: false,
+                    absolute: false,
+                });
+            }
+        });
+        _resolveSortOptions(sortOptions, this.beans.colModel);
+        return sortOptions;
+    }
+}

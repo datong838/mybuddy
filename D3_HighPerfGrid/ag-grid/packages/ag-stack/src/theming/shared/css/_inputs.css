@@ -1,0 +1,20 @@
+.ag-input-wrapper,
+.ag-picker-field-wrapper {
+    display: flex;
+    flex: 1 1 auto;
+    align-items: center;
+    line-height: normal;
+    position: relative;
+}
+
+.ag-input-field {
+    display: flex;
+    flex-direction: row;
+    align-items: center;
+}
+
+.ag-input-field-input:where(:not([type='checkbox'], [type='radio'])) {
+    flex: 1 1 auto;
+    width: 100%;
+    min-width: 0;
+}

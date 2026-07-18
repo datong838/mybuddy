@@ -1,0 +1,696 @@
+[
+    {
+        "group": {
+            "name": "Grid"
+        },
+        "items": [
+            {
+                "label": {
+                    "name": "AG Grid Enterprise ",
+                    "link": "grid:./community-vs-enterprise/"
+                },
+                "community": false,
+                "enterprise": false,
+                "chartsGrid": true
+            },
+            {
+                "label": {
+                    "name": "Integrated Charts",
+                    "link": "grid:./integrated-charts/"
+                },
+                "community": false,
+                "enterprise": false,
+                "chartsGrid": true
+            }
+        ]
+    },
+    {
+        "group": {
+            "name": "Series"
+        },
+        "items": [
+            {
+                "label": {
+                    "name": "Bar",
+                    "icon": "chartsBar",
+                    "link": "charts:./bar-series/"
+                },
+                "community": true,
+                "enterprise": true,
+                "chartsGrid": true
+            },
+            {
+                "label": {
+                    "name": "Line",
+                    "icon": "chartsLine",
+                    "link": "charts:./line-series/"
+                },
+                "community": true,
+                "enterprise": true,
+                "chartsGrid": true
+            },
+            {
+                "label": {
+                    "name": "Area",
+                    "icon": "chartsArea",
+                    "link": "charts:./area-series/"
+                },
+                "community": true,
+                "enterprise": true,
+                "chartsGrid": true
+            },
+            {
+                "label": {
+                    "name": "Scatter",
+                    "icon": "chartsScatter",
+                    "link": "charts:./scatter-series/"
+                },
+                "community": true,
+                "enterprise": true,
+                "chartsGrid": true
+            },
+            {
+                "label": {
+                    "name": "Bubble",
+                    "icon": "chartsBubble",
+                    "link": "charts:./bubble-series/"
+                },
+                "community": true,
+                "enterprise": true,
+                "chartsGrid": true
+            },
+            {
+                "label": {
+                    "name": "Pie",
+                    "icon": "chartsPie",
+                    "link": "charts:./pie-series/"
+                },
+                "community": true,
+                "enterprise": true,
+                "chartsGrid": true
+            },
+            {
+                "label": {
+                    "name": "Doughnut",
+                    "icon": "chartsDonut",
+                    "link": "charts:./donut-series/"
+                },
+                "community": true,
+                "enterprise": true,
+                "chartsGrid": true
+            },
+            {
+                "label": {
+                    "name": "Combination",
+                    "icon": "chartsCombination",
+                    "link": "charts:./combination-series/"
+                },
+                "community": true,
+                "enterprise": true,
+                "chartsGrid": true
+            },
+            {
+                "label": {
+                    "name": "Box Plot",
+                    "icon": "chartsBoxPlot",
+                    "link": "charts:./box-plot-series/"
+                },
+                "community": false,
+                "enterprise": true,
+                "chartsGrid": true
+            },
+            {
+                "label": {
+                    "name": "Candlestick",
+                    "icon": "chartsCandlestick",
+                    "link": "charts:./candlestick-series/"
+                },
+                "community": false,
+                "enterprise": true,
+                "chartsGrid": true
+            },
+            {
+                "label": {
+                    "name": "OHLC",
+                    "icon": "chartsOHLC",
+                    "link": "charts:./ohlc-series/"
+                },
+                "community": false,
+                "enterprise": true,
+                "chartsGrid": true
+            },
+            {
+                "label": {
+                    "name": "Heatmap",
+                    "icon": "chartsHeatmap",
+                    "link": "charts:./heatmap-series/"
+                },
+                "community": false,
+                "enterprise": true,
+                "chartsGrid": true
+            },
+            {
+                "label": {
+                    "name": "Histogram",
+                    "icon": "chartsHistogram",
+                    "link": "charts:./histogram-series/"
+                },
+                "community": false,
+                "enterprise": true,
+                "chartsGrid": true
+            },
+            {
+                "label": {
+                    "name": "Nightingale",
+                    "icon": "chartsNightingale",
+                    "link": "charts:./nightingale-series/"
+                },
+                "community": false,
+                "enterprise": true,
+                "chartsGrid": true
+            },
+            {
+                "label": {
+                    "name": "Radar Area",
+                    "icon": "chartsRadar",
+                    "link": "charts:./radar-area-series/"
+                },
+                "community": false,
+                "enterprise": true,
+                "chartsGrid": true
+            },
+            {
+                "label": {
+                    "name": "Radar Line",
+                    "icon": "chartsRadar",
+                    "link": "charts:./radar-line-series/"
+                },
+                "community": false,
+                "enterprise": true,
+                "chartsGrid": true
+            },
+            {
+                "label": {
+                    "name": "Radial Bar",
+                    "icon": "chartsRadialBar",
+                    "link": "charts:./radial-bar-series/"
+                },
+                "community": false,
+                "enterprise": true,
+                "chartsGrid": true
+            },
+            {
+                "label": {
+                    "name": "Radial Column",
+                    "icon": "chartsRadialColumn",
+                    "link": "charts:./radial-column-series/"
+                },
+                "community": false,
+                "enterprise": true,
+                "chartsGrid": true
+            },
+            {
+                "label": {
+                    "name": "Range Area",
+                    "icon": "chartsRangeArea",
+                    "link": "charts:./range-area-series/"
+                },
+                "community": false,
+                "enterprise": true,
+                "chartsGrid": true
+            },
+            {
+                "label": {
+                    "name": "Range Bar",
+                    "icon": "chartsRangeBar",
+                    "link": "charts:./range-bar-series/"
+                },
+                "community": false,
+                "enterprise": true,
+                "chartsGrid": true
+            },
+            {
+                "label": {
+                    "name": "Sunburst",
+                    "icon": "chartsSunburst",
+                    "link": "charts:./sunburst-series/"
+                },
+                "community": false,
+                "enterprise": true,
+                "chartsGrid": true
+            },
+            {
+                "label": {
+                    "name": "Treemap",
+                    "icon": "chartsTreemap",
+                    "link": "charts:./treemap-series/"
+                },
+                "community": false,
+                "enterprise": true,
+                "chartsGrid": true
+            },
+            {
+                "label": {
+                    "name": "Waterfall",
+                    "icon": "chartsWaterfall",
+                    "link": "charts:./waterfall-series/"
+                },
+                "community": false,
+                "enterprise": true,
+                "chartsGrid": true
+            },
+            {
+                "label": {
+                    "name": "Sankey",
+                    "icon": "chartsSankey",
+                    "link": "charts:./sankey-series/"
+                },
+                "community": false,
+                "enterprise": true,
+                "chartsGrid": true
+            },
+            {
+                "label": {
+                    "name": "Chord",
+                    "icon": "chartsChord",
+                    "link": "charts:./chord-series/"
+                },
+                "community": false,
+                "enterprise": true,
+                "chartsGrid": true
+            },
+            {
+                "label": {
+                    "name": "Radial Gauge",
+                    "icon": "chartsRadialGauge",
+                    "link": "charts:./radial-gauge/"
+                },
+                "community": false,
+                "enterprise": true,
+                "chartsGrid": true
+            },
+            {
+                "label": {
+                    "name": "Linear Gauge",
+                    "icon": "chartsLinearGauge",
+                    "link": "charts:./linear-gauge/"
+                },
+                "community": false,
+                "enterprise": true,
+                "chartsGrid": true
+            },
+            {
+                "label": {
+                    "name": "Org Chart",
+                    "icon": "chartsOrg",
+                    "link": "charts:./org-chart/"
+                },
+                "community": false,
+                "enterprise": true,
+                "chartsGrid": true
+            }
+        ]
+    },
+    {
+        "group": {
+            "name": "Financial Charts"
+        },
+        "items": [
+            {
+                "label": {
+                    "name": "Financial Charts",
+                    "link": "charts:./financial-charts/"
+                },
+                "community": false,
+                "enterprise": true,
+                "chartsGrid": true
+            },
+            {
+                "label": {
+                    "name": "Toolbar",
+                    "link": "charts:./financial-charts-toolbar/"
+                },
+                "community": false,
+                "enterprise": true,
+                "chartsGrid": true
+            },
+            {
+                "label": {
+                    "name": "Range Buttons",
+                    "link": "charts:./range-buttons/"
+                },
+                "community": false,
+                "enterprise": true,
+                "chartsGrid": true
+            }
+        ]
+    },
+    {
+        "group": {
+            "name": "Maps"
+        },
+        "items": [
+            {
+                "label": {
+                    "name": "Geographic Areas",
+                    "link": "charts:./map-shapes/"
+                },
+                "community": false,
+                "enterprise": true,
+                "chartsGrid": true
+            },
+            {
+                "label": {
+                    "name": "Routes and Connections",
+                    "link": "charts:./map-lines/"
+                },
+                "community": false,
+                "enterprise": true,
+                "chartsGrid": true
+            },
+            {
+                "label": {
+                    "name": "Markers and Points of Interest",
+                    "link": "charts:./map-markers/"
+                },
+                "community": false,
+                "enterprise": true,
+                "chartsGrid": true
+            }
+        ]
+    },
+    {
+        "group": {
+            "name": "Server-Side Rendering"
+        },
+        "items": [
+            {
+                "label": {
+                    "name": "Server-Side Rendering",
+                    "link": "charts:./server-side-rendering/"
+                },
+                "community": false,
+                "enterprise": true,
+                "chartsGrid": true
+            }
+        ]
+    },
+    {
+        "group": {
+            "name": "Data"
+        },
+        "items": [
+            {
+                "label": {
+                    "name": "Large Datasets Interactivity",
+                    "link": "charts:./large-dataset-interactivity"
+                },
+                "community": true,
+                "enterprise": true,
+                "chartsGrid": true
+            },
+            {
+                "label": {
+                    "name": "High-Frequency Update",
+                    "link": "charts:./high-frequency-data"
+                },
+                "community": true,
+                "enterprise": true,
+                "chartsGrid": true
+            },
+            {
+                "label": {
+                    "name": "Transactions",
+                    "link": "charts:./transactions"
+                },
+                "community": true,
+                "enterprise": true,
+                "chartsGrid": true
+            }
+        ]
+    },
+    {
+        "group": {
+            "name": "Data Elements"
+        },
+        "items": [
+            {
+                "label": {
+                    "name": "Cross Lines",
+                    "link": "charts:./axes-cross-lines/"
+                },
+                "community": true,
+                "enterprise": true,
+                "chartsGrid": true
+            },
+            {
+                "label": {
+                    "name": "Legend",
+                    "link": "charts:./legend/"
+                },
+                "community": true,
+                "enterprise": true,
+                "chartsGrid": true
+            },
+            {
+                "label": {
+                    "name": "Stylers",
+                    "link": "charts:./stylers/"
+                },
+                "community": true,
+                "enterprise": true,
+                "chartsGrid": true
+            },
+            {
+                "label": {
+                    "name": "Series Bars",
+                    "link": "charts:./bars/"
+                },
+                "community": true,
+                "enterprise": true,
+                "chartsGrid": true
+            },
+            {
+                "label": {
+                    "name": "Series Markers",
+                    "link": "charts:./markers/"
+                },
+                "community": true,
+                "enterprise": true,
+                "chartsGrid": true
+            },
+            {
+                "label": {
+                    "name": "Annotations",
+                    "link": "charts:./annotations/"
+                },
+                "community": false,
+                "enterprise": true,
+                "chartsGrid": true
+            },
+            {
+                "label": {
+                    "name": "Colour Scale",
+                    "link": "charts:./colour-scale/"
+                },
+                "community": false,
+                "enterprise": true,
+                "chartsGrid": true
+            },
+            {
+                "label": {
+                    "name": "Error Bars",
+                    "link": "charts:./error-bars/"
+                },
+                "community": false,
+                "enterprise": true,
+                "chartsGrid": true
+            }
+        ]
+    },
+    {
+        "group": {
+            "name": "Interactivity"
+        },
+        "items": [
+            {
+                "label": {
+                    "name": "Accessibility",
+                    "link": "charts:./accessibility/"
+                },
+                "community": true,
+                "enterprise": true,
+                "chartsGrid": true
+            },
+            {
+                "label": {
+                    "name": "Localisation",
+                    "link": "charts:./localisation/"
+                },
+                "community": true,
+                "enterprise": true,
+                "chartsGrid": true
+            },
+            {
+                "label": {
+                    "name": "Series Highlighting",
+                    "link": "charts:./series-highlighting/"
+                },
+                "community": true,
+                "enterprise": true,
+                "chartsGrid": true
+            },
+            {
+                "label": {
+                    "name": "Tooltips",
+                    "link": "charts:./tooltips/"
+                },
+                "community": true,
+                "enterprise": true,
+                "chartsGrid": true
+            },
+            {
+                "label": {
+                    "name": "Touch",
+                    "link": "charts:./touch/"
+                },
+                "community": true,
+                "enterprise": true,
+                "chartsGrid": true
+            },
+            {
+                "label": {
+                    "name": "Animations",
+                    "link": "charts:./animation/"
+                },
+                "community": false,
+                "enterprise": true,
+                "chartsGrid": true
+            },
+            {
+                "label": {
+                    "name": "Context Menu",
+                    "link": "charts:./context-menu/"
+                },
+                "community": false,
+                "enterprise": true,
+                "chartsGrid": true
+            },
+            {
+                "label": {
+                    "name": "Crosshairs & Band Highlight",
+                    "link": "charts:./axes-crosshairs/"
+                },
+                "community": false,
+                "enterprise": true,
+                "chartsGrid": true
+            },
+            {
+                "label": {
+                    "name": "Data Selection",
+                    "link": "charts:./selection/"
+                },
+                "community": false,
+                "enterprise": true,
+                "chartsGrid": true
+            },
+            {
+                "label": {
+                    "name": "Flash On Update",
+                    "link": "charts:./flash-on-update/"
+                },
+                "community": false,
+                "enterprise": true,
+                "chartsGrid": true
+            },
+            {
+                "label": {
+                    "name": "Navigator",
+                    "link": "charts:./navigator/"
+                },
+                "community": false,
+                "enterprise": true,
+                "chartsGrid": true
+            },
+            {
+                "label": {
+                    "name": "Range Buttons",
+                    "link": "charts:./range-controls/"
+                },
+                "community": false,
+                "enterprise": true,
+                "chartsGrid": true
+            },
+            {
+                "label": {
+                    "name": "Scrollbar",
+                    "link": "charts:./scrollbar/"
+                },
+                "community": false,
+                "enterprise": true,
+                "chartsGrid": true
+            },
+            {
+                "label": {
+                    "name": "Synchronisation",
+                    "link": "charts:./sync/"
+                },
+                "community": false,
+                "enterprise": true,
+                "chartsGrid": true
+            },
+            {
+                "label": {
+                    "name": "Zoom",
+                    "link": "charts:./zoom/"
+                },
+                "community": false,
+                "enterprise": true,
+                "chartsGrid": true
+            }
+        ]
+    },
+    {
+        "group": {
+            "name": "Support"
+        },
+        "items": [
+            {
+                "label": {
+                    "name": "Enterprise Support",
+                    "link": "charts:./community-vs-enterprise/"
+                },
+                "community": {
+                    "value": false,
+                    "detail": "Community support via GitHub"
+                },
+                "enterprise": {
+                    "value": true,
+                    "detail": "Enterprise support via Zendesk"
+                },
+                "chartsGrid": {
+                    "value": true,
+                    "detail": "Enterprise support via Zendesk"
+                }
+            },
+            {
+                "label": {
+                    "name": "Perpetual License",
+                    "link": "charts:./community-vs-enterprise/"
+                },
+                "community": {
+                    "value": false,
+                    "detail": "<a href='https://www.ag-grid.com/eula/AG-Grid-Community-License.html'>MIT license</a>"
+                },
+                "enterprise": {
+                    "value": true,
+                    "detail": "Including 1 year of updates (see <a href='https://www.ag-grid.com/eula/AG-Grid-Enterprise-License-Latest.html'>EULA</a>)"
+                },
+                "chartsGrid": {
+                    "value": true,
+                    "detail": "Including 1 year of updates (see <a href='https://www.ag-grid.com/eula/AG-Grid-Enterprise-License-Latest.html'>EULA</a>)"
+                }
+            }
+        ]
+    }
+]

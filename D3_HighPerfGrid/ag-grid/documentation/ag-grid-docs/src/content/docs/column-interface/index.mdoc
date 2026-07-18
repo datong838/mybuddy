@@ -1,0 +1,62 @@
+---
+title: "Column Overview"
+---
+
+Columns are the key configuration point for controlling how data is displayed and interacted with inside the grid.
+
+## Column Options
+
+Column Options, also known as column definitions, implement the `ColDef<TData, TValue>` or `ColGroupDef<TData>` interfaces and control all aspects of how a column behaves in the grid.
+
+See [Column Options](./column-properties/) for a complete list of configuration options.
+
+### Initial Column Options
+
+A small number of Column Options do **not** support updating their value. Their value is only read during the initial creation of the column. These options are marked as `Initial` on the [Options Reference](./column-properties). See [Changing Column State](./column-updating-definitions/#changing-column-state) for more information.
+
+{% note %}
+Not all Column Options support updates. These are marked as Initial.
+{% /note %}
+
+## Column
+
+Each column in the grid is represented by a `Column` instance, which has a reference to the underlying column definition. The `Column` has attributes, methods and events for interacting with the specific column e.g. `column.isVisible()`.
+
+See [Column](./column-object/) for a complete list of attributes / methods associated with columns.
+
+## Column Group
+
+If using column groups then each group is represented by a `ColumnGroup` or `ProvidedColumnGroup` instance. Both have methods for interacting with the column group e.g. `column.isExpanded()`.
+
+There are many overlapping methods between `ColumnGroup` and `ProvidedColumnGroup` as they are similar objects. The key difference is that `ColumnGroups` align with the columns that are visible in the grid whereas `ProvidedColumnGroups` align with the columns that are provided to the grid. For example, a group could be split apart by moving a column and this would result in a new `ColumnGroup` but the `ProvidedColumnGroup` would remain the same.
+
+See [Column Group](./column-object-group/) for a complete list of methods associated with column groups.
+
+## Column Events
+
+Columns fire events as they are updated which makes it possible to trigger logic in your application.
+
+{% note %}
+Most users will not need to use Column Events but they are made available for advanced use cases. Please consider the guidance below.
+{% /note %}
+
+### Column Event Guidance
+
+All events fired by the column are synchronous (events are normally asynchronous). The grid is also listening for these events internally. This means that when you receive an event, the grid may still have some work to do (e.g. if sort has changed, the grid UI may still have to do the sorting).
+
+It is recommended to **not** call any grid API functions while receiving events from the `column`. Instead, it is best to put your logic into a timeout and call the grid in another VM tick.
+
+When adding event listeners to a column, they will stay with the column until the column is destroyed. Columns are destroyed when you add new columns to the grid. Column objects are NOT destroyed when the columns is removed from the DOM (e.g. column virtualisation removes the column due to horizontal scrolling, or the column is made invisible via the API).
+
+If you add listeners to columns in custom header components, be sure to remove the listener when the header component is destroyed.
+
+```js
+// add visibility listener to 'country' column
+const listener = event => console.log('Column visibility changed', event);
+
+const column = api.getColumn('country');
+column.addEventListener('visibleChanged', listener);
+
+// sometime later, remove the listener
+column.removeEventListener('visibleChanged', listener);
+```

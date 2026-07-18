@@ -1,0 +1,141 @@
+import type { NamedBean } from '../context/bean';
+import { BeanStub } from '../context/beanStub';
+import type { AgColumn } from '../entities/agColumn';
+import type { AgColumnGroup } from '../entities/agColumnGroup';
+import type { RowContainerCtrl } from '../gridBodyComp/rowContainer/rowContainerCtrl';
+import { _createElement } from '../utils/element';
+
+export class AutoWidthCalculator extends BeanStub implements NamedBean {
+    beanName = 'autoWidthCalc' as const;
+
+    private scrollingRowContainerCtrl: RowContainerCtrl;
+
+    public postConstruct(): void {
+        this.beans.ctrlsSvc.whenReady(this, (p) => {
+            this.scrollingRowContainerCtrl = p.scrolling;
+        });
+    }
+
+    // this is the trick: we create a dummy container and clone all the cells
+    // into the dummy, then check the dummy's width. then destroy the dummy
+    // as we don't need it any more.
+    // drawback: only the cells visible on the screen are considered
+    public getPreferredWidthForColumn(column: AgColumn, skipHeader?: boolean): number {
+        const eHeaderCell = this.getHeaderCellForColumn(column);
+        // cell isn't visible
+        if (!eHeaderCell) {
+            return -1;
+        }
+
+        const elements = this.beans.rowRenderer.getAllCellsNotSpanningForColumn(column);
+
+        if (!skipHeader) {
+            // we only consider the lowest level cell, not the group cell. in 99% of the time, this
+            // will be enough. if we consider groups, then it gets too complicated for what it's worth,
+            // as the groups can span columns and this class only considers one column at a time.
+            elements.push(eHeaderCell);
+        }
+
+        return this.getPreferredWidthForElements(elements);
+    }
+
+    public getPreferredWidthForColumnGroup(columnGroup: AgColumnGroup): number {
+        const eHeaderCell = this.getHeaderCellForColumn(columnGroup);
+
+        if (!eHeaderCell) {
+            return -1;
+        }
+
+        return this.getPreferredWidthForElements([eHeaderCell]);
+    }
+
+    public getPreferredWidthForElements(elements: HTMLElement[], extraPadding?: number): number {
+        // this element has to be a form, otherwise form elements within a cell
+        // will be validated while being cloned. This can cause issues such as
+        // radio buttons being reset and losing their values.
+        const eDummyContainer = _createElement<HTMLFormElement>({ tag: 'form' });
+        // position fixed, so it isn't restricted to the boundaries of the parent
+        eDummyContainer.style.position = 'fixed';
+
+        // we put the dummy into the body viewport, so it inherits all the css styles the real
+        // cells inherit. we use the viewport rather than the row container because the container
+        // is set to display:none while the grid has no rows, which would measure every clone at 0.
+        const eBodyViewport = this.scrollingRowContainerCtrl.eViewport;
+
+        for (const el of elements) {
+            this.cloneItemIntoDummy(el, eDummyContainer);
+        }
+
+        // only append the dummyContainer to the DOM after it contains all the necessary items
+        eBodyViewport.appendChild(eDummyContainer);
+
+        // at this point, all the clones are lined up vertically with natural widths. the dummy
+        // container will have a width wide enough just to fit the largest.
+        const dummyContainerWidth = eDummyContainer.offsetWidth;
+
+        // we are finished with the dummy container, so get rid of it
+        eDummyContainer.remove();
+
+        // we add padding as I found sometimes the gui still put '...' after some of the texts. so the
+        // user can configure the grid to add a few more pixels after the calculated width
+        extraPadding = extraPadding ?? this.gos.get('autoSizePadding');
+
+        return dummyContainerWidth + extraPadding;
+    }
+
+    private getHeaderCellForColumn(column: AgColumnGroup | AgColumn): HTMLElement | null {
+        return this.beans.ctrlsSvc.getHeaderRowContainerCtrl()?.getHtmlElementForColumnHeader(column) ?? null;
+    }
+
+    private cloneItemIntoDummy(eCell: HTMLElement, eDummyContainer: HTMLElement): void {
+        // make a deep clone of the cell
+        const eCellClone: HTMLElement = eCell.cloneNode(true) as HTMLElement;
+        // the original has a fixed width, we remove this to allow the natural width based on content
+        eCellClone.style.width = '';
+        // the original has position = absolute, we need to remove this so it's positioned normally
+        eCellClone.style.position = 'static';
+        eCellClone.style.left = '';
+        eCellClone.style.right = '';
+        // we put the cell into a containing div, as otherwise the cells would just line up
+        // on the same line, standard flow layout, by putting them into divs, they are laid
+        // out one per line
+        const eCloneParent = _createElement({ tag: 'div' });
+        const eCloneParentClassList = eCloneParent.classList;
+        const isHeader = ['ag-header-cell', 'ag-header-group-cell'].some((cls) => eCellClone.classList.contains(cls));
+
+        if (isHeader) {
+            eCloneParentClassList.add('ag-header', 'ag-header-row');
+            eCloneParent.style.position = 'static';
+        } else {
+            eCloneParentClassList.add('ag-row');
+        }
+
+        // find parent using classes (headers have ag-header-cell, rows have ag-row), and copy classes from it.
+        // if we didn't do this, things like ag-row-level-2 would be missing if present, which sets indents
+        // onto group items.
+        let pointer = eCell.parentElement;
+        while (pointer) {
+            const isRow = ['ag-header-row', 'ag-row'].some((cls) => pointer!.classList.contains(cls));
+            if (isRow) {
+                for (let i = 0; i < pointer.classList.length; i++) {
+                    const item = pointer.classList[i];
+
+                    // we skip ag-row-position-absolute, as this has structural CSS applied that stops the
+                    // element from fitting into it's parent, and we need the element to stretch the parent
+                    // as we are measuring the parents width
+                    if (item != 'ag-row-position-absolute') {
+                        eCloneParentClassList.add(item);
+                    }
+                }
+                break;
+            }
+            pointer = pointer.parentElement;
+        }
+
+        // the twig on the branch, the branch on the tree, the tree in the hole,
+        // the hole in the bog, the bog in the clone, the clone in the parent,
+        // the parent in the dummy, and the dummy down in the vall-e-ooo, OOOOOOOOO! Oh row the rattling bog....
+        eCloneParent.appendChild(eCellClone);
+        eDummyContainer.appendChild(eCloneParent);
+    }
+}

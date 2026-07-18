@@ -1,0 +1,12 @@
+dist/
+.venv/
+.conda/
+node_modules/
+__pycache__/
+build/
+.git/
+website/
+bindings/
+test/
+docs/
+*.log

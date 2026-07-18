@@ -1,0 +1,161 @@
+import type { Module, ModuleName, _ModuleWithLicenseManager } from '../interfaces/iModule';
+import type { RowModelType } from '../interfaces/iRowModel';
+import { _errorOnce } from '../utils/log';
+
+interface RowModelModuleStore {
+    [name: string]: Module;
+}
+
+type ModuleStore = {
+    [modelType in RowModelType | 'all']?: RowModelModuleStore;
+};
+
+const allRegisteredModules = new Set<Module>();
+const globalModulesMap: ModuleStore = {};
+const gridModulesMap: { [gridId: string]: ModuleStore } = {};
+let currentModuleVersion: string;
+let areGridScopedModules = false;
+let isUmd = false;
+
+function isValidModuleVersion(module: Module): boolean {
+    const [moduleMajor, moduleMinor] = module.version.split('.') || [];
+    const [currentModuleMajor, currentModuleMinor] = currentModuleVersion.split('.') || [];
+
+    return moduleMajor === currentModuleMajor && moduleMinor === currentModuleMinor;
+}
+
+function runVersionChecks(module: Module) {
+    if (!currentModuleVersion) {
+        currentModuleVersion = module.version;
+    }
+    const errorMsg = (details: string) =>
+        `You are using incompatible versions of AG Grid modules. Major and minor versions should always match across modules. ${details} Please update all modules to the same version.`;
+    if (!module.version) {
+        _errorOnce(errorMsg(`'${module.moduleName}' is incompatible.`));
+    } else if (!isValidModuleVersion(module)) {
+        _errorOnce(
+            errorMsg(
+                `'${module.moduleName}' is version ${module.version} but the other modules are version ${currentModuleVersion}.`
+            )
+        );
+    }
+
+    const result = module.validate?.();
+    if (result && !result.isValid) {
+        _errorOnce(`${result.message}`);
+    }
+}
+
+/** @internal AG_GRID_INTERNAL - Not for public use. Can change / be removed at any time. */
+export function _registerModule(module: Module, gridId: string | undefined): void {
+    runVersionChecks(module);
+    const rowModels = module.rowModels ?? ['all'];
+
+    allRegisteredModules.add(module);
+
+    let moduleStore: ModuleStore;
+    if (gridId !== undefined) {
+        areGridScopedModules = true;
+        if (gridModulesMap[gridId] === undefined) {
+            gridModulesMap[gridId] = {};
+        }
+        moduleStore = gridModulesMap[gridId];
+    } else {
+        moduleStore = globalModulesMap;
+    }
+    for (const rowModel of rowModels) {
+        if (moduleStore[rowModel] === undefined) {
+            moduleStore[rowModel] = {};
+        }
+        moduleStore[rowModel]![module.moduleName] = module;
+    }
+
+    if (module.dependsOn) {
+        for (const dependency of module.dependsOn) {
+            _registerModule(dependency, gridId);
+        }
+    }
+
+    module.onRegister?.();
+}
+
+export function _unRegisterGridModules(gridId: string): void {
+    delete gridModulesMap[gridId];
+}
+
+export function _isModuleRegistered(moduleName: ModuleName, gridId: string, rowModel: RowModelType): boolean {
+    const isRegisteredForRowModel = (model: RowModelType | 'all') =>
+        !!globalModulesMap[model]?.[moduleName] || !!gridModulesMap[gridId]?.[model]?.[moduleName];
+    return isRegisteredForRowModel(rowModel) || isRegisteredForRowModel('all');
+}
+
+export function _areModulesGridScoped(): boolean {
+    return areGridScopedModules;
+}
+
+export function _getRegisteredModules(gridId: string, rowModel: RowModelType): Module[] {
+    const gridModules = gridModulesMap[gridId] ?? {};
+    return [
+        ...Object.values(globalModulesMap['all'] ?? {}),
+        ...Object.values(gridModules['all'] ?? {}),
+        ...Object.values(globalModulesMap[rowModel] ?? {}),
+        ...Object.values(gridModules[rowModel] ?? {}),
+    ];
+}
+
+export function _getAllRegisteredModules(): Set<Module> {
+    return new Set(allRegisteredModules);
+}
+
+/** @internal AG_GRID_INTERNAL - Not for public use. Can change / be removed at any time. */
+export function _getGridRegisteredModules(gridId: string, rowModel: RowModelType): Module[] {
+    const gridModules = gridModulesMap[gridId] ?? {};
+    return [...Object.values(gridModules['all'] ?? {}), ...Object.values(gridModules[rowModel] ?? {})];
+}
+
+export function _isUmd(): boolean {
+    return isUmd;
+}
+
+/**
+ * Internal use to provide clear error messages for UMD users.
+ * @internal AG_GRID_INTERNAL - Not for public use. Can change / be removed at any time.
+ */
+export function _setUmd(): void {
+    isUmd = true;
+}
+
+export class ModuleRegistry {
+    /**
+     * @deprecated v33 Use `registerModules([module])` instead.
+     */
+    public static register(module: Module): void {
+        _registerModule(module, undefined);
+    }
+    /**
+     * Globally register the given modules for all grids.
+     * @param modules - modules to register
+     */
+    public static registerModules(modules: Module[]): void {
+        for (const module of modules) {
+            _registerModule(module, undefined);
+        }
+    }
+}
+
+/** @internal AG_GRID_INTERNAL - Not for public use. Can change / be removed at any time. */
+export function _findEnterpriseCoreModule(modules: Module[]): _ModuleWithLicenseManager | undefined {
+    for (const module of modules) {
+        if ('setLicenseKey' in module) {
+            return module as _ModuleWithLicenseManager;
+        }
+
+        if (module.dependsOn) {
+            const found = _findEnterpriseCoreModule(module.dependsOn);
+            if (found) {
+                return found;
+            }
+        }
+    }
+    return undefined;
+}

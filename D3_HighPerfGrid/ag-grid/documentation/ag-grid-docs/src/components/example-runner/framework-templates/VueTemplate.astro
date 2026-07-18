@@ -1,0 +1,85 @@
+---
+import ExampleStyle from './lib/ExampleStyle.astro';
+import { MetaData } from './lib/MetaData';
+import { Scripts } from './lib/Scripts';
+import Styles from './lib/Styles.astro';
+import Extras from './lib/Extras.astro';
+import { SystemJs } from './lib/SystemJs';
+import { pathJoin } from '@utils/pathJoin';
+
+interface Props {
+    isDev: boolean;
+    title: string;
+    isEnterprise: boolean;
+
+    modifiedTimeMs: number;
+    entryFileName: string;
+    /**
+     * Extra script file names (not including entry file)
+     */
+    scriptFiles?: string[];
+    styleFiles?: string[];
+    appLocation: string;
+    boilerplatePath: string;
+    extraStyles?: string;
+    extras?: string[];
+    headFragment?: string;
+    usesMathRandom?: boolean;
+    nonce?: string;
+}
+
+const {
+    isDev,
+    title,
+    isEnterprise,
+    modifiedTimeMs,
+    boilerplatePath,
+    appLocation,
+    entryFileName,
+    scriptFiles = [],
+    styleFiles = [],
+    extraStyles,
+    extras,
+    headFragment,
+    usesMathRandom,
+    nonce,
+} = Astro.props as Props;
+
+const startFile = pathJoin(appLocation, entryFileName);
+---
+
+<html lang="en">
+    <head>
+        <MetaData isDev={isDev} title={`Vue 3 Example - ${title}`} modifiedTimeMs={modifiedTimeMs} />
+        <ExampleStyle rootSelector="#app" extraStyles={extraStyles} />
+        <Styles baseUrl={appLocation} files={styleFiles} />
+        <Extras extras={extras ?? []} />
+        <Fragment set:html={headFragment} />
+    </head>
+    <body>
+        <div id="app"><my-component></my-component></div>
+
+        <script
+            is:inline
+            nonce={nonce}
+            define:vars={{
+                appLocation,
+            }}
+        >
+            window.__basePath = appLocation;
+        </script>
+
+        <Scripts baseUrl={appLocation} files={scriptFiles} nonce={nonce} />
+        <SystemJs
+            isDev={isDev}
+            boilerplatePath={boilerplatePath}
+            appLocation={appLocation}
+            startFile={startFile}
+            internalFramework={'vue3'}
+            isEnterprise={isEnterprise}
+            usesMathRandom={usesMathRandom}
+            nonce={nonce}
+        />
+        <slot />
+    </body>
+</html>

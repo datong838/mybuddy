@@ -1,0 +1,125 @@
+@use '../core' as *;
+
+.card {
+    --card-color: var(--color-border-primary);
+    --header-tint: 77.5%;
+    --content-tint: 95%;
+
+    display: flex;
+    flex-direction: column;
+    border-radius: var(--radius-md);
+    border: 3px solid var(--card-color);
+    background-color: var(--card-color);
+    overflow: hidden;
+
+    header,
+    .header,
+    .top {
+        padding: $spacing-size-2 $spacing-size-4;
+        background-color: color-mix(in srgb, var(--color-bg-primary) var(--header-tint), var(--card-color));
+    }
+
+    .content,
+    .bottom {
+        flex-grow: 1;
+        padding: $spacing-size-4;
+        background-color: color-mix(in srgb, var(--color-bg-primary) var(--content-tint), var(--card-color));
+    }
+}
+
+.tabs-outer {
+    border: 1px solid var(--color-border-secondary);
+    border-radius: var(--radius-sm);
+    display: flex;
+    flex-direction: column;
+
+    header,
+    .tabs-header {
+        display: flex;
+        gap: 0 $spacing-size-8;
+        width: 100%;
+        overflow-x: auto;
+        border-bottom: 1px solid var(--color-border-secondary);
+    }
+
+    pre.code {
+        margin-bottom: 0;
+    }
+}
+
+.tabs-nav-list {
+    display: flex;
+    flex-shrink: 0;
+    margin: 0;
+    padding-left: 0px;
+    list-style-type: none;
+    border-bottom: none;
+}
+
+.tabs-nav-item {
+    margin-bottom: 0;
+    padding-left: $spacing-size-2;
+    padding-right: $spacing-size-2;
+}
+
+.tabs-nav-link {
+    position: relative;
+    display: inline-block;
+    padding: ($spacing-size-2 + $spacing-size-1) $spacing-size-1;
+    line-height: var(--text-lh-tight);
+    color: var(--color-fg-tertiary);
+    transition: color $transition-default-timing;
+    cursor: pointer;
+
+    &:hover {
+        color: var(--color-link);
+    }
+
+    &::after {
+        content: '';
+        position: absolute;
+        right: 0;
+        bottom: 0;
+        left: 0;
+        height: 2px;
+        opacity: 0;
+        background-color: var(--color-link);
+        transition: opacity 0.3s ease-in-out;
+    }
+
+    &:hover::after {
+        opacity: 0.6666;
+    }
+
+    svg {
+        --icon-size: #{$spacing-size-6};
+
+        margin: -0.125em 0 0;
+        transition: fill $transition-default-timing;
+    }
+}
+
+.tabs-nav-link.active {
+    color: var(--color-fg-primary);
+    pointer-events: none;
+
+    &::after {
+        opacity: 1;
+    }
+
+    svg {
+        transition: none;
+    }
+}
+
+.tabs-content {
+    position: relative;
+    padding: $spacing-size-4;
+}
+
+img[alt='Quality Badge'] {
+    #{$selector-darkmode} & {
+        filter: invert(1) hue-rotate(180deg) saturate(1.25);
+        mix-blend-mode: screen;
+    }
+}

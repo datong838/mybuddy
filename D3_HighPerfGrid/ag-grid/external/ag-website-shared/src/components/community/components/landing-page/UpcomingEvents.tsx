@@ -1,0 +1,85 @@
+import ScrollingGallery from '@ag-website-shared/components/community/components/events/ScrollingGallery';
+import { Icon } from '@ag-website-shared/components/icon/Icon';
+import { useDarkmode } from '@utils/hooks/useDarkmode';
+import { urlWithBaseUrl } from '@utils/urlWithBaseUrl';
+import { useEffect, useState } from 'react';
+
+import styles from './UpcomingEvents.module.scss';
+
+const NUM_UPCOMING_EVENTS = 5;
+
+const filterEvents = (events) => {
+    const filteredEvents = events.filter(
+        (event) => new Date(event.startDate).getFullYear() == new Date().getFullYear()
+    );
+
+    return filteredEvents
+        .sort((a, b) => new Date(a.startDate) - new Date(b.startDate))
+        .slice(filteredEvents.length - NUM_UPCOMING_EVENTS, filteredEvents.length);
+};
+
+const UpcomingEvents = ({ images, events }) => {
+    const [darkMode] = useDarkmode();
+    const [currEvents, setCurrEvents] = useState(filterEvents(events));
+
+    // Function to format date
+    const formatDate = (dateString) => {
+        const date = new Date(dateString);
+        const options = { year: 'numeric', month: 'short', day: 'numeric' };
+        const formattedDate = new Intl.DateTimeFormat('en-US', options).format(date);
+
+        // Append 'st', 'nd', 'rd' or 'th' to the day number
+        const day = date.getDate();
+        let suffix = 'th';
+        if (day % 10 === 1 && day !== 11) {
+            suffix = 'st';
+        } else if (day % 10 === 2 && day !== 12) {
+            suffix = 'nd';
+        } else if (day % 10 === 3 && day !== 13) {
+            suffix = 'rd';
+        }
+
+        // Replace the numeric day with the day + suffix
+        return formattedDate.replace(/(\d+)(,)/, `$1${suffix},`);
+    };
+
+    useEffect(() => {
+        const filteredEventsWithImages = filterEvents(events).map((event) => {
+            return {
+                ...event,
+                image: urlWithBaseUrl(darkMode ? event.logo : event.logoLight),
+            };
+        });
+        setCurrEvents(filteredEventsWithImages);
+    }, [darkMode]);
+
+    return (
+        <div className={styles.container}>
+            <div className={styles.eventDetailsContainer}>
+                <ScrollingGallery images={images} />
+                <div className={styles.eventTilesContainer} style={{ '--num-event-links': NUM_UPCOMING_EVENTS }}>
+                    {currEvents.map((event, index) => (
+                        <a href={event.eventPage} target="_blank" className={styles.linkWrapper} key={index}>
+                            <div key={index} className={styles.eventTile}>
+                                <span className={styles.location}>
+                                    <Icon className={styles.locationIcon} name="mapPin" />
+                                    {event.location}
+                                </span>
+                                <span className={styles.conferenceIcon}>
+                                    {event.image && (
+                                        <img className={styles.organiserLogo} src={event.image} alt={`${event.logo}`} />
+                                    )}
+                                </span>
+                                <span className={styles.title}>{event.title}</span>
+                                <span className={styles.description}>{event.description}</span>
+                                <span className={styles.date}>{formatDate(event.startDate)}</span>
+                            </div>
+                        </a>
+                    ))}
+                </div>
+            </div>
+        </div>
+    );
+};
+
+export default UpcomingEvents;

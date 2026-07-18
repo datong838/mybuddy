@@ -1,0 +1,65 @@
+@use 'design-system' as *;
+
+.animatedWordsOuter {
+    --word-height: 1.2em;
+
+    display: inline-grid;
+    height: var(--word-height);
+    margin-bottom: -0.2em;
+    text-align: left;
+    overflow: hidden;
+    vertical-align: bottom;
+
+    // Stack the sizer and the visible word in the same cell: the grid track sizes to the
+    // widest child (the sizer), so the container width stays fixed as words cycle.
+    > * {
+        grid-area: 1 / 1;
+        align-self: end;
+    }
+}
+
+// Reserves the width of the widest word without being shown or announced (aria-hidden
+// in the markup). Kept in the layout so its width defines the container.
+.sizer {
+    visibility: hidden;
+}
+
+.animatedWord {
+    display: inline-block;
+    animation: framework-word-in 0.25s cubic-bezier(0.6, 0.3, 0.5, 1.4);
+
+    @media (prefers-reduced-motion: reduce) {
+        animation: none;
+    }
+}
+
+@keyframes framework-word-in {
+    from {
+        transform: translateY(-100%);
+        opacity: 0;
+    }
+
+    to {
+        transform: translateY(0);
+        opacity: 1;
+    }
+}
+
+.javascript {
+    color: #f7df1e; // Yellow
+}
+
+.react {
+    color: #61dafb; // Light Blue
+}
+
+.angular {
+    background: linear-gradient(90deg, #e40035, #f60a48 24%, #f20755 35%, #dc087d 49%, #9717e7 74%, #6c00f5 100%);
+    -webkit-background-clip: text;
+    background-clip: text;
+    color: transparent;
+}
+
+.vue {
+    color: #42b883; // Green
+}

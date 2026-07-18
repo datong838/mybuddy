@@ -1,0 +1,51 @@
+---
+title: "Floating Filter Component"
+description: "Create custom Floating Filter Components for $framework Data Grid to extend the built-in filter row UI."
+---
+
+{% if isFramework("javascript", "angular", "vue") %}
+Floating Filter Components allow you to add your own floating filter types to AG Grid. You can create a Custom Floating Filter Component to work alongside one of the grid's Provided Filters, or alongside a Custom Filter.
+{% /if %}
+
+{% if isFramework("react") %}
+{% videoSection id="MdO6vZN2Gxo" title="React Floating Filters" showHeader=true %}
+Floating Filter Components allow you to add your own floating filter types to AG Grid. You can create a Custom Floating Filter Component to work alongside one of the grid's Provided Filters, or alongside a Custom Filter.
+{% /videoSection %}
+{% /if %}
+
+## Example: Custom Floating Filter
+
+In the following example you can see how the Gold, Silver, Bronze and Total columns have a custom floating filter `NumberFloatingFilter`. This filter substitutes the standard floating filter for an input box that the user can change to adjust how many medals of each column to filter by based on a greater than filter.
+
+{% gridExampleRunner title="Custom Floating Filter" name="custom-floating-filter" /%}
+
+## Implementing a Floating Filter Component
+
+To configure custom floating filters, first enable the grid option `enableFilterHandlers`.
+
+{% note %}
+If you do not enable the grid option `enableFilterHandlers`, it is still possible to use custom floating filters, however this is not recommended. See [Legacy Floating Filter Component](./component-floating-filter-legacy/).
+{% /note %}
+
+{% partial file="./_component-interface-javascript.mdoc" /%}
+{% partial file="./_component-interface-angular.mdoc" /%}
+{% partial file="./_component-interface-react.mdoc" /%}
+{% partial file="./_component-interface-vue.mdoc" /%}
+
+{% if isFramework("javascript", "angular", "vue") %}
+{% interfaceDocumentation interfaceName="FloatingFilterDisplayParams" /%}
+{% /if %}
+
+## Example: Custom Filter And Custom Floating Filter
+
+This example extends the previous example by also providing its own custom filter `NumberFilter` in the Gold, Silver, Bronze and Total columns.
+
+{% gridExampleRunner title="Custom Filter and Floating Filter" name="custom-filter-and-floating-filter" /%}
+
+## Example: Custom Filter And Read-Only Floating Filter
+
+If you want to provide a custom filter but don't want to provide an equivalent custom floating filter, you can implement `getModelAsString()` on the filter handler and you will get a read-only floating filter for free.
+
+This example uses the previous custom filter but implements `getModelAsString()`. Note how there are no custom floating filters and yet each column using `NumberFilter` (Gold, Silver, Bronze and Total) has a read-only floating filter that gets updated as you change the values from the main filter.
+
+{% gridExampleRunner title="Custom Filter Only" name="custom-filter" /%}

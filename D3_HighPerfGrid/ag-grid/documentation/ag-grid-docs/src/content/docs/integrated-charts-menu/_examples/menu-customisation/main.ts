@@ -1,0 +1,89 @@
+import { AgChartsEnterpriseModule } from 'ag-charts-enterprise';
+
+import type {
+    DefaultChartMenuItem,
+    FirstDataRenderedEvent,
+    GetChartMenuItemsParams,
+    GridApi,
+    GridOptions,
+    GridReadyEvent,
+    MenuItemDef,
+} from 'ag-grid-community';
+import {
+    ClientSideRowModelModule,
+    ModuleRegistry,
+    NumberFilterModule,
+    TextFilterModule,
+    createGrid,
+    enableDevValidations,
+} from 'ag-grid-community';
+import { ColumnMenuModule, ContextMenuModule, IntegratedChartsModule } from 'ag-grid-enterprise';
+
+import { getData } from './data';
+
+// Enable extended validations only for development
+if (process.env.NODE_ENV !== 'production') {
+    enableDevValidations();
+}
+
+ModuleRegistry.registerModules([
+    TextFilterModule,
+    NumberFilterModule,
+    ClientSideRowModelModule,
+    IntegratedChartsModule.with(AgChartsEnterpriseModule),
+    ColumnMenuModule,
+    ContextMenuModule,
+]);
+
+let gridApi: GridApi;
+
+const gridOptions: GridOptions = {
+    columnDefs: [
+        { field: 'country', width: 150, chartDataType: 'category' },
+        { field: 'gold', chartDataType: 'series' },
+        { field: 'silver', chartDataType: 'series' },
+        { field: 'bronze', chartDataType: 'series' },
+    ],
+    defaultColDef: { flex: 1 },
+    cellSelection: true,
+    popupParent: document.body,
+    enableCharts: true,
+    chartMenuItems: chartMenuItems,
+    onGridReady: (params: GridReadyEvent) => {
+        getData().then((rowData) => params.api.setGridOption('rowData', rowData));
+    },
+    onFirstDataRendered,
+};
+
+function chartMenuItems(params: GetChartMenuItemsParams): (DefaultChartMenuItem | MenuItemDef)[] {
+    // Remove edit chart and advanced settings.
+    // `defaultItems` will automatically update the link/unlink options based on the current state.
+    const items: (DefaultChartMenuItem | MenuItemDef)[] = params.defaultItems.filter((item: string) => {
+        return item !== 'chartEdit' && item !== 'chartAdvancedSettings';
+    });
+    items.push({
+        name: 'Close Chart',
+        action: () => {
+            params.api.getChartRef(params.chartId)?.destroyChart();
+        },
+    });
+
+    return items;
+}
+
+function onFirstDataRendered(params: FirstDataRenderedEvent) {
+    params.api.createRangeChart({
+        cellRange: {
+            rowStartIndex: 0,
+            rowEndIndex: 4,
+            columns: ['country', 'gold', 'silver', 'bronze'],
+        },
+        chartType: 'groupedColumn',
+    });
+}
+
+// setup the grid after the page has finished loading
+document.addEventListener('DOMContentLoaded', function () {
+    const gridDiv = document.querySelector<HTMLElement>('#myGrid')!;
+    gridApi = createGrid(gridDiv, gridOptions);
+});

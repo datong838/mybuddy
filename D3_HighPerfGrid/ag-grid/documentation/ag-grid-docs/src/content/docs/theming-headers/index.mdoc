@@ -1,0 +1,89 @@
+---
+title: "Theming: Customising Headers"
+---
+
+Style grid header cells and column groups.
+
+The grid exposes many theme parameters starting `header*` for customising header appearance:
+
+```js
+const myTheme = themeQuartz.withParams({
+    headerHeight: '30px',
+    headerTextColor: 'white',
+    headerBackgroundColor: 'black',
+    headerCellHoverBackgroundColor: 'rgba(80, 40, 140, 0.66)',
+    headerCellMovingBackgroundColor: 'rgb(80, 40, 140)',
+});
+```
+
+For the full list, see the [Headers section](./theming-api/#reference-headers) of the parameters reference.
+
+When the theme parameters are not enough you can use CSS classes, in particular `ag-header`, `ag-header-cell`, and `ag-header-group-cell`:
+
+```css
+.ag-header {
+    font-family: cursive;
+}
+.ag-header-group-cell {
+    font-weight: normal;
+    font-size: 22px;
+}
+.ag-header-cell {
+    font-size: 18px;
+}
+```
+
+{% gridExampleRunner title="Colour Customisation" name="header-customisation"  exampleHeight=400 /%}
+
+## Header Column Borders and Resize Handles
+
+Header Column Borders appear between every column, whereas Resize Handles only appear on resizeable columns (Group 1 in the example below).
+
+```js
+const myTheme = themeQuartz.withParams({
+    headerColumnBorder: { color: 'purple' },
+    headerColumnBorderHeight: '80%',
+
+    headerColumnResizeHandleColor: 'orange',
+    headerColumnResizeHandleHeight: '25%',
+    headerColumnResizeHandleWidth: '5px',
+});
+```
+
+{% gridExampleRunner title="Column Separators" name="header-customisation-columns"  exampleHeight=400 /%}
+
+## Style Header on Filter
+
+Each time a [Column Filter](./filtering/) is applied to a column, the CSS class `ag-header-cell-filtered` is added to the header. This can be used for adding style to headers that are filtered.
+
+The example below adds some styling to `ag-header-cell-filtered`, so when you filter a column you will notice the column header change.
+
+{% gridExampleRunner title="Style Header" name="style-header-on-filter"  exampleHeight=520 /%}
+
+## Styling the First and Last Columns
+
+You can style all first and last column headers (Grouped, Non-Grouped and Floating Filters) using CSS by targeting the `.ag-column-first` and `.ag-column-last` selectors as follows:
+
+```css
+.ag-header-group-cell.ag-column-first {
+    background-color: #2244cc66; /* bluest */
+}
+.ag-header-cell.ag-column-first {
+    background-color: #2244cc44; /* bluer */
+}
+.ag-floating-filter.ag-column-first {
+    background-color: #2244cc22; /* blue */
+}
+
+.ag-header-group-cell.ag-column-last {
+    background-color: #33cc3366; /* greenest */
+}
+.ag-header-cell.ag-column-last {
+    background-color: #33cc3344; /* greener */
+}
+.ag-floating-filter.ag-column-last {
+    background-color: #33cc3322; /* green */
+}
+```
+
+{% gridExampleRunner title="Style Header" name="style-header-first-last"  exampleHeight=520 /%}

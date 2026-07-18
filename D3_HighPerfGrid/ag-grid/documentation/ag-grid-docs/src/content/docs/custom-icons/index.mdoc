@@ -1,0 +1,497 @@
+---
+title: "Custom Icons"
+---
+
+This section details how to provide your own icons for the grid and style grid icons for your application requirements
+
+## Swapping the Provided Icon Set
+
+The grid provides several icon sets as [theme parts](./theming-parts/). You can change the icon set on a theme using `theme.withPart(iconSet)`.
+
+Available icon sets are:
+
+- `iconSetQuartz` - our default icon set
+    - `iconSetQuartz({strokeWidth: number})` you can call iconSetQuartz as a function to provide a custom stroke width in pixels (the default is 1.5)
+    - `iconSetQuartzLight` and `iconSetQuartzBold` preset lighter and bolder versions of the Quartz icons with 1px and 2px stroke widths respectively.
+- `iconSetAlpine` - the icon set used by the Alpine theme
+- `iconSetMaterial` - the Material Design icon set (these are designed to be displayed at look best at 18, 24, 36 or 48px)
+
+This example shows the Quartz theme with the Material icon set
+
+```js
+import { iconSetMaterial, themeQuartz } from 'ag-grid-community';
+
+const myTheme = themeQuartz
+    .withPart(iconSetMaterial)
+    // Material icons are designed to look best at 18, 24, 36 or 48px
+    .withParams({
+        iconSize: 18,
+    });
+```
+
+{% gridExampleRunner title="Swapping the Icon Font" name="icons-swapping-font" /%}
+
+## Styling Provided Icons
+
+You can change the colour of the provided icons using CSS, and add other CSS styles such as borders and backgrounds. Icons have CSS class names in the format `ag-icon-{iconName}`. Use browser developer tools to find the appropriate class.
+
+Provided icons inherit the current text colour, so use the CSS `color` property to change their colour:
+
+```css
+/* Set the column menu icon to red */
+.ag-icon-menu-alt {
+    color: red;
+}
+
+/* Add a background to the row group icon */
+.ag-icon-tree-closed,
+.ag-icon-tree-open {
+    border-radius: 4px;
+    background-image: linear-gradient(to bottom, #66aec8, #aa74c6);
+}
+```
+
+{% gridExampleRunner title="Alternative Icon Font" name="icons-color" /%}
+
+## Replacing Individual Icons
+
+The `iconOverrides` part can be used to change individual icons to an image, solid colour with image mask, or icon font character. It can be used multiple times in the same theme to mix different types of icon.
+
+### Overriding Icons with Images
+
+`iconOverrides` can replace icons with images using the following arguments:
+
+| Parameter | Description                                                                                                                                                            |
+| --------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `type`    | `image`                                                                                                                                                                |
+| `mask`    | If `true`, the icon shape is taken from the image and the colour from the grid `foregroundColor` parameter. This allows one icon to serve in both light and dark modes |
+| `icons`   | A map of [icon name](#provided-icons) to images. Values use [image parameter syntax](./theming-parameters/#image-values) to accept image urls or svg source code.      |
+
+```js
+import { themeQuartz, iconOverrides } from 'ag-grid-community';
+
+// create an icon override part
+const mySvgIcons = iconOverrides({
+    type: 'image',
+    mask: true,
+    icons: {
+      // map of icon names to images
+      'filter': { url: 'https://examle.com/my-filter-icon.svg' },
+      'group': { svg: '<svg> ... svg source ...</svg>' },
+    }
+});
+
+// use it in a theme
+const myTheme = themeQuartz.withPart(mySvgIcons);
+```
+
+### Replacing Icons with Icon Font Characters
+
+`iconOverrides` can replace icons with icon font glyphs or emoji using the following arguments:
+
+| Parameter    | Description                                                                                                                                                                           |
+| ------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `type`       | `font`                                                                                                                                                                                |
+| `family`     | Optional, the name of the icon font family to use                                                                                                                                     |
+| `cssImports` | Optional, an array CSS file URLs to import, can be used to load the CSS file that defines the icon font                                                                               |
+| `weight`     | Optional, e.g. `bold`. Some icon fonts such as fontawesome require a bold font weight.                                                                                                |
+| `color`      | Optional CSS colour e.g. `red`. Can use [colour parameter syntax](./theming-parameters/#color-values) to reference and mix other colour parameters.                                   |
+| `icons`      | A map of [icon name](#icon-names) to text data. If you're using an icon font, the correct character for each icon will be documented by your font. But you can use any text or emoji. |
+
+```js
+import { themeQuartz, iconOverrides } from 'ag-grid-community';
+
+// create an icon override part
+const fontAwesomeIcons = iconOverrides({
+    type: 'font',
+    family: 'Font Awesome 5 Free',
+    cssImports: ['https://use.fontawesome.com/releases/v5.6.3/css/all.css'],
+    weight: 'bold', // Font Awesome requires bold font weight
+    icons: {
+        // use font codes documented by Font Awesome e.g. '\u{f062}' == arrow-up
+        asc: '\u{f062}',
+        desc: '\u{f063}',
+    },
+})
+
+// use it in a theme
+const myTheme = themeQuartz.withPart(fontAwesomeIcons);
+```
+
+### Replacing Icons Example
+
+The following example combines the various ways of overriding icons:
+
+- Sorting and grouping icons (coloured green) are replaced with characters from FontAwesome
+- Group and Aggregation icons (coloured red) are replaced with characters from the Material Design Icons font
+- The Columns icon (🏛️) is replaced with an emoji
+- The filter icon is replaced with a blue-coloured SVG image
+- The column menu icon is replaced with an SVG image in mask mode. Although the image is blue, the icon uses the grid foreground colour and will change colour as appropriate for light or dark mode.
+
+{% gridExampleRunner title="Alternative Icon Font" name="icons-override" /%}
+
+## Styling Icons Using CSS
+
+If you prefer to style your application using pure CSS, you can still change icons.
+
+```css
+.ag-icon-group {
+    /* set a new image */
+    background: url('https://www.ag-grid.com/example-assets/svg-icons/group.svg');
+    /* hide the existing image-mask based icon from the provided theme */
+    color: transparent;
+}
+```
+
+{% gridExampleRunner title="Swapping the Icon Font" name="icons-css" /%}
+
+## Provided Icons
+
+Below you can see a list with all available icons for each provided theme. The name next to each icon is the CSS name, e.g. the `pin` icon will have the CSS class `ag-icon-pin`.
+
+{% iconsPanel /%}
+
+## Set the Icons Through gridOptions (JavaScript)
+
+You can pass an `icons` property either on the [Grid Options](./grid-options/) to apply across the whole grid, or the [Column Definition](./column-properties/). If both are provided, icons specified at the column level will take priority.
+
+The `icons` property takes an object of name/value pairs where the name is one of the icon names below (note that these are different from the CSS names above) and the value is one of:
+
+- An HTML string to be inserted in place of the usual DOM element for an icon
+- A function that returns either an HTML string or a DOM node
+
+{% gridExampleRunner title="Icon Grid Options" name="icons-grid-options"  exampleHeight=660 /%}
+
+In the following list, the name to use in the grid options is to the left, and on the right is default value CSS icon name as listed in the [Provided Icons](#provided-icons) table below.
+
+## Icon Names
+
+This is a mapping of javascript name to CSS name for icons. When overriding icons using grid options, use the names on the left. When overriding icons in CSS or with `iconOverrides`, use the names on the right.
+
+```js
+// header column group shown when expanded (click to contract)
+columnGroupOpened: 'expanded'
+
+// header column group shown when contracted (click to expand)
+columnGroupClosed: 'contracted'
+
+// column tool panel column group contracted (click to expand)
+columnSelectClosed: 'tree-closed'
+
+// column tool panel column group expanded (click to contract)
+columnSelectOpen: 'tree-open'
+
+// column tool panel header expand/collapse all button, shown
+// when some children are expanded and others are collapsed
+columnSelectIndeterminate: 'tree-indeterminate'
+
+// accordion open (filter tool panel group, charts group)
+accordionOpen: 'tree-open'
+
+// accordion closed (filter tool panel group, charts group)
+accordionClosed: 'tree-closed'
+
+// accordion indeterminate - shown when some children are expanded and
+// others are collapsed (filter tool panel group, charts group)
+accordionIndeterminate: 'tree-indeterminate'
+
+// shown on drag and drop image component icon while dragging
+// column to the side of the grid to pin
+columnMovePin: 'pin'
+
+// shown on drag and drop image component icon while dragging over
+// part of the page that is not a drop zone
+columnMoveHide: 'eye-slash'
+
+// shown on drag and drop image component icon while dragging
+// columns to reorder
+columnMoveMove: 'arrows'
+
+// animating icon shown when dragging a column to the right of
+// the grid causes horizontal scrolling
+columnMoveLeft: 'left'
+
+// animating icon shown when dragging a column to the left of
+// the grid causes horizontal scrolling
+columnMoveRight: 'right'
+
+// shown on drag and drop image component icon while dragging
+// over Row Groups drop zone
+columnMoveGroup: 'group'
+
+// shown on drag and drop image component icon while dragging
+// over Values drop zone
+columnMoveValue: 'aggregation'
+
+// shown on drag and drop image component icon while dragging
+// over pivot drop zone
+columnMovePivot: 'pivot'
+
+// shown on drag and drop image component icon while dragging
+// over drop zone that doesn't support it, e.g.
+// string column over aggregation drop zone
+dropNotAllowed: 'not-allowed'
+
+// shown on row group when contracted (click to expand)
+groupContracted: 'tree-closed'
+
+// shown on row group when expanded (click to contract)
+groupExpanded: 'tree-open'
+
+// set filter tree list group contracted (click to expand)
+setFilterGroupClosed: 'tree-closed'
+
+// set filter tree list group expanded (click to contract)
+setFilterGroupOpen: 'tree-open'
+
+// set filter tree list expand/collapse all button, shown when
+// some children are expanded and
+// others are collapsed
+setFilterGroupIndeterminate: 'tree-indeterminate'
+
+// set filter async values loading
+setFilterLoading: 'loading'
+
+// context menu chart item
+chart: 'chart'
+
+// dialog title bar
+close: 'cross'
+
+// X (remove) on column 'pill' after adding it to a drop zone list
+cancel: 'cancel'
+
+// indicates the currently active pin state in the "Pin column"
+// sub-menu of the column menu
+check: 'tick'
+
+// "go to first" button in pagination controls
+first: 'first'
+
+// "go to previous" button in pagination controls
+previous: 'previous'
+
+// "go to next" button in pagination controls
+next: 'next'
+
+// "go to last" button in pagination controls
+last: 'last'
+
+// shown on top right of chart when chart is linked to range
+// data (click to unlink)
+linked: 'linked'
+
+// shown on top right of chart when chart is not linked to
+// range data (click to link)
+unlinked: 'unlinked'
+
+// rotating spinner shown by the loading cell renderer
+groupLoading: 'loading'
+
+// rotating spinner shown by the loading overlay
+overlayLoading: 'loading'
+
+// button to launch legacy column menu
+menu: 'menu'
+
+// button to launch new enterprise column menu
+menuAlt: 'menu-alt'
+
+// menu tab icon in legacy tabbed enterprise column menu
+legacyMenu: 'menu'
+
+// open filter button - header, floating filter, menu
+filter: 'filter'
+
+// filter is applied - header (legacy column menu), filter tool panel
+filterActive: 'filter'
+
+// filter add button in new filter tool panel
+filterAdd: 'filterAdd'
+
+// button to collapse filter card in new filter tool panel
+filterCardCollapse: 'chevron-up'
+
+// button to expand filter card in new filter tool panel
+filterCardExpand: 'chevron-down'
+
+// indicates filter card in new filter tool panel has edits
+filterCardEditing: 'edit'
+
+// filter tab icon in legacy tabbed enterprise column menu
+filterTab: 'filter'
+
+// filter tool panel tab
+filtersToolPanel: 'filter'
+
+// columns in menu (column chooser / columns tab)
+columns: 'columns'
+
+// column tool panel tab
+columnsToolPanel: 'columns'
+
+// "Ensure Column Visible" item in column tool panel context menu
+ensureColumnVisible: 'column-arrow'
+
+// calculated column header indicator
+calculatedColumnsHeader: 'fx'
+
+// "Add Calculated Column" item in column header menu
+calculatedColumnAdd: 'plus'
+
+// "Edit Calculated Column" item in column header menu
+calculatedColumnEdit: 'edit'
+
+// "Remove Calculated Column" item in menus
+calculatedColumnRemove: 'minus'
+
+// button in chart regular size window title bar (click to maximise)
+maximize: 'maximize'
+
+// button in chart maximised window title bar (click to make regular size)
+minimize: 'minimize'
+
+// "Pin column" item in column header menu
+menuPin: 'pin'
+
+// "Value aggregation" column menu item (shown on numeric
+// columns when grouping is active)"
+menuValue: 'aggregation'
+
+// "Group by {column-name}" item in column header menu
+menuAddRowGroup: 'group'
+
+// "Un-Group by {column-name}" item in column header menu
+menuRemoveRowGroup: 'group'
+
+// context menu copy item
+clipboardCopy: 'copy'
+
+// context menu cut item
+clipboardCut: 'cut'
+
+// context menu paste item
+clipboardPaste: 'paste'
+
+// identifies the pivot drop zone
+pivotPanel: 'pivot'
+
+// "Row groups" drop zone in column tool panel
+rowGroupPanel: 'group'
+
+// columns tool panel Values drop zone
+valuePanel: 'aggregation'
+
+// drag handle used to pick up draggable columns
+columnDrag: 'grip'
+
+// drag handle used to pick up draggable rows
+rowDrag: 'grip'
+
+// context menu export item
+save: 'save'
+
+// csv export
+csvExport: 'csv'
+
+// excel export
+excelExport: 'excel'
+
+// rotating spinner shown by the export overlay
+overlayExporting: 'loading',
+
+// icon on select dropdowns (select cell editor, charts tool panels)
+selectOpen: 'small-down'
+
+// open icon for rich select editor
+richSelectOpen: 'small-down'
+
+// remove for rich select editor pills
+richSelectRemove: 'cancel'
+
+// list items async values loading
+richSelectLoading: 'loading'
+
+// icon for sub menu item
+subMenuOpen: 'small-right'
+
+// version of subMenuOpen used in RTL mode
+subMenuOpenRtl: 'small-left'
+
+// separator between column 'pills' when you add multiple
+// columns to the header drop zone
+panelDelimiter: 'small-right'
+
+// version of panelDelimiter used in RTL mode
+panelDelimiterRtl: 'small-left'
+
+// show on column header when column is sorted ascending
+sortAscending: 'asc'
+
+// show on column header when column is sorted descending
+sortDescending: 'desc'
+
+// show on column header when column is sorted absolute ascending
+sortAbsoluteAscending: 'aasc'
+
+// show on column header when column is sorted absolute descending
+sortAbsoluteDescending: 'adesc'
+
+// show on column header when column has no sort, only when
+// enabled with colDef.unSortIcon=true
+sortUnSort: 'none'
+
+// Builder button in Advanced Filter
+advancedFilterBuilder: 'group'
+
+// drag handle used to pick up Advanced Filter Builder rows
+advancedFilterBuilderDrag: 'grip'
+
+// Advanced Filter Builder row validation error
+advancedFilterBuilderInvalid: 'not-allowed'
+
+// shown on Advanced Filter Builder rows to move them up
+advancedFilterBuilderMoveUp: 'up'
+
+// shown on Advanced Filter Builder rows to move them down
+advancedFilterBuilderMoveDown: 'down'
+
+// shown on Advanced Filter Builder rows to add new rows
+advancedFilterBuilderAdd: 'plus'
+
+// shown on Advanced Filter Builder rows to remove row
+advancedFilterBuilderRemove: 'minus'
+
+// shown on Advanced Filter Builder selection pills
+advancedFilterBuilderSelect: 'small-down'
+
+// icon to open charts menu
+chartsMenu: 'menu-alt'
+
+// Edit Chart menu item shown in Integrated Charts menu
+chartsMenuEdit: 'chart'
+
+// Advanced Settings menu item shown in Integrated Charts menu
+chartsMenuAdvancedSettings: 'settings'
+
+// shown in Integrated Charts menu add fields
+chartsMenuAdd: 'plus'
+
+// shown in Integrated Charts tool panel color picker
+chartsColorPicker: 'small-down'
+
+// previous in Integrated Charts settings tool panel theme switcher
+chartsThemePrevious: 'previous'
+
+// next in Integrated Charts settings tool panel theme switcher
+chartsThemeNext: 'next'
+
+// download chart
+chartsDownload: 'save'
+
+// icon used in the find toolbar input
+search: 'search'
+
+// file input overlay
+document: 'document'
+```

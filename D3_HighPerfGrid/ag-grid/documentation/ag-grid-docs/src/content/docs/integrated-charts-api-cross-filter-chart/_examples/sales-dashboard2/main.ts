@@ -1,0 +1,207 @@
+import { AgChartsEnterpriseModule } from 'ag-charts-enterprise';
+
+import type {
+    FirstDataRenderedEvent,
+    GridApi,
+    GridOptions,
+    GridReadyEvent,
+    ValueFormatterParams,
+} from 'ag-grid-community';
+import {
+    ClientSideRowModelModule,
+    DateEditorModule,
+    ModuleRegistry,
+    NumberEditorModule,
+    NumberFilterModule,
+    TextEditorModule,
+    TextFilterModule,
+    createGrid,
+    enableDevValidations,
+} from 'ag-grid-community';
+import {
+    ColumnMenuModule,
+    ColumnsToolPanelModule,
+    ContextMenuModule,
+    FiltersToolPanelModule,
+    IntegratedChartsModule,
+    MultiFilterModule,
+    RowGroupingModule,
+    SetFilterModule,
+} from 'ag-grid-enterprise';
+
+import { getData } from './data';
+
+// Enable extended validations only for development
+if (process.env.NODE_ENV !== 'production') {
+    enableDevValidations();
+}
+
+ModuleRegistry.registerModules([
+    ClientSideRowModelModule,
+    IntegratedChartsModule.with(AgChartsEnterpriseModule),
+    ColumnsToolPanelModule,
+    FiltersToolPanelModule,
+    ColumnMenuModule,
+    ContextMenuModule,
+    MultiFilterModule,
+    SetFilterModule,
+    RowGroupingModule,
+    NumberFilterModule,
+    TextFilterModule,
+    NumberEditorModule,
+    TextEditorModule,
+    DateEditorModule,
+]);
+
+let gridApi: GridApi;
+
+const gridOptions: GridOptions = {
+    columnDefs: [
+        { field: 'salesRep', chartDataType: 'category' },
+        { field: 'handset', chartDataType: 'category' },
+        {
+            headerName: 'Sale Price',
+            field: 'sale',
+            maxWidth: 160,
+            aggFunc: 'sum',
+            filter: 'agNumberColumnFilter',
+            chartDataType: 'series',
+        },
+        {
+            field: 'saleDate',
+            chartDataType: 'category',
+            filter: 'agSetColumnFilter',
+            filterParams: {
+                valueFormatter: (params: ValueFormatterParams) => `${params.value}`,
+            },
+            sort: 'asc',
+        },
+        {
+            field: 'quarter',
+            maxWidth: 160,
+            filter: 'agSetColumnFilter',
+            chartDataType: 'category',
+        },
+    ],
+    defaultColDef: {
+        flex: 1,
+        editable: true,
+        filter: 'agMultiColumnFilter',
+        floatingFilter: true,
+    },
+    enableCharts: true,
+    chartThemeOverrides: {
+        bar: {
+            axes: {
+                category: {
+                    label: {
+                        rotation: 0,
+                    },
+                },
+            },
+        },
+    },
+    onGridReady: (params: GridReadyEvent) => {
+        getData().then((rowData) => params.api.setGridOption('rowData', rowData));
+    },
+    onFirstDataRendered,
+};
+
+function onFirstDataRendered(params: FirstDataRenderedEvent) {
+    createQuarterlySalesChart(params.api);
+    createSalesByRefChart(params.api);
+    createHandsetSalesChart(params.api);
+}
+
+function createQuarterlySalesChart(api: GridApi) {
+    api.createCrossFilterChart({
+        chartType: 'line',
+        cellRange: {
+            columns: ['quarter', 'sale'],
+        },
+        aggFunc: 'sum',
+        chartThemeOverrides: {
+            common: {
+                title: {
+                    enabled: true,
+                    text: 'Quarterly Sales ($)',
+                },
+                axes: {
+                    category: {
+                        label: {
+                            rotation: 0,
+                        },
+                    },
+                    number: {
+                        label: {
+                            formatter: (params: any) => {
+                                return params.value / 1000 + 'k';
+                            },
+                        },
+                    },
+                },
+            },
+        },
+        sort: [{ colId: 'quarter', sort: 'asc' }],
+        chartContainer: document.querySelector('#lineChart') as any,
+    });
+}
+
+function createSalesByRefChart(api: GridApi) {
+    api.createCrossFilterChart({
+        chartType: 'donut',
+        cellRange: {
+            columns: ['salesRep', 'sale'],
+        },
+        aggFunc: 'sum',
+        chartThemeOverrides: {
+            common: {
+                title: {
+                    enabled: true,
+                    text: 'Sales by Representative ($)',
+                },
+            },
+            pie: {
+                legend: {
+                    position: 'right',
+                },
+                series: {
+                    title: {
+                        enabled: false,
+                    },
+                    calloutLabel: {
+                        enabled: false,
+                    },
+                },
+            },
+        },
+        sort: false,
+        chartContainer: document.querySelector('#donutChart') as any,
+    });
+}
+
+function createHandsetSalesChart(api: GridApi) {
+    api.createCrossFilterChart({
+        chartType: 'area',
+        cellRange: {
+            columns: ['handset', 'sale'],
+        },
+        aggFunc: 'count',
+        chartThemeOverrides: {
+            common: {
+                title: {
+                    enabled: true,
+                    text: 'Handsets Sold (Units)',
+                },
+                padding: { left: 47, right: 80 },
+            },
+        },
+        sort: [{ colId: 'handset', sort: 'asc' }],
+        chartContainer: document.querySelector('#areaChart') as any,
+    });
+}
+
+// setup the grid after the page has finished loading
+document.addEventListener('DOMContentLoaded', function () {
+    gridApi = createGrid(document.querySelector<HTMLElement>('#myGrid')!, gridOptions);
+});

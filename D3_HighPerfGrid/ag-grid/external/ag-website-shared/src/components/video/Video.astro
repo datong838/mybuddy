@@ -1,0 +1,26 @@
+---
+import { Video } from './Video';
+import { getPageImages } from '@components/docs/utils/filesData';
+import { getPageNameFromPath } from '@components/docs/utils/urlPaths';
+
+interface Props {
+    videoSrc?: string;
+    autoplay?: boolean;
+    showPlayPauseButtons?: boolean;
+    centered?: boolean;
+}
+
+const { pageName: propPageName, videoSrc, autoplay, showPlayPauseButtons, centered } = Astro.props as Props;
+
+const pageName = propPageName ? propPageName : getPageNameFromPath(Astro.url.pathname);
+const src = await getPageImages({ pageName, imagePath: videoSrc });
+---
+
+<Video
+    client:load
+    videoSrc={src.imageSrc}
+    darkModeVideoSrc={src.darkModeImageSrc}
+    autoplay={autoplay}
+    showPlayPauseButtons={showPlayPauseButtons}
+    centered={centered}
+/>

@@ -1,0 +1,23 @@
+.full-width-panel {
+    white-space: normal;
+    height: 100%;
+    width: 100%;
+    box-sizing: border-box;
+    background-color: #ccaa2233;
+    border: 1px solid;
+    border-color: transparent;
+    border-style: var(--ag-range-selection-border-style);
+    display: flex;
+    align-items: center;
+    gap: 5px;
+    padding-left: var(--ag-cell-horizontal-padding);
+}
+
+.full-width-panel input {
+    width: 80px;
+}
+
+.ag-row:focus .full-width-panel {
+    background-color: #ccaa2255;
+    border-color: var(--ag-range-selection-border-color);
+}

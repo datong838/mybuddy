@@ -1,0 +1,395 @@
+// SPDX-License-Identifier: MIT
+// Copyright contributors to the kepler.gl project
+
+import React, {useEffect, useRef, useMemo} from 'react';
+import styled from 'styled-components';
+import truncate from 'lodash/truncate';
+import {CompareType, Field, Merge, TooltipField} from '@kepler.gl/types';
+import {CenterFlexbox} from '../common/styled-components';
+import {Layers} from '../common/icons';
+import PropTypes from 'prop-types';
+import {notNullorUndefined} from '@kepler.gl/common-utils';
+import {DataRow} from '@kepler.gl/utils';
+import {Layer} from '@kepler.gl/layers';
+import {
+  AggregationLayerHoverData,
+  LayerHoverProp,
+  getTooltipDisplayDeltaValue,
+  getTooltipDisplayValue
+} from '@kepler.gl/reducers';
+import {useIntl} from 'react-intl';
+import {VisState} from '@kepler.gl/schemas';
+import {capitalizeFirstLetter} from '@kepler.gl/utils';
+
+export const StyledLayerName = styled(CenterFlexbox)`
+  color: ${props => props.theme.textColorHl};
+  font-size: 12px;
+  letter-spacing: 0.43px;
+  text-transform: capitalize;
+
+  svg {
+    margin-right: 4px;
+  }
+`;
+
+const StyledTable = styled.table`
+  & .row__delta-value {
+    text-align: right;
+    margin-left: 6px;
+
+    &.positive {
+      color: ${props => props.theme.notificationColors.success};
+    }
+
+    &.negative {
+      color: ${props => props.theme.negativeBtnActBgd};
+    }
+  }
+  & .row__name {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  & .row__value {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: pre-line;
+    max-width: 250px;
+  }
+`;
+
+const StyledDivider = styled.div`
+  // offset divider to reach popover edge
+  margin-left: -14px;
+  margin-right: -14px;
+  border-bottom: 1px solid ${props => props.theme.panelBorderColor};
+`;
+
+interface RowProps {
+  name: string;
+  value: string;
+  deltaValue?: string | null;
+  url?: string;
+  isComparing?: boolean;
+}
+
+const TOOLTIP_VALUE_MAX_LENGTH = 256;
+
+/**
+ * Image component that cleans up resources on unmount to prevent memory leaks.
+ * Revokes blob/object URLs and clears the image src to release memory.
+ */
+const TooltipImage: React.FC<{src: string}> = ({src}) => {
+  const imgRef = useRef<HTMLImageElement>(null);
+
+  useEffect(() => {
+    return () => {
+      // Revoke blob URLs to free memory
+      if (src && (src.startsWith('blob:') || src.startsWith('data:'))) {
+        try {
+          URL.revokeObjectURL(src);
+        } catch (e) {
+          // ignore errors from non-object URLs
+        }
+      }
+      // Clear the image src to release the decoded image from memory
+      if (imgRef.current) {
+        imgRef.current.src = '';
+      }
+    };
+  }, [src]);
+
+  return <img ref={imgRef} src={src} />;
+};
+
+const Row: React.FC<RowProps> = ({name, value, deltaValue, url, isComparing}) => {
+  // Set 'url' to 'value' if it looks like a url
+  if (!url && value && typeof value === 'string' && value.match(/^http/)) {
+    url = value;
+  }
+
+  const displayValue =
+    typeof value === 'string' && value.length > TOOLTIP_VALUE_MAX_LENGTH
+      ? truncate(value, {length: TOOLTIP_VALUE_MAX_LENGTH})
+      : value;
+
+  const asImg = /<img>/.test(name);
+  return (
+    <tr className="layer-hover-info__row" key={name}>
+      <td className="row__name">{asImg ? name.replace('<img>', '') : name}</td>
+      <td className="row__value">
+        {asImg ? (
+          <TooltipImage src={value} />
+        ) : url ? (
+          <a target="_blank" rel="noopener noreferrer" href={url}>
+            {displayValue}
+          </a>
+        ) : (
+          <span>{displayValue}</span>
+        )}
+      </td>
+      {isComparing ? (
+        <td
+          className={`row__delta-value ${
+            notNullorUndefined(deltaValue)
+              ? deltaValue?.toString().charAt(0) === '+'
+                ? 'positive'
+                : 'negative'
+              : ''
+          }`}
+        >
+          {deltaValue ?? ''}
+        </td>
+      ) : null}
+    </tr>
+  );
+};
+
+export type EntryInfoProps = Merge<LayerHoverProp, {fieldsToShow: TooltipField[]}>;
+
+const EntryInfo: React.FC<EntryInfoProps> = ({fieldsToShow, ...props}) => (
+  <tbody>
+    {fieldsToShow.map(item => (
+      <EntryInfoRow key={item.name} item={item} {...props} />
+    ))}
+  </tbody>
+);
+
+export type EntryInfoRowProps = {
+  data: LayerHoverProp['data'];
+  fields: Field[];
+  layer: Layer;
+  primaryData?: LayerHoverProp['primaryData'];
+  compareType?: CompareType;
+  currentTime?: VisState['animationConfig']['currentTime'];
+  item: TooltipField;
+};
+
+const EntryInfoRow: React.FC<EntryInfoRowProps> = ({
+  layer,
+  item,
+  fields,
+  data,
+  primaryData,
+  compareType,
+  currentTime
+}) => {
+  const fieldIdx = fields.findIndex(f => f.name === item.name);
+  if (fieldIdx < 0) {
+    return null;
+  }
+  const field = fields[fieldIdx];
+  const fieldValueAccessor = layer.accessVSFieldValue(field, currentTime);
+  const value = fieldValueAccessor(field, data instanceof DataRow ? {index: data._rowIndex} : data);
+
+  let primaryValue = null;
+  let displayDeltaValue: string | null = null;
+
+  if (primaryData) {
+    try {
+      if (primaryData instanceof DataRow) {
+        primaryValue = fieldValueAccessor(field, {index: primaryData._rowIndex});
+      } else if (Array.isArray(primaryData) || (typeof primaryData === 'object' && primaryData)) {
+        primaryValue = fieldValueAccessor(field, primaryData);
+      }
+
+      displayDeltaValue = getTooltipDisplayDeltaValue({
+        field,
+        value,
+        primaryValue,
+        compareType
+      });
+    } catch (error) {
+      primaryValue = null;
+    }
+  }
+
+  const displayValue = getTooltipDisplayValue({item, field, value});
+
+  return (
+    <Row
+      name={field.displayName || field.name}
+      value={displayValue}
+      deltaValue={displayDeltaValue}
+      isComparing={Boolean(primaryData)}
+    />
+  );
+};
+
+const CellInfo = ({
+  fieldsToShow,
+  data,
+  layer,
+  primaryData,
+  compareType
+}: {
+  data: AggregationLayerHoverData;
+  fieldsToShow: TooltipField[];
+  layer: Layer;
+  primaryData?: AggregationLayerHoverData | null;
+  compareType?: CompareType;
+}) => {
+  const {colorField, sizeField} = layer.config as any;
+  const isComparing = Boolean(primaryData);
+
+  const colorValue = useMemo(() => {
+    if (colorField && layer.visualChannels.color) {
+      const item = fieldsToShow.find(field => field.name === colorField.name);
+      return getTooltipDisplayValue({item, field: colorField, value: data.colorValue});
+    }
+    return null;
+  }, [fieldsToShow, colorField, layer, data.colorValue]);
+
+  const elevationValue = useMemo(() => {
+    if (sizeField && layer.visualChannels.size) {
+      const item = fieldsToShow.find(field => field.name === sizeField.name);
+      return getTooltipDisplayValue({item, field: sizeField, value: data.elevationValue});
+    }
+    return null;
+  }, [fieldsToShow, sizeField, layer, data.elevationValue]);
+
+  const colorDelta = useMemo(() => {
+    if (!primaryData || !colorField || !('colorValue' in primaryData)) return null;
+    return getTooltipDisplayDeltaValue({
+      field: colorField,
+      value: data.colorValue,
+      primaryValue: primaryData.colorValue,
+      compareType
+    });
+  }, [primaryData, colorField, data.colorValue, compareType]);
+
+  const elevationDelta = useMemo(() => {
+    if (!primaryData || !sizeField || !('elevationValue' in primaryData)) return null;
+    return getTooltipDisplayDeltaValue({
+      field: sizeField,
+      value: data.elevationValue,
+      primaryValue: primaryData.elevationValue,
+      compareType
+    });
+  }, [primaryData, sizeField, data.elevationValue, compareType]);
+
+  const aggregatedData = useMemo(() => {
+    if (data.aggregatedData && fieldsToShow) {
+      return fieldsToShow.reduce(
+        (acc, field) => {
+          const dataForField = data.aggregatedData?.[field.name];
+          if (dataForField?.measure && field.name !== colorField?.name) {
+            const primaryDataForField = primaryData?.aggregatedData?.[field.name];
+            const deltaValue = primaryDataForField
+              ? getTooltipDisplayDeltaValue({
+                  field: {type: 'real', name: field.name} as Field,
+                  value: dataForField.value != null ? Number(dataForField.value) : null,
+                  primaryValue:
+                    primaryDataForField.value != null ? Number(primaryDataForField.value) : null,
+                  compareType
+                })
+              : null;
+            acc.push({
+              name: `${capitalizeFirstLetter(dataForField.measure)} of ${field.name}`,
+              value: dataForField.value,
+              deltaValue
+            });
+          }
+          return acc;
+        },
+        [] as {name: string; value?: string; deltaValue: string | null}[]
+      );
+    }
+    return [];
+  }, [data.aggregatedData, fieldsToShow, colorField?.name, primaryData, compareType]);
+
+  const colorMeasure = layer.getVisualChannelDescription('color').measure;
+  const sizeMeasure = layer.getVisualChannelDescription('size').measure;
+  return (
+    <tbody>
+      <Row
+        name={'total points'}
+        key="count"
+        value={String(data.points && data.points.length)}
+        isComparing={isComparing}
+      />
+      {colorField && layer.visualChannels.color && colorMeasure ? (
+        <Row
+          name={colorMeasure}
+          key="color"
+          value={colorValue || 'N/A'}
+          deltaValue={colorDelta}
+          isComparing={isComparing}
+        />
+      ) : null}
+      {sizeField && layer.visualChannels.size && sizeMeasure ? (
+        <Row
+          name={sizeMeasure}
+          key="size"
+          value={elevationValue || 'N/A'}
+          deltaValue={elevationDelta}
+          isComparing={isComparing}
+        />
+      ) : null}
+      {aggregatedData.map((dataForField, idx) => (
+        <Row
+          name={dataForField.name}
+          key={`data_${idx}`}
+          value={dataForField.value != null ? String(dataForField.value) : 'N/A'}
+          deltaValue={dataForField.deltaValue}
+          isComparing={isComparing}
+        />
+      ))}
+    </tbody>
+  );
+};
+
+const LayerHoverInfoFactory = () => {
+  const LayerHoverInfo = props => {
+    const {data, layer} = props;
+    const intl = useIntl();
+    if (!data || !layer) {
+      return null;
+    }
+
+    const hasFieldsToShow =
+      (data.fieldValues && Object.keys(data.fieldValues).length > 0) ||
+      (data.wmsFeatureData && data.wmsFeatureData.length > 0) ||
+      (props.fieldsToShow && props.fieldsToShow.length > 0);
+
+    return (
+      <div className="map-popover__layer-info">
+        <StyledLayerName className="map-popover__layer-name">
+          <Layers height="12px" />
+          {props.layer.config.label}
+        </StyledLayerName>
+        {hasFieldsToShow && <StyledDivider />}
+        <StyledTable className={props.primaryData ? 'comparing' : undefined}>
+          {data.wmsFeatureData ? (
+            <tbody>
+              {data.wmsFeatureData.map(({name, value}, i) => (
+                <Row key={i} name={name} value={value} />
+              ))}
+            </tbody>
+          ) : data.fieldValues ? (
+            <tbody>
+              {data.fieldValues.map(({labelMessage, value}, i) => (
+                <Row key={i} name={intl.formatMessage({id: labelMessage})} value={value} />
+              ))}
+            </tbody>
+          ) : props.layer.isAggregated ? (
+            <CellInfo {...props} />
+          ) : (
+            <EntryInfo {...props} />
+          )}
+        </StyledTable>
+        {hasFieldsToShow && <StyledDivider />}
+      </div>
+    );
+  };
+
+  LayerHoverInfo.propTypes = {
+    fields: PropTypes.arrayOf(PropTypes.any),
+    fieldsToShow: PropTypes.arrayOf(PropTypes.any),
+    layer: PropTypes.object,
+    data: PropTypes.oneOfType([PropTypes.arrayOf(PropTypes.any), PropTypes.object])
+  };
+  return LayerHoverInfo;
+};
+
+export default LayerHoverInfoFactory;

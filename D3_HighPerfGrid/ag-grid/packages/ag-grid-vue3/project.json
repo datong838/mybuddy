@@ -1,0 +1,91 @@
+{
+  "name": "ag-grid-vue3",
+  "$schema": "../../node_modules/nx/schemas/project-schema.json",
+  "sourceRoot": "packages/ag-grid-vue3/src",
+  "projectType": "library",
+  "targets": {
+    "lint": {
+      "command": "eslint",
+      "options": {
+        "cwd": "{projectRoot}"
+      }
+    },
+    "updateGridAndColumnProperties": {
+      "executor": "nx:run-commands",
+      "dependsOn": ["ag-grid-community:build:package"],
+      "inputs": [
+        "{projectRoot}/updateGridAndColumnProperties.cjs",
+        "{workspaceRoot}/packages/ag-grid-community/src/entities/gridOptions.ts"
+      ],
+      "outputs": ["{projectRoot}/src/components/utils.ts"],
+      "cache": true,
+      "options": {
+        "cwd": "{projectRoot}",
+        "command": "node updateGridAndColumnProperties.cjs"
+      }
+    },
+    "build": {
+      "executor": "nx:run-script",
+      "dependsOn": ["ag-grid-community:build:package", "updateGridAndColumnProperties"],
+      "inputs": [
+        "tsDeclarations",
+        "{projectRoot}/src/**",
+        "{projectRoot}/vite.config.ts",
+        "!{projectRoot}/dist",
+        "{workspaceRoot}/packages/ag-grid-community/src/components/componentUtil.ts",
+        "{workspaceRoot}/packages/ag-grid-community/src/propertyKeys.ts"
+      ],
+      "cache": true,
+      "outputs": ["{projectRoot}/dist"],
+      "options": {
+        "script": "build"
+      },
+      "configurations": {
+        "production": {},
+        "archive": {},
+        "watch": {
+          "options": {
+            "script": "build:watch"
+          }
+        }
+      }
+    },
+    "pack": {
+      "executor": "nx:run-commands",
+      "dependsOn": ["build"],
+      "inputs": ["allTransitiveOutputs"],
+      "outputs": ["{workspaceRoot}/dist/artifacts/{projectRoot}.tgz"],
+      "options": {
+        "cwd": "{projectRoot}",
+        "parallel": false,
+        "commands": [
+          "mkdir -p ../../dist/artifacts/{projectRoot}",
+          "yarn pack -f ../../dist/artifacts/{projectRoot}.tgz",
+          "rm -rf ../../dist/artifacts/{projectRoot}"
+        ]
+      }
+    },
+    "pack:extract": {
+      "executor": "nx:run-commands",
+      "dependsOn": ["pack"],
+      "inputs": ["allOutputs"],
+      "outputs": ["{workspaceRoot}/dist/artifacts/contents/{projectRoot}"],
+      "options": {
+        "command": "scripts/package/extract-contents.sh {projectRoot}"
+      }
+    },
+    "pack:verify": {
+      "executor": "nx:run-commands",
+      "dependsOn": ["pack:extract"],
+      "inputs": ["allOutputs"],
+      "options": {
+        "commands": ["node scripts/package/sanity-check-package.js dist/artifacts/contents/{projectRoot}/package"]
+      },
+      "configurations": {
+        "production": {},
+        "archive": {}
+      }
+    }
+  },
+  "tags": ["package", "community", "framework", "vue3"]
+}

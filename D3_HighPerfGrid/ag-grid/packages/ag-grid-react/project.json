@@ -1,0 +1,147 @@
+{
+  "name": "ag-grid-react",
+  "$schema": "../../node_modules/nx/schemas/project-schema.json",
+  "sourceRoot": "packages/ag-grid-react/src",
+  "projectType": "library",
+  "targets": {
+    "lint": {
+      "command": "eslint",
+      "options": {
+        "cwd": "{projectRoot}"
+      }
+    },
+    "build": {
+      "executor": "nx:noop",
+      "dependsOn": ["build:package", "build:umd", "build:types"],
+      "inputs": [],
+      "outputs": [],
+      "configurations": {
+        "watch": {},
+        "production": {}
+      }
+    },
+    "build:types": {
+      "executor": "@nx/js:tsc",
+      "dependsOn": ["ag-grid-community:build:types"],
+      "inputs": [
+        "{projectRoot}/package.json",
+        "{projectRoot}/src/**/*",
+        "{projectRoot}/tsconfig.*.json",
+        "tsDeclarations",
+        "sharedGlobals",
+        "defaultExcludes",
+        {
+          "externalDependencies": ["npm:typescript", "npm:esbuild"]
+        }
+      ],
+      "outputs": ["{options.outputPath}"],
+      "options": {
+        "outputPath": "packages/ag-grid-react/dist/types",
+        "main": "packages/ag-grid-react/src/index.ts",
+        "tsConfig": "packages/ag-grid-react/tsconfig.types.json",
+        "compiler": "tsc"
+      },
+      "configurations": {
+        "watch": {},
+        "production": {}
+      }
+    },
+    "build:package": {
+      "executor": "@nx/esbuild:esbuild",
+      "dependsOn": ["ag-grid-community:build:types", "ag-grid-community:build:package"],
+      "inputs": [
+        "{projectRoot}/package.json",
+        "{projectRoot}/src/**/*",
+        "{projectRoot}/tsconfig.*.json",
+        "tsDeclarations",
+        "sharedGlobals",
+        "defaultExcludes"
+      ],
+      "outputs": ["{options.outputPath}"],
+      "options": {
+        "outputPath": "packages/ag-grid-react/dist/package",
+        "main": "packages/ag-grid-react/src/index.ts",
+        "tsConfig": "packages/ag-grid-react/tsconfig.lib.json",
+        "external": ["ag-grid-community", "react", "react-dom"],
+        "esbuildConfig": "esbuild.config.cjs",
+        "platform": "browser",
+        "target": "es2020",
+        "format": ["cjs", "esm"],
+        "sourcemap": true
+      },
+      "configurations": {
+        "watch": {},
+        "production": {
+          "sourcemap": false
+        },
+        "sizing": { "metafile": false }
+      }
+    },
+    "build:umd": {
+      "executor": "@nx/esbuild:esbuild",
+      "dependsOn": ["build:package"],
+      "outputs": ["{options.outputPath}"],
+      "options": {
+        "outputPath": "{projectRoot}/dist/umd",
+        "outputFileName": "ag-grid-react",
+        "main": "{projectRoot}/dist/package/index.cjs.js",
+        "tsConfig": "packages/ag-grid-react/tsconfig.lib.json",
+        "esbuildConfig": "esbuild.config.cjs",
+        "platform": "browser",
+        "target": "es2020",
+        "bundle": true,
+        "thirdParty": true,
+        "skipTypeCheck": true,
+        "external": ["ag-grid-community", "react", "react-dom"],
+        "format": ["cjs"],
+        "sourcemap": true
+      },
+      "configurations": {
+        "staging": {
+          "sourcemap": false
+        },
+        "production": {
+          "sourcemap": false
+        },
+        "sizing": { "metafile": false }
+      }
+    },
+    "pack": {
+      "executor": "nx:run-commands",
+      "dependsOn": ["build"],
+      "inputs": ["allTransitiveOutputs"],
+      "outputs": ["{workspaceRoot}/dist/artifacts/{projectRoot}.tgz"],
+      "options": {
+        "cwd": "{projectRoot}",
+        "parallel": false,
+        "commands": [
+          "mkdir -p ../../dist/artifacts/{projectRoot}",
+          "yarn pack -f ../../dist/artifacts/{projectRoot}.tgz",
+          "rm -rf ../../dist/artifacts/{projectRoot}"
+        ]
+      }
+    },
+    "pack:extract": {
+      "executor": "nx:run-commands",
+      "dependsOn": ["pack"],
+      "inputs": ["allOutputs"],
+      "outputs": ["{workspaceRoot}/dist/artifacts/contents/{projectRoot}"],
+      "options": {
+        "command": "scripts/package/extract-contents.sh {projectRoot}"
+      }
+    },
+    "pack:verify": {
+      "executor": "nx:run-commands",
+      "dependsOn": ["pack:extract"],
+      "inputs": ["allOutputs"],
+      "options": {
+        "commands": ["node scripts/package/sanity-check-package.js dist/artifacts/contents/{projectRoot}/package"]
+      },
+      "configurations": {
+        "production": {},
+        "archive": {}
+      }
+    }
+  },
+  "tags": ["package", "community", "framework", "react"]
+}

@@ -1,0 +1,23 @@
+@mixin output {
+    .ag-root-wrapper,
+    .ag-dnd-ghost {
+        background-color: var(--ag-wrapper-background-color);
+    }
+
+    .ag-root-wrapper,
+    .ag-popup {
+        --ag-indentation-level: 0;
+    }
+
+    .ag-styled-root {
+        display: contents;
+    }
+
+    [class*='ag-theme-'] {
+        -webkit-font-smoothing: antialiased;
+        font-family: var(--ag-font-family);
+        font-size: var(--ag-font-size);
+        line-height: normal;
+        color: var(--ag-foreground-color);
+    }
+}

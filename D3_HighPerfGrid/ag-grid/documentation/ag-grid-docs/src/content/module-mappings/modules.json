@@ -1,0 +1,562 @@
+{
+    "groups": [
+        {
+            "name": "Development and Testing",
+            "children": [
+                {
+                    "moduleName": "ValidationModule",
+                    "name": "Validation (Dev Mode)",
+                    "path": "modules/#development-validations"
+                }
+            ]
+        },
+        {
+            "name": "Columns",
+            "children": [
+                {
+                    "moduleName": "ColumnAutoSizeModule",
+                    "name": "Column Auto-Sizing",
+                    "path": "column-sizing/#auto-sizing-columns"
+                },
+                {
+                    "moduleName": "ColumnHoverModule",
+                    "name": "Column Hover",
+                    "path": "grid-api/#reference-colHover-isColumnHovered"
+                },
+                {
+                    "moduleName": "AutoGenerateColumnsModule",
+                    "name": "Auto-Generate Columns",
+                    "path": "auto-generate-columns"
+                },
+                {
+                    "moduleName": "FileInputOverlayModule",
+                    "name": "File Input Overlay",
+                    "path": "auto-generate-columns/#file-drop-overlay"
+                },
+                {
+                    "moduleName": "CalculatedColumnsModule",
+                    "name": "Calculated Columns",
+                    "path": "calculated-columns",
+                    "isEnterprise": true
+                }
+            ]
+        },
+        {
+            "name": "Rows",
+            "children": [
+                {
+                    "moduleName": "PinnedRowModule",
+                    "name": "Row Pinning",
+                    "path": "row-pinning"
+                },
+                {
+                    "moduleName": "RowAutoHeightModule",
+                    "name": "Auto Row Height",
+                    "path": "row-height/#auto-row-height"
+                },
+                {
+                    "moduleName": "RowStyleModule",
+                    "name": "Styling Rows",
+                    "path": "row-styles"
+                },
+                {
+                    "moduleName": "PaginationModule",
+                    "name": "Row Pagination",
+                    "path": "row-pagination"
+                },
+                {
+                    "moduleName": "PaginationPageNumbersModule",
+                    "name": "Page Number Navigation",
+                    "path": "row-pagination/#page-number-navigation"
+                },
+                {
+                    "moduleName": "RowDragModule",
+                    "name": "Row Dragging",
+                    "path": "row-dragging"
+                },
+                {
+                    "moduleName": "RowNumbersModule",
+                    "name": "Row Numbers",
+                    "path": "row-numbers",
+                    "isEnterprise": true
+                }
+            ]
+        },
+        {
+            "name": "Row Models",
+            "hideFromSelection": true,
+            "children": [
+                {
+                    "moduleName": "ClientSideRowModelModule",
+                    "name": "Client Side Row Model",
+                    "path": "row-models"
+                },
+                {
+                    "moduleName": "InfiniteRowModelModule",
+                    "name": "Infinite Row Model",
+                    "path": "infinite-scrolling"
+                },
+                {
+                    "moduleName": "ServerSideRowModelModule",
+                    "name": "Server Side Row Model",
+                    "path": "server-side-model",
+                    "isEnterprise": true,
+                    "ssrmBundled": true
+                },
+                {
+                    "moduleName": "ViewportRowModelModule",
+                    "name": "Viewport Row Model",
+                    "path": "viewport",
+                    "isEnterprise": true
+                }
+            ]
+        },
+        {
+            "name": "Cells",
+            "children": [
+                {
+                    "moduleName": "CellSpanModule",
+                    "name": "Cell Span",
+                    "path": "row-spanning"
+                },
+                {
+                    "moduleName": "CellStyleModule",
+                    "name": "Styling Cells",
+                    "path": "cell-styles"
+                },
+                {
+                    "moduleName": "HighlightChangesModule",
+                    "name": "Highlighting Changes",
+                    "path": "change-cell-renderers"
+                },
+                {
+                    "moduleName": "TooltipModule",
+                    "name": "Tooltips",
+                    "path": "tooltips"
+                },
+                {
+                    "moduleName": "FormulaModule",
+                    "name": "Formulas",
+                    "path": "formulas",
+                    "isEnterprise": true
+                },
+                {
+                    "moduleName": "FindModule",
+                    "name": "Find",
+                    "path": "find",
+                    "isEnterprise": true
+                },
+                {
+                    "moduleName": "NotesModule",
+                    "name": "Notes",
+                    "path": "notes",
+                    "isEnterprise": true
+                }
+            ]
+        },
+        {
+            "name": "Filtering",
+            "children": [
+                {
+                    "name": "Column Filters",
+                    "children": [
+                        {
+                            "moduleName": "TextFilterModule",
+                            "name": "Text Filter",
+                            "path": "filter-text"
+                        },
+                        {
+                            "moduleName": "NumberFilterModule",
+                            "name": "Number Filter",
+                            "path": "filter-number"
+                        },
+                        {
+                            "moduleName": "DateFilterModule",
+                            "name": "Date Filter",
+                            "path": "filter-date"
+                        },
+                        {
+                            "moduleName": "BigIntFilterModule",
+                            "name": "BigInt Filter",
+                            "path": "filter-bigint"
+                        },
+                        {
+                            "moduleName": "SetFilterModule",
+                            "name": "Set Filter",
+                            "path": "filter-set",
+                            "isEnterprise": true
+                        },
+                        {
+                            "moduleName": "MultiFilterModule",
+                            "name": "Multi Filter",
+                            "path": "filter-multi",
+                            "isEnterprise": true
+                        },
+                        {
+                            "moduleName": "CustomFilterModule",
+                            "name": "Custom Column Filters",
+                            "path": "component-filter"
+                        }
+                    ]
+                },
+                {
+                    "moduleName": "AdvancedFilterModule",
+                    "name": "Advanced Filter",
+                    "path": "filter-advanced",
+                    "isEnterprise": true
+                },
+                {
+                    "moduleName": "ExternalFilterModule",
+                    "name": "External Filter",
+                    "path": "filter-external"
+                },
+                {
+                    "moduleName": "QuickFilterModule",
+                    "name": "Quick Filter",
+                    "path": "filter-quick"
+                }
+            ]
+        },
+        {
+            "name": "Selection",
+            "children": [
+                {
+                    "moduleName": "RowSelectionModule",
+                    "name": "Row Selection",
+                    "path": "row-selection",
+                    "ssrmBundled": true
+                },
+                {
+                    "moduleName": "CellSelectionModule",
+                    "name": "Cell Selection",
+                    "path": "cell-selection",
+                    "isEnterprise": true
+                }
+            ]
+        },
+        {
+            "name": "Editing",
+            "children": [
+                {
+                    "name": "Provided Cell Editors",
+                    "children": [
+                        {
+                            "moduleName": "TextEditorModule",
+                            "name": "Text Editor",
+                            "path": "provided-cell-editors-text"
+                        },
+                        {
+                            "moduleName": "LargeTextEditorModule",
+                            "name": "Large Text Editor",
+                            "path": "provided-cell-editors-large-text"
+                        },
+                        {
+                            "moduleName": "SelectEditorModule",
+                            "name": "Select Editor",
+                            "path": "provided-cell-editors-select"
+                        },
+                        {
+                            "moduleName": "RichSelectModule",
+                            "name": "Rich Select Editor",
+                            "path": "provided-cell-editors-rich-select",
+                            "isEnterprise": true
+                        },
+                        {
+                            "moduleName": "NumberEditorModule",
+                            "name": "Number Editor",
+                            "path": "provided-cell-editors-number"
+                        },
+                        {
+                            "moduleName": "DateEditorModule",
+                            "name": "Date Editor",
+                            "path": "provided-cell-editors-date"
+                        },
+                        {
+                            "moduleName": "CheckboxEditorModule",
+                            "name": "Checkbox Editor",
+                            "path": "provided-cell-editors-checkbox"
+                        }
+                    ]
+                },
+                {
+                    "moduleName": "CustomEditorModule",
+                    "name": "Custom Cell Editor Components",
+                    "path": "cell-editors/#custom-components"
+                },
+                {
+                    "moduleName": "UndoRedoEditModule",
+                    "name": "Undo / Redo Edits",
+                    "path": "undo-redo-edits"
+                },
+                {
+                    "moduleName": "BatchEditModule",
+                    "name": "Batch Edit",
+                    "path": "cell-batch-edit",
+                    "isEnterprise": true
+                }
+            ]
+        },
+        {
+            "name": "Interactivity",
+            "children": [
+                {
+                    "moduleName": "LocaleModule",
+                    "name": "Localisation",
+                    "path": "localisation"
+                }
+            ]
+        },
+        {
+            "name": "Row Grouping",
+            "isEnterprise": true,
+            "children": [
+                {
+                    "moduleName": "RowGroupingModule",
+                    "name": "Row Grouping",
+                    "path": "grouping",
+                    "isEnterprise": true,
+                    "ssrmBundled": true
+                },
+                {
+                    "moduleName": "RowGroupingPanelModule",
+                    "name": "Row Grouping Panel",
+                    "path": "grouping-group-panel",
+                    "isEnterprise": true
+                },
+                {
+                    "moduleName": "GroupFilterModule",
+                    "path": "grouping-single-group-column/#inherit-row-grouped-columns-filters",
+                    "name": "Group Filter",
+                    "isEnterprise": true
+                },
+                {
+                    "moduleName": "RowGroupingEditModule",
+                    "name": "Editing and Updating Group Row Cells",
+                    "path": "grouping-edit",
+                    "isEnterprise": true
+                }
+            ]
+        },
+        {
+            "moduleName": "PivotModule",
+            "name": "Pivoting",
+            "path": "pivoting",
+            "isEnterprise": true,
+            "ssrmBundled": true
+        },
+        {
+            "moduleName": "TreeDataModule",
+            "name": "Tree Data",
+            "path": "tree-data",
+            "isEnterprise": true,
+            "ssrmBundled": true
+        },
+        {
+            "moduleName": "ShowValuesAsModule",
+            "name": "Show Values As",
+            "path": "aggregation-show-values-as",
+            "isEnterprise": true
+        },
+        {
+            "moduleName": "MasterDetailModule",
+            "name": "Master Detail",
+            "path": "master-detail",
+            "isEnterprise": true,
+            "ssrmBundled": true
+        },
+        {
+            "name": "Charts",
+            "hideFromSelection": true,
+            "children": [
+                {
+                    "moduleName": "IntegratedChartsModule",
+                    "name": "Integrated Charts",
+                    "path": "integrated-charts",
+                    "isEnterprise": true
+                },
+                {
+                    "moduleName": "SparklinesModule",
+                    "name": "Sparklines",
+                    "path": "sparklines-overview",
+                    "isEnterprise": true
+                }
+            ]
+        },
+        {
+            "name": "Accessories",
+            "isEnterprise": true,
+            "children": [
+                {
+                    "name": "Tool Panels",
+                    "isEnterprise": true,
+                    "children": [
+                        {
+                            "moduleName": "SideBarModule",
+                            "name": "Side Bar",
+                            "path": "side-bar",
+                            "isEnterprise": true
+                        },
+                        {
+                            "moduleName": "ColumnsToolPanelModule",
+                            "name": "Columns Tool Panel",
+                            "path": "tool-panel-columns",
+                            "isEnterprise": true
+                        },
+                        {
+                            "moduleName": "FiltersToolPanelModule",
+                            "name": "Filters Tool Panel",
+                            "path": "tool-panel-filters",
+                            "isEnterprise": true
+                        },
+                        {
+                            "moduleName": "NewFiltersToolPanelModule",
+                            "name": "New Filters Tool Panel",
+                            "path": "tool-panel-filters-new",
+                            "isEnterprise": true
+                        }
+                    ]
+                },
+                {
+                    "moduleName": "ColumnMenuModule",
+                    "name": "Column Menu",
+                    "path": "column-menu",
+                    "isEnterprise": true
+                },
+                {
+                    "moduleName": "ContextMenuModule",
+                    "name": "Context Menu",
+                    "path": "context-menu",
+                    "isEnterprise": true
+                },
+                {
+                    "moduleName": "StatusBarModule",
+                    "name": "Status Bar",
+                    "path": "status-bar",
+                    "isEnterprise": true
+                },
+                {
+                    "moduleName": "ToolbarModule",
+                    "name": "Toolbar",
+                    "path": "toolbar",
+                    "isEnterprise": true
+                }
+            ]
+        },
+        {
+            "name": "AI Features",
+            "isEnterprise": true,
+            "children": [
+                {
+                    "moduleName": "AiToolkitModule",
+                    "name": "AI Toolkit",
+                    "path": "ai-toolkit",
+                    "isEnterprise": true
+                }
+            ]
+        },
+        {
+            "name": "Import & Export",
+            "children": [
+                {
+                    "moduleName": "CsvExportModule",
+                    "name": "CSV Export",
+                    "path": "csv-export"
+                },
+                {
+                    "moduleName": "ExcelExportModule",
+                    "name": "Excel Export",
+                    "path": "excel-export",
+                    "isEnterprise": true
+                },
+                {
+                    "moduleName": "PdfExportModule",
+                    "name": "PDF Export",
+                    "path": "pdf-export",
+                    "isEnterprise": true
+                },
+                {
+                    "moduleName": "ClipboardModule",
+                    "name": "Clipboard",
+                    "path": "clipboard",
+                    "isEnterprise": true
+                },
+                {
+                    "moduleName": "DragAndDropModule",
+                    "name": "Drag & Drop",
+                    "path": "drag-and-drop"
+                }
+            ]
+        },
+        {
+            "name": "Performance",
+            "children": [
+                {
+                    "moduleName": "ValueCacheModule",
+                    "name": "Value Cache",
+                    "path": "value-cache"
+                }
+            ]
+        },
+        {
+            "name": "Other",
+            "children": [
+                {
+                    "moduleName": "AlignedGridsModule",
+                    "name": "Aligned Grids",
+                    "path": "aligned-grids"
+                }
+            ]
+        },
+        {
+            "name": "API",
+            "children": [
+                {
+                    "moduleName": "GridStateModule",
+                    "name": "Grid State",
+                    "path": "grid-state"
+                },
+                {
+                    "moduleName": "ColumnApiModule",
+                    "name": "Column API",
+                    "path": "grid-api/#reference-columns"
+                },
+                {
+                    "moduleName": "RowApiModule",
+                    "name": "Row API",
+                    "path": "grid-api/#reference-displayedRows"
+                },
+                {
+                    "moduleName": "CellApiModule",
+                    "name": "Cell API",
+                    "path": "grid-api/#reference-miscellaneous-getCellValue"
+                },
+                {
+                    "moduleName": "ScrollApiModule",
+                    "name": "Scrolling API",
+                    "path": "grid-api/#reference-scrolling"
+                },
+                {
+                    "moduleName": "RenderApiModule",
+                    "name": "Rendering API",
+                    "path": "grid-api/#reference-rendering"
+                },
+                {
+                    "moduleName": "EventApiModule",
+                    "name": "Event API",
+                    "path": "grid-api/#reference-events"
+                },
+                {
+                    "moduleName": "ClientSideRowModelApiModule",
+                    "name": "Client-Side Row Model API",
+                    "path": "grid-api/#reference-data"
+                },
+                {
+                    "moduleName": "ServerSideRowModelApiModule",
+                    "name": "Server-Side Row Model API",
+                    "path": "grid-api/#reference-serverSideRowModel",
+                    "isEnterprise": true
+                }
+            ]
+        }
+    ]
+}

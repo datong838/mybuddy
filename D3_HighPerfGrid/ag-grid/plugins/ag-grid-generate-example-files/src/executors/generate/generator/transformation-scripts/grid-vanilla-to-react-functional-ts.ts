@@ -1,0 +1,416 @@
+/* eslint-disable no-lonely-if */
+import { basename } from 'path';
+
+import type { ExampleConfig, ParsedBindings } from '../types';
+import { templatePlaceholder } from './grid-vanilla-src-parser';
+import {
+    addBindingImports,
+    addGenericInterfaceImport,
+    addLicenseManager,
+    convertFunctionToConstPropertyTs,
+    findLocaleImport,
+    getEnableAGTestIdLogic,
+    getFunctionName,
+    getPropertyInterfaces,
+    handleRowGenericInterface,
+    isInstanceMethod,
+    preferParamsApi,
+    removeCreateGridImport,
+    wrapTearDownExample,
+} from './parser-utils';
+import {
+    EventAndCallbackNames,
+    addChartsDarkModeIfRequired,
+    convertFunctionToConstCallbackTs,
+    convertFunctionalTemplate,
+    getImport,
+    getValueType,
+} from './react-utils';
+
+function getModuleImports(
+    bindings: ParsedBindings,
+    exampleConfig: ExampleConfig,
+    componentFilenames: string[],
+    extraCoreTypes: string[],
+    allStylesheets: string[]
+): string[] {
+    const imports = [
+        "import React, { useCallback, useMemo, useRef, useState, StrictMode } from 'react';",
+        "import { createRoot } from 'react-dom/client';",
+        "import { AgGridReact, AgGridProvider } from 'ag-grid-react';",
+    ];
+
+    if (allStylesheets && allStylesheets.length > 0) {
+        allStylesheets.forEach((styleSheet) => imports.push(`import './${basename(styleSheet)}';`));
+    }
+
+    const propertyInterfaces = getPropertyInterfaces(bindings.properties);
+    const bImports = [...(bindings.imports || [])];
+    bImports.push({
+        module: `'ag-grid-community'`,
+        isNamespaced: false,
+        imports: [...propertyInterfaces, ...extraCoreTypes],
+    });
+
+    addLicenseManager(imports, exampleConfig);
+
+    if (bImports.length > 0) {
+        addBindingImports(bImports, imports, true);
+    }
+
+    if (componentFilenames) {
+        imports.push(...componentFilenames.map(getImport));
+    }
+
+    addGenericInterfaceImport(imports, bindings.tData, bindings);
+
+    imports.push(getEnableAGTestIdLogic());
+
+    return removeCreateGridImport(imports);
+}
+
+function getImports(
+    bindings: ParsedBindings,
+    exampleConfig: ExampleConfig,
+    componentFileNames: string[],
+    extraCoreTypes: string[],
+    allStylesheets: string[],
+    useFetchHook: boolean = false
+): string[] {
+    const imports = [];
+    const localeImport = findLocaleImport(bindings.imports);
+    if (localeImport) {
+        imports.push(`import { ${localeImport.imports.join(', ')} } from '@ag-grid-community/locale';`);
+    }
+
+    imports.push(...getModuleImports(bindings, exampleConfig, componentFileNames, extraCoreTypes, allStylesheets));
+
+    if (useFetchHook) {
+        imports.push(`import { useFetchJson } from './useFetchJson';`);
+    }
+
+    if (bindings.moduleRegistration) {
+        // Modules registration is different in React - we just export the modules array and pass it to AgGridProvider
+        const reactModuleRegistration = bindings.moduleRegistration.replace(
+            /ModuleRegistry\.registerModules\(\s*\[([\s\S]*?)\]\s*\);/,
+            'const modules = [$1];'
+        );
+        imports.push('\n');
+        imports.push(reactModuleRegistration);
+    }
+    return imports;
+}
+
+function getTemplate(
+    bindings: ParsedBindings,
+    componentAttributes: string[],
+    rowDataGeneric: string,
+    exampleConfig: ExampleConfig
+): string {
+    const className = bindings.inlineGridStyles.className;
+    const classAttr = className ? ` className="${className}"` : '';
+
+    const agGridTag = `
+        <div ${exampleConfig.myGridReference ? 'id="myGrid"' : ''} style={gridStyle}${classAttr}>
+            <AgGridReact${rowDataGeneric}
+                ref={gridRef}
+                ${componentAttributes.join('\n')}
+            />
+        </div>`;
+
+    const template = bindings.template
+        ? bindings.template.replace(templatePlaceholder, agGridTag.replace('$', '$$$$'))
+        : agGridTag;
+
+    return convertFunctionalTemplate(template);
+}
+
+function extractComponentInformation(properties, componentFilenames: string[]): { [key: string]: string } {
+    const components: { [key: string]: string } = {};
+    if (componentFilenames.length <= 0) {
+        return components;
+    }
+
+    properties.forEach((property) => {
+        if (property.name === 'components') {
+            property.value
+                .split(`\n`)
+                .filter((keyValue) => keyValue.includes(':'))
+                .map((keyValue) => keyValue.replace(/\s/g, ''))
+                .map((keyValue) => keyValue.replace(/,/g, ''))
+                .map((keyValue) => keyValue.split(':'))
+                .reduce((accumulator, keyValue) => {
+                    accumulator[keyValue[0]] = keyValue[1];
+                    return accumulator;
+                }, components);
+        }
+    });
+
+    return components;
+}
+
+export function vanillaToReactFunctionalTs(
+    bindings: ParsedBindings,
+    exampleConfig: ExampleConfig,
+    componentFilenames: string[],
+    allStylesheets: string[]
+): () => string {
+    const { properties, data, tData, inlineGridStyles, onGridReady, typeDeclares, interfaces } = bindings;
+
+    const utilMethodNames = bindings.utils.map(getFunctionName);
+    const callbackDependencies = Object.keys(bindings.callbackDependencies).reduce((acc, callbackName) => {
+        acc[callbackName] = bindings.callbackDependencies[callbackName]
+            .filter((dependency) => !utilMethodNames.includes(dependency))
+            .filter((dependency) => !global[dependency]); // exclude things like Number, isNaN etc
+        return acc;
+    }, {});
+    const rowDataType = tData || 'any';
+    const rowDataGeneric = tData ? `<${tData}>` : '';
+    const rowDataState = `const [rowData, setRowData] = useState<${rowDataType}[]>();`;
+    const gridRefHook = `const gridRef = useRef<AgGridReact${rowDataGeneric}>(null);`;
+
+    return () => {
+        // instance values
+        const stateProperties = [
+            `const containerStyle = useMemo(() => ({ width: '100%', height: '100%' }), []);`,
+            `const gridStyle = useMemo(() => ({height: '${inlineGridStyles.height}', width: '${inlineGridStyles.width}'}), []);`,
+            rowDataState,
+        ];
+
+        // for when binding a method
+        // see javascript-grid-keyboard-navigation for an example
+        // tabToNextCell needs to be bound to the react component
+        // rarely used (one example only - can be improved and this be removed)
+        const instanceBindings = [];
+
+        const componentProps = ['rowData={rowData}'];
+
+        const additionalInReady = [];
+
+        let useFetchHook = undefined;
+        if (data) {
+            const callback = data.callback
+                .replace(/^{|}$/g, '')
+                .replace(/(gridApi|params\.api)(!?\.setGridOption\('rowData',\s*)/g, 'setRowData(');
+
+            const cleanedCallback = callback.replaceAll('\n', '').trim();
+            if (
+                cleanedCallback.match(/^setRowData\(data\)(;?)$/) ||
+                cleanedCallback.match(/^setRowData\(data\.slice\((\d+), (\d+)\)\)(;?)$/)
+            ) {
+                // get url from data
+                useFetchHook = `    const { data, loading } = useFetchJson<${rowDataType}>(
+                ${data.url}${data.totalRows ? `, ${data.totalRows}` : ''}
+            );`;
+                componentProps.push('rowData={data}');
+                componentProps.push('loading={loading}');
+            } else {
+                const setRowDataBlock = data.callback.replace("gridApi!.setGridOption('rowData',", 'setRowData(');
+                additionalInReady.push(`
+                    fetch(${data.url})
+                    .then(resp => resp.json())
+                    .then((data: ${rowDataType}[]) => ${setRowDataBlock});`);
+            }
+        }
+
+        if (onGridReady) {
+            const hackedHandler = onGridReady
+                .replace(/^{|}$/g, '')
+                .replace(/(gridApi|params\.api)(!?\.setGridOption\('rowData',\s*)/g, 'setRowData(');
+            additionalInReady.push(hackedHandler);
+        }
+
+        let extraCoreTypes = [];
+        if (additionalInReady.length > 0) {
+            extraCoreTypes = ['GridReadyEvent'];
+        }
+
+        const imports = getImports(
+            bindings,
+            exampleConfig,
+            componentFilenames,
+            extraCoreTypes,
+            allStylesheets,
+            useFetchHook !== undefined
+        );
+
+        const darkModeWithGridRef = addChartsDarkModeIfRequired(bindings, imports, true);
+
+        const components: { [componentName: string]: string } = extractComponentInformation(
+            properties,
+            componentFilenames
+        );
+
+        const containsQuotes = (data: string) => {
+            const withoutBoundaryQuotes = data.replace(/^"|"$/g, '');
+            return withoutBoundaryQuotes.includes('"') || withoutBoundaryQuotes.includes("'");
+        };
+        const stripQuotes = (data: string) => data.replace(/"/g, '').replace(/'/g, '');
+        const componentNameExists = (componentName: string) =>
+            Object.keys(components).includes(stripQuotes(componentName));
+
+        properties
+            .filter((property) => property.name !== 'onGridReady')
+            .forEach((property) => {
+                if (property.name === 'rowData') {
+                    if (property.value !== 'null' && property.value !== null) {
+                        const rowDataIndex = stateProperties.indexOf(rowDataState);
+                        stateProperties[rowDataIndex] =
+                            `const [rowData, setRowData] = useState<${rowDataType}[]>(${property.value});`;
+                    }
+                } else if (property.value === 'true' || property.value === 'false') {
+                    componentProps.push(`${property.name}={${property.value}}`);
+                } else if (property.value === null) {
+                    componentProps.push(`${property.name}={${property.name}}`);
+                } else {
+                    // for when binding a method
+                    // see javascript-grid-keyboard-navigation for an example
+                    // tabToNextCell needs to be bound to the react component
+                    if (isInstanceMethod(bindings.instanceMethods, property)) {
+                        instanceBindings.push(`${property.name}=${property.value}`);
+                    } else {
+                        if (property.name === 'columnDefs') {
+                            // Special logic for columnDefs as its a popular property
+                            const typeName = property.value.includes('children')
+                                ? '(ColDef | ColGroupDef)[]'
+                                : 'ColDef[]';
+                            stateProperties.push(
+                                `const [${property.name}, setColumnDefs] = useState<${typeName}>(${property.value});`
+                            );
+                            componentProps.push(`${property.name}={${property.name}}`);
+                        } else {
+                            // for values like booleans or strings just inline the prop - no need for a separate variable for it
+                            const valueType = getValueType(property.value);
+                            if (valueType === 'string') {
+                                if (componentNameExists(property.value)) {
+                                    componentProps.push(
+                                        `${property.name}={${components[stripQuotes(property.value)]}}`
+                                    );
+                                } else {
+                                    if (containsQuotes(property.value)) {
+                                        componentProps.push(`${property.name}={${property.value}}`);
+                                    } else {
+                                        componentProps.push(`${property.name}=${property.value}`);
+                                    }
+                                }
+                            } else if (valueType === 'boolean' || valueType === 'number') {
+                                componentProps.push(`${property.name}={${property.value}}`);
+                            } else {
+                                if (EventAndCallbackNames.has(property.name)) {
+                                    stateProperties.push(
+                                        `const ${property.name} = useCallback(${property.value}, [${callbackDependencies[property.name] || ''}]);`
+                                    );
+                                } else {
+                                    stateProperties.push(
+                                        `const ${property.name} = useMemo<${property.typings.typeName}>(() => { return ${property.value} }, []);`
+                                    );
+                                }
+                                componentProps.push(`${property.name}={${property.name}}`);
+                            }
+                        }
+                    }
+                }
+            });
+
+        const componentEventAttributes = bindings.eventHandlers.map(
+            (event) => `${event.handlerName}={${event.handlerName}}`
+        );
+        if (additionalInReady.length > 0) {
+            componentProps.push('onGridReady={onGridReady}');
+        }
+        componentProps.push(...componentEventAttributes);
+
+        // convert this.xxx to just xxx
+        // no real need for "this" in hooks
+        const thisReferenceConverter = (content) => content.replace(/this\./g, '');
+
+        const gridInstanceConverter = (content) =>
+            content
+                .replace(/params\.api(!?)\.setGridOption\('rowData', data\)/g, 'setRowData(data)')
+                .replace(/gridApi(!?)\./g, 'gridRef.current!.api.')
+                .replace(/gridApi;/g, 'gridRef.current!.api;')
+                .replace(/gridRef\.current(!?)\.api(!?)\.setGridOption\('rowData',/g, 'setRowData(')
+                .replace(/gridApi/g, 'gridRef.current!.api');
+
+        const template = getTemplate(
+            bindings,
+            componentProps.map(thisReferenceConverter),
+            rowDataGeneric,
+            exampleConfig
+        );
+        const eventHandlers = bindings.eventHandlers
+            .map((event) => convertFunctionToConstCallbackTs(event.handler, callbackDependencies))
+            .map(thisReferenceConverter)
+            .map(gridInstanceConverter);
+        const externalEventHandlers = bindings.externalEventHandlers
+            .map((handler) => convertFunctionToConstCallbackTs(handler.body, callbackDependencies))
+            .map(thisReferenceConverter)
+            .map(gridInstanceConverter);
+        const instanceMethods = bindings.instanceMethods
+            .map((instance) => convertFunctionToConstCallbackTs(instance, callbackDependencies))
+            .map(thisReferenceConverter)
+            .map(gridInstanceConverter);
+        const containerStyle = exampleConfig.noStyle ? '' : `style={containerStyle}`;
+
+        const gridReady =
+            additionalInReady.length > 0
+                ? `
+            const onGridReady = useCallback((params: GridReadyEvent) => {
+                ${preferParamsApi(additionalInReady.join('\n'))}
+            }, []);`
+                : '';
+
+        let generatedOutput = `
+'use client';
+
+${imports.join('\n')}
+${exampleConfig.licenseKey ? "// enter your license key here to suppress license message in the console and watermark\nLicenseManager.setLicenseKey('');\n" : ''}
+
+${typeDeclares?.length > 0 ? '\n' + typeDeclares.join('\n') : ''}${interfaces?.length > 0 ? '\n' + interfaces.join('\n') : ''}
+
+${bindings.utils.map(convertFunctionToConstPropertyTs).join('\n\n')}
+
+${bindings.classes.join('\n')}
+
+const GridExample = () => {
+    ${gridRefHook}
+    ${stateProperties.join('\n    ')}
+
+${gridReady}${useFetchHook ?? ''}${darkModeWithGridRef ? '\n' + darkModeWithGridRef : ''}
+
+${[].concat(eventHandlers, externalEventHandlers, instanceMethods).join('\n\n   ')}
+
+    return  (
+            <AgGridProvider modules={modules}>
+                <div ${containerStyle}>
+                    ${template}
+                </div>
+            </AgGridProvider>
+        );
+
+}
+
+const root = createRoot(document.getElementById('root')!);
+root.render(<StrictMode><GridExample /></StrictMode>);
+${wrapTearDownExample('(window as any).tearDownExample = () => root.unmount();')}
+`;
+
+        if ((generatedOutput.match(/gridRef\.current/g) || []).length === 0) {
+            generatedOutput = generatedOutput.replace(gridRefHook, '');
+            generatedOutput = generatedOutput.replace('ref={gridRef}', '');
+        }
+        if (generatedOutput.includes(rowDataState) && (generatedOutput.match(/setRowData/g) || []).length === 1) {
+            generatedOutput = generatedOutput.replace(rowDataState, '');
+            generatedOutput = generatedOutput.replace('rowData={rowData}', '');
+        }
+
+        // Until we support this cleanly.
+        generatedOutput = handleRowGenericInterface(generatedOutput, tData);
+
+        return generatedOutput;
+    };
+}
+
+if (typeof window !== 'undefined') {
+    (<any>window).vanillaToReactFunctionalTs = vanillaToReactFunctionalTs;
+}

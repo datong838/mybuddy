@@ -1,0 +1,69 @@
+{% if isFramework("vue") %}
+
+The pages for each component type (cell renderer, cell editor etc) contain examples on how to register and use each component type.
+It is however useful here to step back and focus on the component registration process which is common across all component types.
+
+{% note %}
+Nuxt's auto-import component is not supported with custom components within the grid. Please register any custom components manually as described below.
+{% /note %}
+
+{% note %}
+Async components (e.g. `defineAsyncComponent`) are not supported as custom grid components. Use regular synchronous components instead.
+{% /note %}
+
+Custom Components can be registered in two ways:
+
+- Globally
+- Locally using the `components` option
+- Locally using `defineExpose` with `script setup`
+
+### Global Component Registration
+
+```js
+import MyCustomerCellEditor from './App.vue'
+
+app.component('MyCustomerCellEditor', MyCustomerCellEditor)
+```
+
+### Locally using the `components` option
+
+```js
+import MyCustomerCellEditor from './App.vue'
+
+export default {
+  components: {
+    MyCustomerCellEditor
+  },
+  setup() {
+    // ...
+  }
+}
+```
+
+### Locally using `defineExpose` with `script setup`
+
+```js
+<template>
+  <ag-grid-vue v-model="rowData"
+               :columnDefs="columnDefs"
+               ...other props
+  >
+  </ag-grid-vue>
+</template>
+
+<script setup>
+import MyCustomerCellEditor from './App.vue'
+
+const columnDefs = ref([
+    { field: "make", cellEditor: 'MyCustomerCellEditor' }
+]);
+
+...other setup
+
+defineExpose({
+    MyCustomerCellEditor    // make MyCustomerCellEditor available to the grid
+})
+</script>
+```
+
+{% /if %}

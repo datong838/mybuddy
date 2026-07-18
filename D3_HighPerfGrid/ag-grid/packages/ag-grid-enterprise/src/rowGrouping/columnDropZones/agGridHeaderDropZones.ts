@@ -1,0 +1,105 @@
+import type { ComponentSelector, FocusableContainer } from 'ag-grid-community';
+import { Component, _createElement } from 'ag-grid-community';
+
+import { PivotDropZonePanel } from './pivotDropZonePanel';
+import { RowGroupDropZonePanel } from './rowGroupDropZonePanel';
+
+class AgGridHeaderDropZones extends Component {
+    private rowGroupComp: Component & FocusableContainer;
+    private pivotComp: Component & FocusableContainer;
+
+    constructor() {
+        super();
+    }
+
+    public postConstruct(): void {
+        this.setGui(this.createNorthPanel());
+        const onRowGroupChanged = this.onRowGroupChanged.bind(this);
+        this.addManagedEventListeners({
+            columnRowGroupChanged: onRowGroupChanged,
+            newColumnsLoaded: onRowGroupChanged,
+        });
+        this.addManagedPropertyListener('rowGroupPanelShow', onRowGroupChanged);
+        this.addManagedPropertyListener('pivotPanelShow', () => this.onPivotPanelShow());
+
+        this.onRowGroupChanged();
+    }
+
+    private createNorthPanel(): HTMLElement {
+        const topPanelGui = _createElement({ tag: 'div', cls: 'ag-column-drop-wrapper', role: 'presentation' });
+
+        const rowGroupComp = new RowGroupDropZonePanel(true);
+        this.rowGroupComp = this.createManagedBean(rowGroupComp);
+
+        const pivotComp = new PivotDropZonePanel(true);
+        this.pivotComp = this.createManagedBean(pivotComp);
+
+        topPanelGui.appendChild(rowGroupComp.getGui());
+        topPanelGui.appendChild(pivotComp.getGui());
+
+        const listener = this.onDropPanelVisible.bind(this);
+        this.addManagedListeners(rowGroupComp, {
+            displayChanged: listener,
+        });
+        this.addManagedListeners(pivotComp, {
+            displayChanged: listener,
+        });
+
+        this.onDropPanelVisible();
+
+        return topPanelGui;
+    }
+
+    private onDropPanelVisible(): void {
+        const { rowGroupComp, pivotComp } = this;
+        const bothDisplayed = rowGroupComp.isDisplayed() && pivotComp.isDisplayed();
+        const classStr = 'ag-column-drop-horizontal-half-width';
+        rowGroupComp.toggleCss(classStr, bothDisplayed);
+        pivotComp.toggleCss(classStr, bothDisplayed);
+    }
+
+    private onRowGroupChanged(): void {
+        const rowGroupComp = this.rowGroupComp;
+        if (!rowGroupComp) {
+            return;
+        }
+
+        const rowGroupPanelShow = this.gos.get('rowGroupPanelShow');
+
+        if (rowGroupPanelShow === 'always') {
+            rowGroupComp.setDisplayed(true);
+        } else if (rowGroupPanelShow === 'onlyWhenGrouping') {
+            const grouping = this.beans.rowGroupColsSvc?.columns?.length !== 0;
+            rowGroupComp.setDisplayed(grouping);
+        } else {
+            rowGroupComp.setDisplayed(false);
+        }
+    }
+
+    private onPivotPanelShow() {
+        const pivotComp = this.pivotComp;
+        if (!pivotComp) {
+            return;
+        }
+
+        const pivotPanelShow = this.gos.get('pivotPanelShow');
+
+        if (pivotPanelShow === 'always') {
+            pivotComp.setDisplayed(true);
+        } else if (pivotPanelShow === 'onlyWhenPivoting') {
+            const pivoting = this.beans.colModel.isPivotActive();
+            pivotComp.setDisplayed(pivoting);
+        } else {
+            pivotComp.setDisplayed(false);
+        }
+    }
+
+    public getFocusableContainers(): FocusableContainer[] {
+        return [this.rowGroupComp, this.pivotComp].filter((comp) => !!comp);
+    }
+}
+
+export const AgGridHeaderDropZonesSelector: ComponentSelector = {
+    selector: 'AG-GRID-HEADER-DROP-ZONES',
+    component: AgGridHeaderDropZones,
+};

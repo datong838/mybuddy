@@ -1,0 +1,24 @@
+{% if isFramework("vue") %}
+The grid is configure via the `ag-grid-vue` component. Properties consist of simple types, arrays, complex objects and callback functions.
+The following example shows some bindings (demonstrating that both the dash and camel case style is acceptable):
+
+```jsx
+<ag-grid-vue
+    // Attribute, not bound, give an explicit value
+    rowGroupPanelShow="always"
+
+    // A boolean value
+    :pivot-mode="true"
+
+    // A bound property
+    :columnDefs="columnDefs"
+
+    // A callback
+    :getRowHeight="myGetRowHeightFunction"
+
+    // Event handlers
+    @cell-clicked="onCellClicked"
+</ag-grid-vue>
+```
+
+{% /if %}

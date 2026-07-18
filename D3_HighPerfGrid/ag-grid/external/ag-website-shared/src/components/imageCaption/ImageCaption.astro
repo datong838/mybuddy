@@ -1,0 +1,89 @@
+---
+import { getPageImages } from '@components/docs/utils/filesData';
+import { getPageNameFromPath } from '@components/docs/utils/urlPaths';
+import { urlWithBaseUrl } from '@utils/urlWithBaseUrl';
+
+import styles from './ImageCaption.module.scss';
+
+interface Props {
+    id?: string;
+    pageName?: string;
+    imagePath: string;
+    alt: string;
+    centered?: boolean;
+    constrained?: boolean;
+    width?: string;
+    height?: string;
+    minWidth?: string;
+    maxWidth?: string;
+    /**
+     * Enable styles for dark mode using CSS Filters
+     */
+    enableDarkModeFilter?: boolean;
+}
+
+const {
+    id,
+    pageName: propPageName,
+    imagePath,
+    alt,
+    width,
+    minWidth,
+    maxWidth,
+    height,
+    centered,
+    constrained,
+    enableDarkModeFilter,
+} = Astro.props as Props;
+
+const pageName = propPageName ? propPageName : getPageNameFromPath(Astro.url.pathname);
+
+const { imageSrc, darkModeImageSrc } = await getPageImages({
+    pageName,
+    imagePath,
+});
+
+const style: any = {};
+if (width !== undefined) {
+    style.width = width;
+}
+if (minWidth !== undefined) {
+    style.minWidth = minWidth;
+}
+if (maxWidth !== undefined) {
+    style.maxWidth = maxWidth;
+}
+if (height !== undefined) {
+    style.height = height;
+}
+
+const imageId = id ? id : `image-${imagePath}`;
+---
+
+<div
+    class:list={[
+        styles.imageCaption,
+        'image-caption',
+        {
+            [styles.centered]: centered,
+            [styles.constrained]: constrained,
+            [styles.darkmodeFilter]: enableDarkModeFilter,
+        },
+    ]}
+    style={style}
+>
+    <img
+        id={imageId}
+        src={imageSrc}
+        class={styles.image}
+        alt={alt}
+        data-darkmode-img={enableDarkModeFilter ? undefined : ''}
+        data-light-src={enableDarkModeFilter ? undefined : imageSrc}
+        data-dark-src={enableDarkModeFilter ? undefined : darkModeImageSrc}
+    />
+    <div class={styles.body}>
+        <slot />
+    </div>
+</div>
+
+<script is:inline src={urlWithBaseUrl('/scripts/image-caption-darkmode.js')}></script>

@@ -1,0 +1,233 @@
+.ag-set-filter {
+    --ag-indentation-level: 0;
+}
+
+.ag-set-filter-item {
+    display: flex;
+    align-items: center;
+    height: 100%;
+    padding-left: calc(
+        var(--ag-widget-container-horizontal-padding) + var(--ag-indentation-level) * var(--ag-set-filter-indent-size)
+    );
+}
+
+.ag-set-filter-item-checkbox {
+    display: flex;
+    width: 100%;
+    height: 100%;
+}
+
+.ag-set-filter-group-icons {
+    display: block;
+    margin-right: var(--ag-widget-container-horizontal-padding);
+
+    :where(.ag-set-filter-group-closed-icon),
+    :where(.ag-set-filter-group-opened-icon),
+    :where(.ag-set-filter-group-indeterminate-icon) {
+        cursor: pointer;
+    }
+}
+
+.ag-filter-body-wrapper {
+    display: flex;
+    flex-direction: column;
+}
+
+/* Add a minimum width for the filter menu to avoid having zero width when the
+   content tries to size itself to the menu */
+:where(.ag-menu:not(.ag-tabs) .ag-filter) .ag-filter-body-wrapper {
+    min-width: 180px;
+}
+
+.ag-filter-filter {
+    flex: 1 1 0px;
+}
+
+.ag-filter-condition {
+    display: flex;
+    justify-content: center;
+}
+
+.ag-floating-filter-body {
+    position: relative;
+    display: flex;
+    flex: 1 1 auto;
+    height: 100%;
+}
+
+.ag-floating-filter-full-body {
+    display: flex;
+    flex: 1 1 auto;
+    height: 100%;
+    width: 100%;
+    align-items: center;
+    overflow: hidden;
+}
+
+.ag-floating-filter-input {
+    align-items: center;
+    display: flex;
+    width: 100%;
+
+    /* most filters */
+    > :where(.ag-input-field),
+    /* date filters */
+    > :where(.ag-date-floating-filter-wrapper),
+    /* nested multi filters */
+    > :where(.ag-floating-filter-input) {
+        flex: 1 1 auto;
+    }
+
+    :where(.ag-input-field-input[type='date']),
+    :where(.ag-input-field-input[type='datetime-local']) {
+        /* In Chrome the date input will not shrink from its default size in a flex
+           container, but it will grow. So we give it a very small width and it will
+           grow to the right size */
+        width: 1px;
+    }
+}
+
+.ag-floating-filter-button {
+    display: flex;
+    flex: none;
+}
+
+.ag-date-floating-filter-wrapper {
+    display: flex;
+}
+
+.ag-set-floating-filter-input :where(.ag-input-field-input)[disabled] {
+    pointer-events: none;
+}
+
+.ag-floating-filter-button-button {
+    appearance: none;
+    border: none;
+    width: var(--ag-icon-size);
+    height: var(--ag-icon-size);
+}
+
+.ag-filter-loading {
+    background-color: var(--ag-chrome-background-color);
+    height: 100%;
+    padding: var(--ag-widget-container-vertical-padding) var(--ag-widget-container-horizontal-padding);
+    position: absolute;
+    width: 100%;
+
+    /* keep loading overlays above filter body content. */
+    z-index: 1;
+    align-items: unset;
+
+    :where(.ag-menu) & {
+        background-color: var(--ag-menu-background-color);
+    }
+}
+
+.ag-filter-separator {
+    border-top: solid var(--ag-border-width) var(--menu-separator-color);
+}
+
+:where(.ag-filter-select) .ag-picker-field-wrapper {
+    /* picker will flex-grow to match width of sibling inputs. */
+    width: 0;
+}
+
+/* Value Set Filter */
+
+.ag-filter-condition-operator {
+    height: 17px;
+}
+
+.ag-filter-condition-operator-or {
+    margin-left: calc(var(--ag-spacing) * 2);
+}
+
+.ag-set-filter-select-all {
+    padding-top: var(--ag-widget-container-vertical-padding);
+}
+
+.ag-set-filter-list,
+.ag-filter-no-matches {
+    height: calc(var(--ag-list-item-height) * 6);
+}
+
+.ag-filter-no-matches {
+    padding: var(--ag-widget-container-vertical-padding) var(--ag-widget-container-horizontal-padding);
+}
+
+.ag-set-filter-tree-list {
+    height: calc(var(--ag-list-item-height) * 10);
+}
+
+.ag-set-filter-filter {
+    margin-top: var(--ag-widget-container-vertical-padding);
+    margin-left: var(--ag-widget-container-horizontal-padding);
+    margin-right: var(--ag-widget-container-horizontal-padding);
+}
+
+.ag-filter-to {
+    margin-top: var(--ag-widget-vertical-spacing);
+}
+
+.ag-mini-filter {
+    margin: var(--ag-widget-container-vertical-padding) var(--ag-widget-container-horizontal-padding);
+}
+
+.ag-set-filter-add-group-indent {
+    margin-left: calc(var(--ag-icon-size) + var(--ag-widget-container-horizontal-padding));
+}
+
+:where(.ag-filter-menu) .ag-set-filter-list {
+    min-width: max(200px, 100%);
+}
+
+.ag-filter-virtual-list-item:focus-visible {
+    box-shadow: inset var(--ag-focus-shadow);
+}
+
+.ag-filter-apply-panel {
+    display: flex;
+    justify-content: flex-end;
+    overflow: hidden;
+    padding: var(--ag-widget-vertical-spacing) var(--ag-widget-container-horizontal-padding)
+        var(--ag-widget-container-vertical-padding);
+}
+
+.ag-filter-apply-panel-button {
+    line-height: 1.5;
+    margin-left: calc(var(--ag-spacing) * 2);
+}
+
+.ag-simple-filter-body-wrapper {
+    display: flex;
+    flex-direction: column;
+    gap: var(--ag-widget-vertical-spacing);
+    padding: var(--ag-widget-container-vertical-padding) var(--ag-widget-container-horizontal-padding);
+    padding-bottom: var(--ag-widget-container-vertical-padding);
+    overflow-y: auto;
+    min-height: calc(
+        var(--ag-list-item-height) + var(--ag-widget-container-vertical-padding) + var(--ag-widget-vertical-spacing)
+    );
+
+    :where(.ag-resizer-wrapper) {
+        margin: 0;
+    }
+}
+
+.ag-multi-filter-menu-item {
+    margin: var(--ag-spacing) 0;
+}
+
+.ag-multi-filter-group-title-bar {
+    padding: calc(var(--ag-spacing) * 1.5) var(--ag-spacing);
+    background-color: transparent;
+    font-weight: 500;
+    color: var(--ag-header-text-color);
+}
+
+.ag-group-filter-field-select-wrapper {
+    display: flex;
+    flex-direction: column;
+    padding: var(--ag-widget-container-vertical-padding) var(--ag-widget-container-horizontal-padding);
+    gap: var(--ag-widget-vertical-spacing);
+}

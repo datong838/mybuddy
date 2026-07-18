@@ -1,0 +1,99 @@
+import { AlignedGridsModule } from './alignedGrids/alignedGridsModule';
+import { RowApiModule, ScrollApiModule } from './api/apiModule';
+import { AutoGenerateColumnsModule } from './autoGenerateColumns/autoGenerateColumnsModule';
+import { ClientSideRowModelApiModule, ClientSideRowModelModule } from './clientSideRowModel/clientSideRowModelModule';
+import { ColumnAutoSizeModule } from './columnAutosize/columnAutosizeModule';
+import { ColumnHoverModule } from './columns/columnHover/columnHoverModule';
+import { ColumnApiModule } from './columns/columnModule';
+import { CsvExportModule } from './csvExport/csvExportModule';
+import { DragAndDropModule, RowDragModule } from './dragAndDrop/dragModule';
+import {
+    CheckboxEditorModule,
+    CustomEditorModule,
+    DateEditorModule,
+    LargeTextEditorModule,
+    NumberEditorModule,
+    SelectEditorModule,
+    TextEditorModule,
+    UndoRedoEditModule,
+} from './edit/editModule';
+import {
+    BigIntFilterModule,
+    CustomFilterModule,
+    DateFilterModule,
+    ExternalFilterModule,
+    NumberFilterModule,
+    QuickFilterModule,
+    TextFilterModule,
+} from './filter/filterModule';
+import { InfiniteRowModelModule } from './infiniteRowModel/infiniteRowModelModule';
+import type { _ModuleWithoutApi } from './interfaces/iModule';
+import { EventApiModule } from './misc/apiEvents/apiEventModule';
+import { LocaleModule } from './misc/locale/localeModule';
+import { GridStateModule } from './misc/state/stateModule';
+import { PaginationModule } from './pagination/paginationModule';
+import { PaginationPageNumbersModule } from './pagination/paginationPageNumbersModule';
+import { PinnedRowModule } from './pinnedRowModel/pinnedRowModule';
+import { HighlightChangesModule } from './rendering/cell/highlightChangesModule';
+import { RenderApiModule } from './rendering/renderModule';
+import { RowAutoHeightModule } from './rendering/row/rowAutoHeightModule';
+import { CellSpanModule } from './rendering/spanning/cellSpanModule';
+import { RowSelectionModule } from './selection/rowSelectionModule';
+import { CellStyleModule, RowStyleModule } from './styling/stylingModule';
+import { TooltipModule } from './tooltip/tooltipModule';
+import { CellApiModule, ValueCacheModule } from './valueService/valueModule';
+import { VERSION } from './version';
+
+/**
+ * @feature All Community Features
+ */
+export const AllCommunityModule: _ModuleWithoutApi = {
+    moduleName: 'AllCommunity',
+    version: VERSION,
+    dependsOn: [
+        ClientSideRowModelModule,
+        CsvExportModule,
+        InfiniteRowModelModule,
+        TextEditorModule,
+        NumberEditorModule,
+        DateEditorModule,
+        CheckboxEditorModule,
+        SelectEditorModule,
+        LargeTextEditorModule,
+        CustomEditorModule,
+        UndoRedoEditModule,
+        TextFilterModule,
+        NumberFilterModule,
+        BigIntFilterModule,
+        DateFilterModule,
+        CustomFilterModule,
+        QuickFilterModule,
+        ExternalFilterModule,
+        GridStateModule,
+        AlignedGridsModule,
+        PaginationModule,
+        PaginationPageNumbersModule,
+        ColumnApiModule,
+        RowApiModule,
+        ScrollApiModule,
+        RenderApiModule,
+        ColumnAutoSizeModule,
+        RowDragModule,
+        PinnedRowModule,
+        RowSelectionModule,
+        ValueCacheModule,
+        CellStyleModule,
+        ColumnHoverModule,
+        RowStyleModule,
+        EventApiModule,
+        CellApiModule,
+        HighlightChangesModule,
+        TooltipModule,
+        LocaleModule,
+        RowAutoHeightModule,
+        DragAndDropModule,
+        ClientSideRowModelApiModule,
+        CellSpanModule,
+        AutoGenerateColumnsModule,
+    ],
+};

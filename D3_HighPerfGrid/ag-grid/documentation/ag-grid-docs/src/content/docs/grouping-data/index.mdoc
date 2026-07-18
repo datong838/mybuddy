@@ -1,0 +1,153 @@
+---
+title: "Row Grouping - Grouping Data"
+description: "Enable row grouping in the $framework Data Grid to allow rows to be grouped by columns. Define row groups, use the Grid API, or use the UI to group rows."
+enterprise: true
+---
+
+Enable grouping on a column to group rows by equivalent values.
+
+## Enabling Row Grouping
+
+Row Grouping is enabled by setting `rowGroup` to `true` on one or more [Column Definition](./column-definitions/).
+Parent rows are then introduced for each unique value in that column, containing the rows with that value.
+
+{% gridExampleRunner title="Basic Grouping" name="basic-grouping" /%}
+
+The example above uses the following configuration to group rows by their `country` values:
+
+```{% frameworkTransform=true %}
+const gridOptions = {
+    columnDefs: [
+        { field: 'country', rowGroup: true },
+        // ...other column definitions
+    ],
+}
+```
+
+## Grouping by Multiple Columns
+
+When grouping on multiple columns using `rowGroup`, the order of columns within the column definitions is used to determine which column to group by first.
+This can be overridden with a custom order by providing the `rowGroupIndex` property in each grouped columns definition.
+
+{% gridExampleRunner title="Grouping by Multiple Columns" name="row-group-index" /%}
+
+The example above demonstrates the following configuration for grouping rows by `year` first, and `country` second:
+
+```{% frameworkTransform=true %}
+const gridOptions = {
+    columnDefs: [
+        { field: 'country', rowGroupIndex: 1 },
+        { field: 'year', rowGroupIndex: 0 },
+        // ...other column definitions
+    ],
+};
+```
+
+## Grouping on Object Data
+
+When grouping on object data, the grid needs a way to compare items to determine if they are equivalent.
+Setting a `keyCreator` on the grouped column definition provides the grid with string keys it can compare.
+
+{% apiDocumentation source="column-properties/properties.json" section="columns" names=["keyCreator"] /%}
+
+The following example uses a custom set of rows, each containing an `athlete` field that maps to objects with `id`
+and `name` properties.
+
+{% gridExampleRunner title="Grouping by Object Data" name="grouping-object-data" /%}
+
+This demonstrates the following configuration for grouping rows by the `athlete` objects by their `id` property:
+
+```{% frameworkTransform=true %}
+const gridOptions = {
+    columnDefs: [
+        {
+            field: 'athlete',
+            rowGroup: true,
+            keyCreator: (params) => params.value.id,
+            valueFormatter: (params) => params.value.name,
+        },
+        // ...other column definitions
+    ],
+};
+```
+
+## Grouping by Dates and Times
+
+When grouping by date/time values, the grid can optionally group by components of the date/time.
+
+To enable grouping by parts of the date for a particular column, use the `groupHierarchy` property of the [Column Definition](./column-properties/#reference-grouping-groupHierarchy).
+
+{% apiDocumentation source="column-properties/properties.json" section="grouping" names=["groupHierarchy"] /%}
+
+```{% frameworkTransform=true %}
+const gridOptions = {
+    columnDefs: [
+        {
+            field: 'date',
+            rowGroup: true,
+            groupHierarchy: ['year', 'month']
+        },
+        // ...other column definitions
+    ],
+};
+```
+
+This snippet is illustrated in the example below.
+
+{% gridExampleRunner title="Grouping by Dates and Times" name="grouping-date-time" /%}
+
+{% note %}
+By default, the grid requires datetime values to be formatted using the ISO-8601 format in order to be correctly parsed into their components.
+
+To use other date formats, provide a custom [Cell Data Type Definition](./cell-data-types/#providing-custom-cell-data-types) for the `dateString` and/or `dateTimeString` data types.
+{% /note %}
+
+## Defining Custom Grouping Hierarchies
+
+When using `groupHierarchy` as demonstrated in [Grouping by Dates and Times](./grouping-data/#grouping-by-dates-and-times), the grid provides built-in support for several components of a date/time value.
+
+Users may instead provide definitions of their own components via the `groupHierarchyConfig` grid option. These definitions may then be used in the `groupHierarchy` property of a column definition.
+
+{% apiDocumentation source="grid-options/properties.json" section="rowGrouping" names=["groupHierarchyConfig"] /%}
+
+The following example illustrates this by defining a custom grouping hierarchy component that allows grouping by the week number:
+
+{% gridExampleRunner title="Grouping by Dates and Times" name="grouping-custom-date-time" /%}
+
+## Grouping on Null and Undefined Data
+
+When grouping `null`, `undefined` or `""` (empty string) values the grid will group these together under the
+heading `(Blanks)` as the final group.
+
+By setting the `groupAllowUnbalanced` property to `true`, the grid will instead display these rows without a group.
+
+{% gridExampleRunner title="Grouping by Null and Undefined Data" name="grouping-null-undefined" /%}
+
+To enable unbalanced grouping, the following configuration is used:
+
+```{% frameworkTransform=true %}
+const gridOptions = {
+    groupAllowUnbalanced: true,
+};
+```
+
+## Hiding Parents of Individual Rows
+
+Groups with only a single child can be hidden from the grid by setting the `groupHideParentOfSingleChild` grid option to `true`.
+To remove only groups with a single leaf child, set this option to `"leafGroupsOnly"` instead.
+
+Filtering does not impact which groups get removed. Only groups containing a single child prior to filtering being applied are removed.
+
+{% gridExampleRunner title="Removing Single Children" name="remove-single-children"  exampleHeight=540 /%}
+
+The following is an example of the configuration used to hide all parents of a single row:
+
+```{% frameworkTransform=true %}
+const gridOptions = {
+    groupHideParentOfSingleChild: true,
+}
+```
+
+{% note %}
+The properties `groupHideParentOfSingleChild` and `groupHideOpenParents` are mutually exclusive.
+{% /note %}

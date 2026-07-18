@@ -1,0 +1,36 @@
+.ag-charts-tooltip {
+    border-radius: 5px;
+    background: rgb(209, 209, 246);
+    border: none;
+}
+
+.my-custom-tooltip {
+    white-space: nowrap;
+    font:
+        12px Verdana,
+        sans-serif;
+    color: black;
+    padding: 7px;
+    line-height: 1.7em;
+    text-align: center;
+    width: 170px;
+}
+
+.tooltip-title {
+    font-size: 14px;
+    font-weight: bold;
+}
+
+.tooltip-content {
+    font-size: 13px;
+}
+
+.my-custom-tooltip-arrow::after {
+    content: '';
+    position: absolute;
+    top: 40%;
+    left: -7px;
+    border-top: 7px solid transparent;
+    border-bottom: 7px solid transparent;
+    border-right: 7px solid rgb(209, 209, 246);
+}

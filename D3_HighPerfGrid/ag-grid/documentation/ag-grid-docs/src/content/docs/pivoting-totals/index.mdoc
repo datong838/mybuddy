@@ -1,0 +1,34 @@
+---
+title: "Pivot Totals"
+enterprise: true
+---
+
+Pivot totals can be inserted into the grid to display the total aggregations of rows.
+
+## Column Group Totals
+
+When pivoting by multiple columns, the grid automatically inserts a column for each active aggregation representing that group's total.
+These columns are by default only displayed when the column group is closed.
+
+The example below demonstrates that when collapsed, group totals are displayed for each sport. When expanded, these are hidden and instead display the break-down per year.
+
+{% gridExampleRunner title="Expandable Pivot Column Groups" name="expandable-pivot-column-groups" /%}
+
+## Row Totals
+
+A total column can be included for each aggregation by using the `pivotRowTotals` grid option. This option can be set to `"before"` or `"after"` determining the position
+of these total columns relative to the pivot columns.
+
+{% gridExampleRunner title="Pivot Row Totals" name="row-totals" /%}
+
+The example above demonstrates the following configuration for adding additional pivot row totals at the start of the grid:
+
+```{% frameworkTransform=true %}
+const gridOptions = {
+    pivotRowTotals: 'before',
+}
+```
+
+{% note %}
+When trying to update the position of row totals reactively, see [Changing Data, Filters, and Configurations](./pivoting-column-groups/#changing-data-filters-and-configurations).
+{% /note %}

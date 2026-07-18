@@ -1,0 +1,111 @@
+import type { _ModuleWithApi, _ModuleWithoutApi, _RowGroupingGridApi } from 'ag-grid-community';
+import { _ColumnFilterModule, _PopupModule } from 'ag-grid-community';
+
+import { EnterpriseCoreModule } from '../agGridEnterpriseModule';
+import { AggregationModule, SharedAggregationModule } from '../aggregation/aggregationModule';
+import { SharedColumnStateUpdateStrategyModule } from '../columnToolPanel/updates/columnStateUpdateStrategyModule';
+import { GroupHierarchyModule } from '../groupHierarchy/groupHierarchyModule';
+import {
+    CsrmGroupStagesModule,
+    CsrmHierarchyModule,
+    GroupColumnModule,
+    GroupEditModule,
+    StickyRowModule,
+} from '../rowHierarchy/rowHierarchyModule';
+import { VERSION } from '../version';
+import { AgGridHeaderDropZonesSelector } from './columnDropZones/agGridHeaderDropZones';
+import { RowGroupPanelBuilder } from './columnDropZones/rowGroupPanelBuilder';
+import { GroupFilter, processGroupFilterParams } from './groupFilter/groupFilter';
+import { GroupFilterHandler } from './groupFilter/groupFilterHandler';
+import { GroupFilterService } from './groupFilter/groupFilterService';
+import { GroupFloatingFilterComp } from './groupFilter/groupFloatingFilter';
+import { GroupStrategy } from './groupStrategy/groupStrategy';
+import {
+    addRowGroupColumns,
+    getRowGroupColumns,
+    moveRowGroupColumn,
+    removeRowGroupColumns,
+    setRowGroupColumns,
+} from './rowGroupingApi';
+
+/**
+ * @internal
+ */
+export const SharedRowGroupingModule: _ModuleWithApi<_RowGroupingGridApi> = {
+    moduleName: 'SharedRowGrouping',
+    version: VERSION,
+    apiFunctions: {
+        setRowGroupColumns,
+        removeRowGroupColumns,
+        addRowGroupColumns,
+        getRowGroupColumns,
+        moveRowGroupColumn,
+    },
+    dependsOn: [
+        EnterpriseCoreModule,
+        SharedAggregationModule,
+        GroupColumnModule,
+        StickyRowModule,
+        GroupHierarchyModule,
+    ],
+};
+
+/**
+ * @feature Row Grouping
+ * @colDef enableRowGroup, rowGroup, rowGroupIndex
+ */
+export const RowGroupingModule: _ModuleWithoutApi = {
+    moduleName: 'RowGrouping',
+    version: VERSION,
+    dynamicBeans: { groupStrategy: GroupStrategy },
+    rowModels: ['clientSide'],
+    dependsOn: [
+        SharedRowGroupingModule,
+        AggregationModule,
+        CsrmHierarchyModule,
+        CsrmGroupStagesModule,
+        GroupEditModule,
+    ],
+};
+
+/**
+ * @feature Row Grouping -> Row Group Panel
+ * @feature Pivoting
+ */
+export const RowGroupingPanelModule: _ModuleWithoutApi = {
+    moduleName: 'RowGroupingPanel',
+    version: VERSION,
+    beans: [RowGroupPanelBuilder],
+    selectors: [AgGridHeaderDropZonesSelector],
+    icons: {
+        // identifies the pivot drop zone
+        pivotPanel: 'pivot',
+        // "Row groups" drop zone in column tool panel
+        rowGroupPanel: 'group',
+        // separator between column 'pills' when you add multiple columns to the header drop zone
+        panelDelimiter: 'small-right',
+        // version of panelDelimiter used in RTL mode
+        panelDelimiterRtl: 'small-left',
+    },
+    dependsOn: [SharedColumnStateUpdateStrategyModule, _PopupModule],
+};
+
+/**
+ * @feature Row Grouping -> Filtering
+ */
+export const GroupFilterModule: _ModuleWithoutApi = {
+    moduleName: 'GroupFilter',
+    version: VERSION,
+    userComponents: {
+        agGroupColumnFilter: {
+            classImp: GroupFilter,
+            processParams: processGroupFilterParams,
+        },
+        agGroupColumnFloatingFilter: GroupFloatingFilterComp,
+    },
+    beans: [GroupFilterService],
+    dynamicBeans: {
+        agGroupColumnFilterHandler: GroupFilterHandler,
+    },
+    dependsOn: [EnterpriseCoreModule, _ColumnFilterModule],
+};

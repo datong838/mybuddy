@@ -1,0 +1,34 @@
+{
+  "compileOnSave": false,
+  "compilerOptions": {
+    "rootDir": ".",
+    "sourceMap": true,
+    "declaration": false,
+    "moduleResolution": "node",
+    "emitDecoratorMetadata": true,
+    "experimentalDecorators": true,
+    "importHelpers": true,
+    "esModuleInterop": true,
+    "target": "ES2020",
+    "useDefineForClassFields": false,
+    "module": "commonjs",
+    "lib": ["ES2022", "DOM", "dom.iterable"],
+    "skipLibCheck": true,
+    "isolatedModules": true,
+    "strictBindCallApply": true,
+    "skipDefaultLibCheck": true,
+    "noImplicitThis": true,
+    "baseUrl": "./",
+    "strictNullChecks": true,
+    "downlevelIteration": true,
+    "noImplicitAny": true,
+    "noUnusedLocals": false,
+    "noImplicitOverride": true,
+    "paths": {
+      "ag-grid-community": ["packages/ag-grid-community/src/main.ts"],
+      "ag-grid-enterprise": ["packages/ag-grid-enterprise/src/main.ts"],
+      "ag-stack": ["packages/ag-stack/src/main.ts"]
+    }
+  },
+  "exclude": ["node_modules", "tmp"]
+}

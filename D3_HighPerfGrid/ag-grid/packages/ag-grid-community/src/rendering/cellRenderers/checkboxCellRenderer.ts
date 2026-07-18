@@ -1,0 +1,153 @@
+import { KeyCode, RefPlaceholder, _getActiveDomElement, _getAriaCheckboxStateName, _setAriaLive } from 'ag-stack';
+
+import { AgCheckboxSelector } from '../../agWidgets/agCheckbox';
+import { GROUP_AUTO_COLUMN_ID } from '../../columns/columnUtils';
+import type { ElementParams } from '../../utils/element';
+import { _stopPropagationForAgGrid } from '../../utils/gridEvent';
+import { Component } from '../../widgets/component';
+import type { GridCheckbox } from '../../widgets/gridWidgetTypes';
+import checkboxCellRendererCSS from './checkboxCellRenderer.css';
+import type { ICellRenderer, ICellRendererParams } from './iCellRenderer';
+
+export interface ICheckboxCellRendererParams<TData = any, TContext = any> extends ICellRendererParams<
+    TData,
+    boolean,
+    TContext
+> {
+    /** Set to `true` for the input to be disabled. */
+    disabled?: boolean;
+}
+
+const CheckboxCellRendererElement: ElementParams = {
+    tag: 'div',
+    cls: 'ag-cell-wrapper ag-checkbox-cell',
+    role: 'presentation',
+    children: [
+        {
+            tag: 'ag-checkbox',
+            ref: 'eCheckbox',
+            role: 'presentation',
+        },
+    ],
+};
+
+/** @internal AG_GRID_INTERNAL - Not for public use. Can change / be removed at any time. */
+export class CheckboxCellRenderer extends Component implements ICellRenderer {
+    private readonly eCheckbox: GridCheckbox = RefPlaceholder;
+    private params: ICheckboxCellRendererParams;
+
+    constructor() {
+        super(CheckboxCellRendererElement, [AgCheckboxSelector]);
+        this.registerCSS(checkboxCellRendererCSS);
+    }
+
+    public init(params: ICheckboxCellRendererParams): void {
+        this.refresh(params);
+        const { eCheckbox, beans } = this;
+        const inputEl = eCheckbox.getInputElement();
+        inputEl.setAttribute('tabindex', '-1');
+        _setAriaLive(inputEl, 'polite');
+
+        this.addManagedListeners(inputEl, {
+            click: (event: Event) => {
+                _stopPropagationForAgGrid(event);
+
+                if (eCheckbox.isDisabled()) {
+                    return;
+                }
+
+                const isSelected = eCheckbox.getValue();
+
+                this.onCheckboxChanged(isSelected);
+            },
+            dblclick: (event: Event) => {
+                _stopPropagationForAgGrid(event);
+            },
+        });
+
+        this.addManagedElementListeners(params.eGridCell, {
+            keydown: (event: KeyboardEvent) => {
+                if (event.key === KeyCode.SPACE && !eCheckbox.isDisabled()) {
+                    if (params.eGridCell === _getActiveDomElement(beans)) {
+                        eCheckbox.toggle();
+                    }
+                    const isSelected = eCheckbox.getValue();
+                    this.onCheckboxChanged(isSelected);
+                    event.preventDefault();
+                }
+            },
+        });
+    }
+
+    public refresh(params: ICheckboxCellRendererParams): boolean {
+        this.params = params;
+        this.updateCheckbox(params);
+        return true;
+    }
+
+    private updateCheckbox(params: ICheckboxCellRendererParams): void {
+        let isSelected: boolean | undefined;
+        let displayed = true;
+        const { value, column, node } = params;
+        if (node.group && column) {
+            if (typeof value === 'boolean') {
+                isSelected = value;
+            } else {
+                const colId = column.getColId();
+                if (colId.startsWith(GROUP_AUTO_COLUMN_ID)) {
+                    // if we're grouping by this column then the value is a string and we need to parse it
+                    isSelected = value == null || (value as any) === '' ? undefined : (value as any) === 'true';
+                } else if (node.aggData?.[colId] !== undefined) {
+                    isSelected = value ?? undefined; // group with aggregation
+                } else if (node.sourceRowIndex >= 0) {
+                    isSelected = value ?? undefined; // tree group with data
+                } else {
+                    displayed = false; // group without aggregation or tree filler node without aggregation
+                }
+            }
+        } else {
+            isSelected = value ?? undefined;
+        }
+        const { eCheckbox } = this;
+        if (!displayed) {
+            eCheckbox.setDisplayed(false);
+            return;
+        }
+        eCheckbox.setValue(isSelected);
+        const disabled = params.disabled ?? !column?.isCellEditable(node);
+        eCheckbox.setDisabled(disabled);
+
+        const translate = this.getLocaleTextFunc();
+        const stateName = _getAriaCheckboxStateName(translate, isSelected);
+        const ariaLabel = disabled
+            ? stateName
+            : `${translate('ariaToggleCellValue', 'Press SPACE to toggle cell value')} (${stateName})`;
+        eCheckbox.setInputAriaLabel(ariaLabel);
+    }
+
+    private onCheckboxChanged(isSelected?: boolean): void {
+        const { params } = this;
+        const { column, node, value: oldValue } = params;
+        const { editSvc } = this.beans;
+
+        if (!column) {
+            return;
+        }
+
+        const position = { rowNode: node, column };
+
+        editSvc?.dispatchCellEvent(position, null, 'cellEditingStarted', { value: oldValue });
+
+        const valueChanged = node.setDataValue(column, isSelected, 'ui');
+
+        editSvc?.dispatchCellEvent(position, null, 'cellEditingStopped', {
+            oldValue,
+            newValue: isSelected,
+            valueChanged,
+        });
+
+        if (!valueChanged) {
+            this.updateCheckbox(params);
+        }
+    }
+}

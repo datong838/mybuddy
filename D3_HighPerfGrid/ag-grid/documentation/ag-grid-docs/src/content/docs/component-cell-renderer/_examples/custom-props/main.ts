@@ -1,0 +1,100 @@
+import type { GridApi, GridOptions } from 'ag-grid-community';
+import {
+    ClientSideRowModelApiModule,
+    ClientSideRowModelModule,
+    ModuleRegistry,
+    RowApiModule,
+    createGrid,
+    enableDevValidations,
+} from 'ag-grid-community';
+
+import { CustomButtonComponent } from './customButtonComponent_typescript';
+import { MissionResultRenderer } from './missionResultRenderer_typescript';
+
+// Enable extended validations only for development
+if (process.env.NODE_ENV !== 'production') {
+    enableDevValidations();
+}
+
+ModuleRegistry.registerModules([RowApiModule, ClientSideRowModelModule, ClientSideRowModelApiModule]);
+
+// Grid API: Access to Grid API methods
+let gridApi: GridApi;
+
+// Row Data Interface
+interface IRow {
+    company: string;
+    location: string;
+    price: number;
+    successful: boolean;
+}
+
+// Override the icons via cellRendererParams
+function successIconSrc(params: boolean) {
+    if (params === true) {
+        return 'https://www.ag-grid.com/example-assets/svg-icons/tick.svg';
+    } else {
+        return 'https://www.ag-grid.com/example-assets/svg-icons/cross.svg';
+    }
+}
+
+function refreshData() {
+    gridApi.forEachNode((rowNode) => {
+        rowNode.setDataValue('successful', Math.random() > 0.5);
+    });
+
+    gridApi.refreshClientSideRowModel('sort');
+}
+
+const onClick = () => console.log('Mission Launched');
+const gridOptions: GridOptions<IRow> = {
+    // Columns to be displayed (Should match rowData properties)
+    columnDefs: [
+        {
+            field: 'company',
+        },
+        {
+            field: 'successful',
+            headerName: 'Success',
+            cellRenderer: MissionResultRenderer,
+        },
+        {
+            field: 'successful',
+            headerName: 'Success (Custom Props)',
+            cellRenderer: MissionResultRenderer,
+            cellRendererParams: {
+                src: successIconSrc,
+            },
+        },
+        {
+            colId: 'actions',
+            headerName: 'Actions',
+            cellRenderer: CustomButtonComponent,
+            cellRendererParams: (params: any) => ({
+                onClick: onClick,
+                params,
+            }),
+            sortable: false,
+        },
+    ],
+    defaultColDef: {
+        flex: 1,
+    },
+};
+
+// setup the grid after the page has finished loading
+document.addEventListener('DOMContentLoaded', () => {
+    const gridDiv = document.querySelector<HTMLElement>('#myGrid')!;
+    gridApi = createGrid(gridDiv, gridOptions);
+
+    fetch('https://www.ag-grid.com/example-assets/small-space-mission-data.json')
+        .then((response) => response.json())
+        .then((data) => {
+            gridApi!.setGridOption('rowData', data);
+        });
+});
+
+if (typeof window !== 'undefined') {
+    // Attach external event handlers to window so they can be called from index.html
+    (<any>window).refreshData = refreshData;
+}

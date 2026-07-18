@@ -1,0 +1,34 @@
+{
+    "_config_": {
+        "codeSrc": "columnGroup.AUTO.json",
+        "validate": true,
+        "undocumentedProperties": {
+            "getDefinition": "Alias of getColGroupDef, the specific version is preferred",
+            "getUniqueId": "Alias of getColId on the underlying columns"
+        }
+    },
+    "ColumnGroup": {
+        "getColGroupDef": {},
+        "getGroupId": {},
+        "getDisplayName": {},
+        "getProvidedColumnGroup": {},
+        "getChildren": {},
+        "getDisplayedChildren": {},
+        "getLeafColumns": {},
+        "getDisplayedLeafColumns": {},
+        "isResizable": {},
+        "isExpandable": {},
+        "isExpanded": {},
+        "isPadding": {},
+        "getPaddingLevel": {},
+        "isColumn": {},
+        "getActualWidth": {},
+        "getMinWidth": {},
+        "getLeft": {},
+        "getColumnGroupShow": {},
+        "getParent": {},
+        "isEmptyGroup": {},
+        "isMoving": {},
+        "getPinned": {}
+    }
+}

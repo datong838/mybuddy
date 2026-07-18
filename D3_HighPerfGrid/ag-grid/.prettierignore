@@ -1,0 +1,60 @@
+node_modules
+yarn.lock
+package-lock.json
+dist
+*.zip
+.github
+
+# Website
+.astro
+
+# Generated scss files
+_icon-font-codes.scss
+community-modules/styles/src/internal/ag/generated/*
+
+# Algolia
+documentation/update-algolia-indices/output
+
+# Don't reorganize the order of the imports
+testing/module-size/src/App_Src.tsx
+
+# generated file
+packages/ag-grid-vue3/vite.config.d.ts
+
+# vue3 - needs revisiting but as it stands the formatting is removing imports required by vue3 so ignore for now
+packages/ag-grid-vue3/src/components/AgGridVue.vue
+packages/ag-grid-vue3/src/components/utils.ts
+
+# angular - test file requires imports to be in a specific order
+packages/ag-grid-angular/projects/ag-grid-angular/src/test.ts
+documentation/ag-grid-docs/public/example-runner/grid-angular-boilerplate/main.ts
+
+# Comment in astro file
+external/ag-website-shared/src/components/documentation-archive/DocumentationArchiveSection.astro
+
+/.nx/workspace-data
+
+testing/ag-grid-docs/e2e/.cache
+testing/ag-grid-docs/playwright-report/
+testing/ag-grid-docs/test-results/
+**/*.spec.ts-snapshots/
+testing/vue3-tests/test-results/
+testing/angular-package-tests/project.base.json
+
+documentation/ag-grid-docs/src/components/ZoomInfo.astro
+
+# Files without Prettier parsers
+*.patch
+*.sh
+.gitrepo
+.nxignore
+
+# External subrepo (managed separately)
+external/ag-shared/
+
+.rulesync
+
+# Licenses
+LICENSE.html
+AG-Grid-Enterprise-License-Latest.html
+license-en.html

@@ -1,0 +1,65 @@
+---
+title: "Time Series"
+enterprise: true
+---
+
+This section covers how to chart time series data using Integrated Charts.
+
+Integrated Charts supports the charting of time series data using line and area charts when a time axis is chosen instead
+of a category or numeric axis.
+
+## Time vs Category Axis
+
+A [Time Axis](https://www.ag-grid.com/charts/react/axes-types/#time) is used to plot continuous date / time values, whereas a
+[Category Axis](https://www.ag-grid.com/charts/react/axes-types/#category) is used to plot discrete values or categories.
+
+The example below highlights the differences between time and category axes. Notice that the time axis contains all
+days for the range of values provided, whereas the category axis only shows axis labels for the discrete values
+provide.
+
+{% gridExampleRunner title="Time vs Category Axis" name="time-vs-category"  exampleHeight=790 /%}
+
+## Time Axis Configuration
+
+A [Time Axis](https://www.ag-grid.com/charts/react/axes-types/#time) can be configured by setting `chartDataType = 'time'` on the column definition.
+
+For the time axis to work correctly, the column must contain values in one of the following formats:
+
+- `Date`
+- `string` in ISO 8601 format
+- `number` representing the numeric timestamp
+
+Additionally, if `chartDataType` is not specified and the column contains `Date` values, it will automatically use a time axis.
+
+The following snippet shows how different time series values can be configured to enable a time axis:
+
+```{% frameworkTransform=true %}
+const gridOptions = {
+    columnDefs: [
+        // date objects are treated as time by default
+        { field: 'someDate' },
+        { field: 'someIsoString', chartDataType: 'time' },
+        { field: 'someTimestamp', chartDataType: 'time' },
+    ],
+    rowData: [
+        {
+            someDate: new Date('Mon Apr 17 2023 12:43:17'), // date object
+            someIsoString: '2023-04-17T11:43:17.000Z', // ISO 8601 string
+            someTimestamp: 1681735397000, // numeric timestamp (JavaScript format)
+        },
+        // ... more rows
+    ]
+}
+```
+
+The following example demonstrates configuring numeric timestamps to use a time axis:
+
+{% gridExampleRunner title="Time Axis Configuration" name="time-axis-config"  exampleHeight=740 /%}
+
+## Time Axis Combination Chart
+
+A time axis can also be used in combination charts as shown in the following example.
+
+For more details on how to configure a combination chart, see the [Range Chart API example](./integrated-charts-api-range-chart/#combination-charts).
+
+{% gridExampleRunner title="Time Axis Combination Chart" name="time-combination-chart"  exampleHeight=790 /%}

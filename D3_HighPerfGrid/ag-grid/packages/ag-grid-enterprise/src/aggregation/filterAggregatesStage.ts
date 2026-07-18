@@ -1,0 +1,143 @@
+import type {
+    BeanCollection,
+    ChangedPath,
+    ClientSideRowModelStage,
+    FilterManager,
+    GridOptions,
+    NamedBean,
+    RowNode,
+    _IRowNodeFilterAggregateStage,
+} from 'ag-grid-community';
+import { BeanStub, _forEachChangedGroupDepthFirst, _getGroupAggFiltering } from 'ag-grid-community';
+
+export class FilterAggregatesStage extends BeanStub implements NamedBean, _IRowNodeFilterAggregateStage {
+    beanName = 'filterAggStage' as const;
+
+    public readonly step: ClientSideRowModelStage = 'filter_aggregates';
+    public readonly refreshProps: (keyof GridOptions<any>)[] = [];
+
+    private filterManager?: FilterManager;
+
+    public wireBeans(beans: BeanCollection): void {
+        this.filterManager = beans.filterManager;
+    }
+
+    public execute(changedPath: ChangedPath | undefined): void {
+        const { rowModel, colModel, groupStage } = this.beans;
+        const { filterManager } = this;
+
+        const isPivotMode = colModel.pivotMode;
+        const isAggFilterActive =
+            filterManager?.isAggregateFilterPresent() || filterManager?.isAggregateQuickFilterPresent();
+        const isTreeData = !!groupStage?.treeData;
+
+        // This is the default filter for applying only to leaf nodes, realistically this should not apply as primary agg columns,
+        // should not be applied by the filterManager if getGroupAggFiltering is missing. Predicate will apply filters to leaf level.
+        const defaultPrimaryColumnPredicate = (params: { node: RowNode }) => !params.node.group;
+
+        // Default secondary column predicate, selecting only leaf level groups.
+        const defaultSecondaryColumnPredicate = (params: { node: RowNode }) => params.node.leafGroup;
+
+        // The predicate to determine whether filters should apply to this row. Either defined by the user in groupAggFiltering or a default depending
+        // on current pivot mode status.
+        const applyFilterToNode =
+            _getGroupAggFiltering(this.gos) ||
+            (isPivotMode ? defaultSecondaryColumnPredicate : defaultPrimaryColumnPredicate);
+
+        const setAllChildrenCount = isTreeData
+            ? this.setAllChildrenCountTreeData
+            : this.setAllChildrenCountGridGrouping;
+
+        const preserveChildren = (node: RowNode, recursive = false) => {
+            if (node.childrenAfterFilter) {
+                node.childrenAfterAggFilter = node.childrenAfterFilter;
+                if (recursive) {
+                    const children = node.childrenAfterAggFilter;
+                    for (let i = 0, len = children.length; i < len; ++i) {
+                        preserveChildren(children[i], recursive);
+                    }
+                }
+                if (node.hasChildren()) {
+                    setAllChildrenCount(node);
+                } else {
+                    node.setAllChildrenCount(null);
+                    node.pinnedSibling?.setAllChildrenCount(null);
+                }
+            }
+
+            if (node.sibling) {
+                node.sibling.childrenAfterAggFilter = node.childrenAfterAggFilter;
+            }
+        };
+
+        const filterChildren = (node: RowNode) => {
+            node.childrenAfterAggFilter =
+                node.childrenAfterFilter?.filter((child: RowNode) => {
+                    const shouldFilterRow = applyFilterToNode({ node: child });
+                    if (shouldFilterRow) {
+                        const doesNodePassFilter = filterManager!.doesRowPassAggregateFilters({ rowNode: child });
+                        if (doesNodePassFilter) {
+                            // Node has passed, so preserve children
+                            preserveChildren(child, true);
+                            return true;
+                        }
+                    }
+                    const hasChildPassed = child.childrenAfterAggFilter?.length;
+                    return hasChildPassed;
+                }) || null;
+
+            if (node.hasChildren()) {
+                setAllChildrenCount(node);
+            } else {
+                node.setAllChildrenCount(null);
+                node.pinnedSibling?.setAllChildrenCount(null);
+            }
+            if (node.sibling) {
+                node.sibling.childrenAfterAggFilter = node.childrenAfterAggFilter;
+            }
+        };
+
+        _forEachChangedGroupDepthFirst(
+            rowModel.rootNode,
+            rowModel.hierarchical,
+            changedPath,
+            isAggFilterActive ? filterChildren : preserveChildren
+        );
+    }
+
+    /** for tree data, we include all children, groups and leafs */
+    private readonly setAllChildrenCountTreeData = (rowNode: RowNode): void => {
+        const childrenAfterAggFilter = rowNode.childrenAfterAggFilter;
+        let allChildrenCount = 0;
+        if (childrenAfterAggFilter) {
+            const length = childrenAfterAggFilter.length;
+            allChildrenCount = length; // include direct children too
+            for (let i = 0; i < length; ++i) {
+                allChildrenCount += childrenAfterAggFilter[i].allChildrenCount ?? 0; // include children of children
+            }
+        }
+        const count =
+            // Maintain the historical behaviour:
+            // - allChildrenCount is 0 in the root if there are no children
+            // - allChildrenCount is null in any non-root row if there are no children
+            allChildrenCount === 0 && rowNode.level >= 0 ? null : allChildrenCount;
+        rowNode.setAllChildrenCount(count);
+        rowNode.pinnedSibling?.setAllChildrenCount(count);
+    };
+
+    /* for grid data, we only count the leafs */
+    private readonly setAllChildrenCountGridGrouping = (rowNode: RowNode): void => {
+        const children = rowNode.childrenAfterAggFilter!;
+        let allChildrenCount = 0;
+        for (let i = 0, len = children.length; i < len; ++i) {
+            const child = children[i];
+            if (child.group) {
+                allChildrenCount += child.allChildrenCount as any;
+            } else {
+                allChildrenCount++;
+            }
+        }
+        rowNode.setAllChildrenCount(allChildrenCount);
+        rowNode.pinnedSibling?.setAllChildrenCount(allChildrenCount);
+    };
+}

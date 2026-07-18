@@ -1,0 +1,68 @@
+---
+title: "Touch"
+---
+
+AG Grid is designed to work on touch devices. By default, browsers convert tap events to mouse click events. This means, for example, if you tap on a cell in AG Grid, the cell will get selected just like you clicked on the cell with a mouse. The remainder of this page explains touch gestures understood by the grid which are NOT simply the grid reacting to taps as mouse clicks. They are touch gestures coded into the grid.
+
+## Touch Gestures for AG Grid Community
+
+The following touch gestures are supported by AG Grid Community:
+
+- Move columns by touch-dragging the column header with a touch.
+- Move column groups by touch-dragging the column group header with a touch.
+- Tap the column header to sort by that column.
+- Tap and drag the column header resize handle to resize it
+
+{% gridExampleRunner title="Touch Community" name="touch-community" /%}
+
+## Touch Gestures for AG Grid Enterprise
+
+The following touch gestures are support by AG Grid Enterprise (in addition to the AG Grid Community gestures mentioned above):
+
+- Drag columns out of the tool panel using drag.
+- Drag columns out of the row group and pivot drop zones by dragging.
+
+{% gridExampleRunner title="Touch Enterprise" name="touch-enterprise" /%}
+
+## Enabling Double Clicking on Mobile Devices
+
+The default behaviour on many mobile devices when a page is double clicked on it to zoom in. To prevent this behaviour so that a double click would, for example, edit a cell you need to disable viewport zooming.
+
+You can disable viewport zooming by setting the following tag at the top level page:
+
+```html
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+```
+
+## Column Menu Touch Configuration
+
+By default, the Column Menu is launched from the menu button in the header. However, there are some situations where the menu button is not displayed. In these cases, the menu can be launched via tap and hold (for 500 ms) on the header.
+
+The following example demonstrates these different scenarios:
+
+- The `Athlete` column has the default behaviour where the menu is launched via a button.
+- The `Country` column has `colDef.suppressHeaderMenuButton = true` set. The menu button is suppressed, and the menu is launched via tap and hold.
+- The `Sport` column has `colDef.suppressHeaderMenuButton = true` and `colDef.suppressHeaderContextMenu = true` set. Both the menu button, and tap and hold are suppressed.
+- The `Medals` column group has no menu button as it is a column group not a column. The menu is launched via tap and hold.
+
+{% gridExampleRunner title="Column Menu New" name="column-menu-new" /%}
+
+If `suppressMenuHide = false`, the menu will behave the same as the [Legacy Tabbed Column Menu](#legacy-tabbed-column-menu) described below.
+
+### Legacy Tabbed Column Menu
+
+If the [Legacy Tabbed Column Menu](./column-menu/#legacy-tabbed-column-menu) is enabled, the column menu icon is hidden by default and only appears on mouseover. On touch devices, this mouseover behaviour is not possible, so it is displayed via tap and hold on the column header.
+
+{% gridExampleRunner title="Column Menu Legacy" name="column-menu" /%}
+
+### Suppress Menu Hide
+
+If you are using the legacy column menu and need a visual indicator to inform the user that a menu exists, you can set the grid option `suppressMenuHide = true`. Note that when this is enabled, the default tap and hold behaviour will no longer apply, and the column menu icon must be tapped instead.
+
+The following example demonstrates suppressing the menu hide behaviour:
+
+{% gridExampleRunner title="Column Menu Suppress Hide" name="column-menu-suppress-menu-hide" /%}
+
+## Custom Header Components
+
+If using custom header components with interactive elements, the grid may consume the touch events in order to support the behaviour above. To prevent this, either the grid touch support can be disabled by setting the grid option `suppressTouch = true`, or the custom header component can stop propagation on the `touchstart` event.

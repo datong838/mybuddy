@@ -1,0 +1,233 @@
+import type { NamedBean } from '../context/bean';
+import { BeanStub } from '../context/beanStub';
+import type { AgColumn } from '../entities/agColumn';
+import type { ColumnEventType } from '../events';
+import type { ColumnDelayRenderService } from '../rendering/columnDelayRenderService';
+import { dispatchColumnResizedEvent } from './columnEventUtils';
+
+type FlexItem = {
+    col: AgColumn;
+    isFlex: boolean;
+    flex: number;
+    min: number;
+    max: number;
+    initialSize: number;
+    targetSize: number;
+    frozenSize?: number;
+    violationType?: 'min' | 'max';
+};
+
+export class ColumnFlexService extends BeanStub implements NamedBean {
+    beanName = 'colFlex' as const;
+
+    private flexViewportWidth: number;
+    public columnsHidden = false;
+
+    public refreshFlexedColumns(
+        params: {
+            resizingCols?: AgColumn[];
+            skipSetLeft?: boolean;
+            viewportWidth?: number;
+            source?: ColumnEventType;
+            fireResizedEvent?: boolean;
+            updateBodyWidths?: boolean;
+        } = {}
+    ): AgColumn[] {
+        const source = params.source ?? 'flex';
+
+        if (params.viewportWidth != null) {
+            this.flexViewportWidth = params.viewportWidth;
+        }
+
+        const totalSpace = this.flexViewportWidth;
+
+        const { visibleCols, colDelayRenderSvc } = this.beans;
+
+        const visibleCenterCols = visibleCols.centerCols;
+        let flexAfterDisplayIndex = -1;
+        if (params.resizingCols) {
+            const allResizingCols = new Set(params.resizingCols);
+            // find the last resizing col, as only cols after this one are affected by the resizing
+            for (let i = visibleCenterCols.length - 1; i >= 0; i--) {
+                if (allResizingCols.has(visibleCenterCols[i])) {
+                    flexAfterDisplayIndex = i;
+                    break;
+                }
+            }
+        }
+
+        // NOTE this is an implementation of the "Resolve Flexible Lengths" part
+        // of the flex spec, simplified because we only support flex growing not
+        // shrinking, and don't support flex-basis.
+        // https://www.w3.org/TR/css-flexbox-1/#resolve-flexible-lengths
+        let hasFlexItems = false;
+        const items = visibleCenterCols.map((col, i): FlexItem => {
+            const flex = col.getFlex();
+            const isFlex = flex != null && flex > 0 && i > flexAfterDisplayIndex;
+
+            hasFlexItems ||= isFlex;
+
+            return {
+                col,
+                isFlex,
+                flex: Math.max(0, flex ?? 0),
+                initialSize: col.getActualWidth(),
+                min: col.getMinWidth(),
+                max: col.getMaxWidth(),
+                targetSize: 0,
+            };
+        });
+        // hide all columns and cells because we are going to flex them after they are displayed
+        if (hasFlexItems) {
+            colDelayRenderSvc?.hideColumns('colFlex');
+            this.columnsHidden = true;
+        } else if (this.columnsHidden) {
+            // If columns were previously hidden, but now there are no flex columns, we need to remove the colFlex hide request
+            // This can happen if columns are auto sized before the grid has rendered the flex columns. i.e autoSizeStrategy in React
+            this.revealColumns(colDelayRenderSvc);
+        }
+
+        if (!totalSpace || !hasFlexItems) {
+            return [];
+        }
+
+        let unfrozenItemCount = items.length;
+        let unfrozenFlex = items.reduce((acc, item) => acc + item.flex, 0);
+        let unfrozenSpace = totalSpace;
+
+        const freeze = (item: FlexItem, width: number) => {
+            item.frozenSize = width;
+            item.col.setActualWidth(width, source);
+            unfrozenSpace -= width;
+            unfrozenFlex -= item.flex;
+            unfrozenItemCount -= 1;
+        };
+
+        const isFrozen = (item: FlexItem) => item.frozenSize != null;
+
+        // Freeze inflexible columns
+        for (const item of items) {
+            if (!item.isFlex) {
+                freeze(item, item.initialSize);
+            }
+        }
+
+        // a. Check for flexible items. If all the flex items on the line are
+        // frozen, free space has been distributed; exit this loop.
+        while (unfrozenItemCount > 0) {
+            // b. Calculate the remaining free space as for initial free space,
+            // above. If the sum of the unfrozen flex items’ flex factors is
+            // less than one, multiply the initial free space by this sum.
+            const spaceToFill = Math.round(unfrozenFlex < 1 ? unfrozenSpace * unfrozenFlex : unfrozenSpace);
+
+            // c. Distribute free space proportional to the flex factors.
+            let lastUnfrozenItem: FlexItem | undefined;
+            let actualLeft = 0;
+            let idealRight = 0;
+
+            for (const item of items) {
+                if (isFrozen(item)) {
+                    continue;
+                }
+
+                lastUnfrozenItem = item;
+                idealRight += spaceToFill * (item.flex / unfrozenFlex);
+
+                const idealSize = idealRight - actualLeft;
+                const roundedSize = Math.round(idealSize);
+
+                item.targetSize = roundedSize;
+                actualLeft += roundedSize;
+            }
+
+            if (lastUnfrozenItem) {
+                // Correct cumulative rounding errors: adjust the size of the
+                // last item to fill any remaining space
+                lastUnfrozenItem.targetSize += spaceToFill - actualLeft;
+            }
+
+            // d. Fix min/max violations. Clamp each non-frozen item’s target
+            // main size by its used min and max main sizes... If the item’s
+            // target main size was made smaller by this, it’s a max violation.
+            // If the item’s target main size was made larger by this, it’s a
+            // min violation.
+            let totalViolation = 0;
+            for (const item of items) {
+                if (isFrozen(item)) {
+                    continue;
+                }
+
+                const unclampedSize = item.targetSize;
+                // max applied last to match setActualWidth: when min > max, max wins, else the frozen size leaks space
+                const clampedSize = Math.min(Math.max(unclampedSize, item.min), item.max);
+
+                totalViolation += clampedSize - unclampedSize;
+                item.violationType =
+                    clampedSize === unclampedSize ? undefined : clampedSize < unclampedSize ? 'max' : 'min';
+
+                item.targetSize = clampedSize;
+            }
+
+            // e. Freeze over-flexed items. The total violation is the sum of
+            // the adjustments from the previous step.
+            // If the total violation is:
+            //     - Zero, Freeze all items
+            //     - Positive, Freeze all the items with min violations
+            //     - Negative, Freeze all the items with max violations
+            const freezeType = totalViolation === 0 ? 'all' : totalViolation > 0 ? 'min' : 'max';
+
+            for (const item of items) {
+                if (isFrozen(item)) {
+                    continue;
+                }
+
+                if (freezeType === 'all' || item.violationType === freezeType) {
+                    freeze(item, item.targetSize);
+                }
+            }
+        }
+
+        const widths = params.skipSetLeft ? undefined : visibleCols.setLeftValues(source);
+        if (params.updateBodyWidths) {
+            visibleCols.updateBodyWidths(widths);
+        }
+
+        const unconstrainedFlexColumns = items
+            .filter((item) => item.isFlex && !item.violationType)
+            .map((item) => item.col);
+
+        if (params.fireResizedEvent) {
+            const changedColumns = items.filter((item) => item.initialSize !== item.frozenSize).map((item) => item.col);
+            const flexingColumns = items.filter((item) => item.flex).map((item) => item.col);
+
+            dispatchColumnResizedEvent(this.eventSvc, changedColumns, true, source, flexingColumns);
+        }
+
+        this.revealColumns(colDelayRenderSvc);
+
+        return unconstrainedFlexColumns;
+    }
+
+    private revealColumns(colDelayRenderSvc: ColumnDelayRenderService | undefined) {
+        if (this.columnsHidden) {
+            colDelayRenderSvc?.revealColumns('colFlex');
+            this.columnsHidden = false;
+        }
+    }
+
+    public initCol(column: AgColumn): void {
+        const { flex, initialFlex } = column.colDef;
+        if (flex !== undefined) {
+            column.flex = flex;
+        } else if (initialFlex !== undefined) {
+            column.flex = initialFlex;
+        }
+    }
+
+    // this method should only be used by the colModel to
+    // change flex when required by the applyColumnState method.
+    public setColFlex(column: AgColumn, flex: number | null) {
+        column.flex = flex ?? null;
+        column.dispatchStateUpdatedEvent('flex');
+    }
+}

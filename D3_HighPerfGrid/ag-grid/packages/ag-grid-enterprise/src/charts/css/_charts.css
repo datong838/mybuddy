@@ -1,0 +1,467 @@
+/* stylelint-disable selector-max-specificity */
+.ag-chart {
+    position: relative;
+    display: flex;
+    width: 100%;
+    height: 100%;
+    background-color: var(--ag-wrapper-background-color);
+}
+
+.ag-chart-components-wrapper {
+    position: relative;
+    display: flex;
+    flex: 1 1 auto;
+}
+
+.ag-chart-canvas-wrapper {
+    position: relative;
+    flex: 1 1 auto;
+}
+
+.ag-chart-menu {
+    position: absolute;
+    display: flex;
+    flex-direction: row;
+    top: 8px;
+    right: calc(var(--ag-cell-horizontal-padding) + var(--ag-spacing) - 4px);
+    gap: 20px;
+    width: auto;
+    justify-content: right;
+    border-radius: var(--ag-border-radius);
+    background: var(--ag-background-color);
+    background-color: color-mix(in srgb, transparent, var(--ag-background-color) 30%);
+    padding: 4px 2px;
+
+    --ag-icon-size: 20px;
+}
+
+.ag-chart-docked-container {
+    position: relative;
+    min-width: var(--ag-chart-menu-panel-width);
+}
+
+:where(.ag-chart-menu-hidden) ~ .ag-chart-docked-container {
+    display: none;
+}
+
+.ag-chart-tabbed-menu {
+    width: 100%;
+    height: 100%;
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+}
+
+.ag-chart-tabbed-menu-header {
+    flex: none;
+    user-select: none;
+    cursor: default;
+}
+
+.ag-chart-tabbed-menu-body {
+    display: flex;
+    flex: 1 1 auto;
+    align-items: stretch;
+    overflow: hidden;
+    position: relative;
+}
+
+.ag-chart-tabbed-menu-body::after {
+    content: '';
+    position: absolute;
+    display: block;
+    top: 0;
+    left: 0;
+    right: 0;
+    height: 16px;
+    background: linear-gradient(var(--ag-background-color), transparent);
+}
+
+.ag-chart-tab {
+    width: 100%;
+    overflow: hidden;
+    overflow-y: auto;
+}
+
+.ag-chart-settings {
+    overflow-x: hidden;
+}
+
+.ag-chart-settings-wrapper {
+    position: relative;
+    flex-direction: column;
+    width: 100%;
+    height: 100%;
+    display: flex;
+    overflow: hidden;
+}
+
+.ag-chart-settings-nav-bar {
+    display: flex;
+    align-items: center;
+    width: 100%;
+    height: 30px;
+    padding: 0 10px;
+    user-select: none;
+    border-top: solid var(--ag-border-width) var(--ag-border-color);
+}
+
+.ag-chart-settings-card-selector {
+    display: flex;
+    align-items: center;
+    justify-content: space-around;
+    flex: 1 1 auto;
+    height: 100%;
+
+    /* increase size of click area for better UX */
+    padding: 0 10px;
+}
+
+.ag-chart-settings-card-item {
+    cursor: pointer;
+    position: relative;
+    background-color: var(--ag-foreground-color);
+    width: 8px;
+    height: 8px;
+    border-radius: 4px;
+
+    &.ag-not-selected {
+        opacity: 0.2;
+    }
+
+    &.ag-selected {
+        background-color: var(--ag-accent-color);
+    }
+}
+
+.ag-chart-settings-card-item::before {
+    /* make expanded click area */
+    content: ' ';
+    display: block;
+    position: absolute;
+    background-color: transparent;
+
+    /* rtl:ignore */
+    left: 50%;
+    top: 50%;
+
+    /* rtl:ignore */
+    margin-left: -10px;
+    margin-top: -10px;
+    width: 20px;
+    height: 20px;
+}
+
+.ag-chart-settings-prev,
+.ag-chart-settings-next {
+    position: relative;
+    flex: none;
+}
+
+.ag-chart-settings-prev:focus-within,
+.ag-chart-settings-next:focus-within {
+    box-shadow: var(--ag-focus-shadow);
+    border-radius: 1px;
+}
+
+.ag-chart-settings-prev-button,
+.ag-chart-settings-next-button {
+    position: absolute;
+    top: 0;
+    /* rtl:ignore */
+    left: 0;
+    width: 100%;
+    height: 100%;
+    cursor: pointer;
+    opacity: 0;
+}
+
+.ag-chart-settings-mini-charts-container {
+    position: relative;
+    flex: 1 1 auto;
+    overflow: hidden auto;
+}
+
+.ag-chart-settings-mini-wrapper {
+    position: absolute;
+    top: 0;
+    /* rtl:ignore */
+    left: 0;
+    display: flex;
+    flex-direction: column;
+    width: 100%;
+    min-height: 100%;
+    overflow: hidden;
+    padding-bottom: var(--ag-widget-container-vertical-padding);
+
+    &.ag-animating {
+        /* rtl:ignore */
+        transition: left 0.3s;
+        transition-timing-function: ease-in-out;
+    }
+}
+
+.ag-chart-mini-thumbnail {
+    cursor: pointer;
+    border: solid var(--ag-border-width) var(--ag-border-color);
+    border-radius: 5px;
+    padding: 1px;
+
+    &.ag-selected {
+        border-color: var(--ag-accent-color);
+        border-width: calc(var(--ag-border-width) + 1px);
+        padding: unset;
+    }
+
+    &:focus-visible {
+        border-color: var(--ag-accent-color);
+        box-shadow: var(--ag-focus-shadow);
+    }
+}
+
+.ag-chart-mini-thumbnail-canvas {
+    display: block;
+}
+
+.ag-chart-data-wrapper,
+.ag-chart-format-wrapper,
+.ag-chart-advanced-settings-wrapper {
+    display: flex;
+    flex-direction: column;
+    position: relative;
+    user-select: none;
+    padding-bottom: 16px;
+}
+
+.ag-chart-data-wrapper,
+.ag-chart-advanced-settings-wrapper {
+    height: 100%;
+    overflow-y: auto;
+}
+
+.ag-chart-advanced-settings {
+    background-color: var(--ag-chrome-background-color);
+}
+
+.ag-chart-advanced-settings-wrapper,
+.ag-chart-advanced-settings {
+    width: 100%;
+}
+
+.ag-chart-advanced-settings-wrapper {
+    padding-bottom: 0;
+}
+
+.ag-chart-advanced-settings-section {
+    display: flex;
+    margin: 0;
+    border-bottom: solid var(--ag-border-width) var(--ag-border-color);
+    padding-top: var(--ag-widget-container-vertical-padding);
+    padding-bottom: var(--ag-widget-container-vertical-padding);
+}
+
+.ag-chart-empty-text {
+    display: flex;
+    top: 0;
+    width: 100%;
+    height: 100%;
+    align-items: center;
+    justify-content: center;
+    background-color: var(--ag-background-color);
+}
+
+.ag-charts-font-size-color {
+    display: flex;
+    align-self: stretch;
+    justify-content: space-between;
+}
+
+.ag-chart-menu-icon {
+    margin: 2px 0;
+    cursor: pointer;
+    border-radius: var(--ag-border-radius);
+    opacity: 0.8;
+}
+
+.ag-chart-menu-icon:hover {
+    opacity: 1;
+}
+
+.ag-chart-menu-toolbar-button {
+    border: 0;
+    background-color: unset;
+    padding: 0 2px;
+    border-radius: 1px;
+}
+
+.ag-chart-data-column-drag-handle {
+    /* rtl:ignore */
+    margin-left: var(--ag-spacing);
+}
+
+.ag-chart-data-section,
+.ag-chart-format-section {
+    display: flex;
+    margin: 0;
+
+    :where(.ag-label:not(.ag-group-title-bar)) {
+        color: var(--ag-chart-menu-label-color);
+    }
+
+    :where(.ag-label-align-top .ag-label) {
+        margin-top: calc(var(--ag-widget-vertical-spacing) * 0.5);
+        margin-bottom: var(--ag-widget-vertical-spacing);
+    }
+
+    :where(.ag-slider.ag-label-align-top .ag-label) {
+        margin-bottom: 0;
+    }
+
+    .ag-label {
+        display: inline-block;
+    }
+}
+
+.ag-chart-menu-panel {
+    border-left: solid var(--ag-border-width) var(--ag-border-color);
+
+    /* this is a hack to set the panel background color, because agPanel.css
+       is injected after this file and the default panel background is
+       overriding this. Ideally we need a way of controlling file order
+       to put panel styles before files that override them. */
+    --ag-panel-background-color: var(--ag-chrome-background-color);
+}
+
+.ag-chart-format-wrapper,
+.ag-chart-data-wrapper {
+    padding: 0;
+    margin: 0;
+}
+
+.ag-group {
+    .ag-charts-data-group-item {
+        position: relative;
+        padding-bottom: var(--ag-widget-container-vertical-padding);
+    }
+
+    .ag-charts-data-group-item:where(:not(:last-child)) {
+        margin-bottom: var(--ag-spacing);
+    }
+
+    .ag-charts-advanced-settings-top-level-group-title-bar {
+        position: relative;
+        background-color: unset;
+    }
+
+    .ag-charts-data-group-item:where(:not(.ag-charts-format-sub-level-group, .ag-pill-select, .ag-select)) {
+        height: var(--ag-list-item-height);
+    }
+
+    .ag-charts-data-group-item:where(.ag-picker-field) {
+        margin-top: var(--ag-spacing);
+    }
+
+    .ag-charts-format-top-level-group-item,
+    .ag-charts-advanced-settings-top-level-group-item {
+        margin: var(--ag-spacing) 0;
+    }
+
+    .ag-charts-format-sub-level-group-container {
+        display: flex;
+        flex-direction: column;
+        padding: var(--ag-widget-vertical-spacing) 0;
+    }
+
+    .ag-charts-settings-group-container {
+        row-gap: 8px;
+        display: grid;
+        grid-template-columns: 60px 1fr 60px 1fr 60px;
+        border-top: none;
+        font-weight: 500;
+
+        :where(.ag-chart-mini-thumbnail:nth-child(3n + 1)) {
+            grid-column: 1;
+        }
+
+        :where(.ag-chart-mini-thumbnail:nth-child(3n + 2)) {
+            grid-column: 3;
+        }
+
+        :where(.ag-chart-mini-thumbnail:nth-child(3n + 3)) {
+            grid-column: 5;
+        }
+    }
+
+    .ag-charts-settings-group-title-bar,
+    .ag-charts-data-group-title-bar,
+    .ag-charts-format-top-level-group-title-bar {
+        border-top: none;
+        margin: 0;
+        font-weight: 500;
+        position: relative;
+        padding: var(--ag-widget-container-vertical-padding) var(--ag-widget-container-horizontal-padding);
+    }
+
+    .ag-charts-format-sub-level-group-title-bar {
+        background: none;
+        font-weight: 500;
+        padding: var(--ag-widget-vertical-spacing) 0;
+    }
+
+    &.ag-charts-format-top-level-group,
+    &.ag-charts-data-group {
+        border-top: solid var(--ag-border-width) var(--ag-border-color);
+    }
+
+    .ag-charts-format-top-level-group-container,
+    .ag-charts-data-group-container,
+    .ag-charts-settings-group-container {
+        padding: 0 var(--ag-widget-container-horizontal-padding);
+        margin: 0;
+    }
+
+    .ag-charts-format-top-level-group-item,
+    .ag-charts-format-sub-level-group-item,
+    .ag-charts-format-sub-level-no-header-group-item {
+        margin-bottom: var(--ag-widget-vertical-spacing);
+    }
+
+    &.ag-charts-format-top-level-group,
+    .ag-charts-format-top-level-group-item,
+    &.ag-charts-format-sub-level-group,
+    .ag-charts-format-sub-level-group-item:last-child {
+        padding: 0;
+        margin: 0;
+    }
+
+    .ag-charts-advanced-settings-top-level-group-container {
+        margin: 0;
+    }
+
+    .ag-charts-advanced-settings-top-level-group-title-bar,
+    .ag-charts-advanced-settings-top-level-group-container {
+        padding: 0 var(--ag-widget-container-horizontal-padding);
+    }
+
+    .ag-charts-advanced-settings-top-level-group-item {
+        margin-top: calc(var(--ag-widget-vertical-spacing) * 2);
+        margin-bottom: 0;
+    }
+}
+
+.ag-chart-settings-card-item.ag-not-selected:hover {
+    opacity: 0.35;
+}
+
+:where(.ag-dragging-range-handle) .ag-dialog,
+:where(.ag-dragging-fill-handle) .ag-dialog {
+    /* stylelint-disable-next-line ag/no-low-performance-key-selector */
+    .ag-charts-canvas-center,
+    .ag-charts-series-area,
+    .ag-charts-proxy-elem,
+    .ag-charts-proxy-legend-toolbar,
+    .ag-charts-toolbar,
+    .ag-charts-canvas-overlay > * {
+        pointer-events: none;
+    }
+}

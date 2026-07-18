@@ -1,0 +1,106 @@
+import type { AgColumn } from '../entities/agColumn';
+import type { ColumnEvent, ColumnEventType } from '../events';
+import type { ColumnChangedEventType } from '../interfaces/iColsService';
+import type { WithoutGridCommon } from '../interfaces/iCommon';
+import type { IEventService } from '../interfaces/iEventService';
+
+function getCommonValue<T>(cols: AgColumn[], valueGetter: (col: AgColumn) => T): T | undefined {
+    if (!cols || cols.length == 0) {
+        return undefined;
+    }
+
+    // compare each value to the first value. if nothing differs, then value is common so return it.
+    const firstValue = valueGetter(cols[0]);
+    for (let i = 1; i < cols.length; i++) {
+        if (firstValue !== valueGetter(cols[i])) {
+            // values differ, no common value
+            return undefined;
+        }
+    }
+
+    return firstValue;
+}
+
+export function dispatchColumnPinnedEvent(
+    eventSvc: IEventService,
+    changedColumns: AgColumn[],
+    source: ColumnEventType
+): void {
+    if (!changedColumns.length) {
+        return;
+    }
+
+    // if just one column, we use this, otherwise we don't include the col
+    const column: AgColumn | null = changedColumns.length === 1 ? changedColumns[0] : null;
+
+    // only include pinned if it's common in all columns
+    const pinned = getCommonValue(changedColumns, (col) => col.getPinned());
+
+    eventSvc.dispatchEvent({
+        type: 'columnPinned',
+        // mistake in typing, 'undefined' should be allowed, as 'null' means 'not pinned'
+        pinned: pinned != null ? pinned : null,
+        columns: changedColumns,
+        column,
+        source,
+    });
+}
+
+/** @internal AG_GRID_INTERNAL - Not for public use. Can change / be removed at any time. */
+export function dispatchColumnVisibleEvent(
+    eventSvc: IEventService,
+    changedColumns: AgColumn[],
+    source: ColumnEventType
+): void {
+    if (!changedColumns.length) {
+        return;
+    }
+
+    // if just one column, we use this, otherwise we don't include the col
+    const column: AgColumn | null = changedColumns.length === 1 ? changedColumns[0] : null;
+
+    // only include visible if it's common in all columns
+    const visible = getCommonValue(changedColumns, (col) => col.isVisible());
+
+    eventSvc.dispatchEvent({
+        type: 'columnVisible',
+        visible,
+        columns: changedColumns,
+        column,
+        source,
+    });
+}
+
+/** @internal AG_GRID_INTERNAL - Not for public use. Can change / be removed at any time. */
+export function _dispatchColumnChangedEvent<T extends ColumnChangedEventType>(
+    eventSvc: IEventService,
+    type: T,
+    columns: AgColumn[],
+    source: ColumnEventType
+): void {
+    eventSvc.dispatchEvent({
+        type,
+        columns,
+        column: columns?.length == 1 ? columns[0] : null,
+        source,
+    } as WithoutGridCommon<ColumnEvent>);
+}
+
+export function dispatchColumnResizedEvent(
+    eventSvc: IEventService,
+    columns: AgColumn[] | null,
+    finished: boolean,
+    source: ColumnEventType,
+    flexColumns: AgColumn[] | null = null
+): void {
+    if (columns?.length) {
+        eventSvc.dispatchEvent({
+            type: 'columnResized',
+            columns,
+            column: columns.length === 1 ? columns[0] : null,
+            flexColumns,
+            finished,
+            source,
+        });
+    }
+}

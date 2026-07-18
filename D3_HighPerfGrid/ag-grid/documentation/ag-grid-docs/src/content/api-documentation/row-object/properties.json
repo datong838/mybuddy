@@ -1,0 +1,144 @@
+{
+    "_config_": {
+        "codeSrc": "row-node.AUTO.json",
+        "validate": true
+    },
+    "display": {
+        "meta": {
+            "displayName": "Display"
+        },
+        "rowIndex": {},
+        "rowTop": {},
+        "displayed": {},
+        "isHovered": {}
+    },
+    "expand": {
+        "meta": {
+            "displayName": "Expand / Collapse"
+        },
+        "expanded": {},
+        "isExpandable": {},
+        "setExpanded": {
+            "description": "Set the expanded state of this rowNode. <ul class='content'><li>`expanded` - `true` to expand, `false` to collapse</li><li>`sourceEvent` - Optional event that will be passed to the `rowGroupOpened` event.</li><li>`forceSync` - By default rows are expanded asynchronously for best performance. Set to `true` if you need to interact with the expanded row immediately after this function.</li></ul>"
+        }
+    },
+    "events": {
+        "meta": {
+            "displayName": "Events"
+        },
+        "addEventListener": {},
+        "removeEventListener": {}
+    },
+    "height": {
+        "meta": {
+            "displayName": "Height"
+        },
+        "rowHeight": {},
+        "setRowHeight": {}
+    },
+    "filter": {
+        "meta": {
+            "displayName": "Quick Filter"
+        },
+        "quickFilterAggregateText": {},
+        "resetQuickFilterAggregateText": {}
+    },
+    "serverSide": {
+        "meta": {
+            "displayName": "Server Side Row Model"
+        },
+        "stub": {},
+        "failedLoad": {},
+        "getRoute": {
+            "more": {
+                "name": "Server-Side Model: Open by Default",
+                "url": "./server-side-model-grouping/#open-by-default"
+            }
+        }
+    },
+    "masterDetail": {
+        "meta": {
+            "displayName": "Master Detail"
+        },
+        "master": {},
+        "detail": {}
+    },
+    "pinned": {
+        "meta": {
+            "displayName": "Pinned Rows"
+        },
+        "rowPinned": {},
+        "isRowPinned": {}
+    },
+    "data": {
+        "meta": {
+            "displayName": "Data"
+        },
+        "id": {},
+        "sourceRowIndex": {},
+        "data": {},
+        "destroyed": {},
+        "updateData": {},
+        "setData": {
+            "more": {
+                "name": "Client-Side Single Row Update",
+                "url": "./data-update-single-row-cell/"
+            }
+        },
+        "setDataValue": {
+            "description": "Sets the value on the `rowNode` for the specified column and refreshes the rendered cell. In **Read Only** mode, this fires `onCellEditRequest` instead of writing directly. In **Pivot Mode**, pivot columns on leaf rows resolve to their underlying value column. The `eventSource` parameter controls how the value is written",
+            "more": {
+                "name": "RowNode.setDataValue()",
+                "url": "./cell-editing-batch/#rownodesetdatavalue/"
+            }
+        },
+        "getDataValue": {
+            "description": "Returns the data value from the rowNode for the specified column. By default, returns committed data ignoring any pending edits. For group rows, returns aggregated values or the group key. For formula cells, returns the computed result. To get the displayed value (with formatting and value formatter applied), use `api.getCellValue()` instead. In Pivot Mode, pivot columns on leaf rows resolve to their underlying value column. The `from` parameter controls value resolution, including `'transformed'` to read the displayed [Show Values As](./aggregation-show-values-as/) value.",
+            "more": {
+                "name": "RowNode.getDataValue()",
+                "url": "./cell-editing-batch/#rownodegetdatavalue/"
+            }
+        }
+    },
+    "selection": {
+        "meta": {
+            "displayName": "Selection"
+        },
+        "selectable": {},
+        "setSelected": {
+            "description": "Select (or deselect) the node. <ul class='content'><li>`newValue` - `true` for selection, `false` for deselection.</li><li>`clearSelection` - If selecting, then passing `true` will select the node exclusively (i.e. NOT do multi select). If doing deselection, `clearSelection` has no impact.</li>"
+        },
+        "isSelected": {}
+    },
+    "groupNodeAttributes": {
+        "meta": {
+            "displayName": "Grouping"
+        },
+        "group": {},
+        "groupData": {},
+        "aggData": {},
+        "key": {},
+        "field": {},
+        "rowGroupColumn": {},
+        "rowGroupIndex": {},
+        "footer": {},
+        "parent": {},
+        "level": {},
+        "uiLevel": {},
+        "allLeafChildren": {},
+        "childrenAfterGroup": {},
+        "childrenAfterFilter": {},
+        "childrenAfterSort": {},
+        "allChildrenCount": {},
+        "leafGroup": {},
+        "sibling": {},
+        "primaryRow": {},
+        "depthFirstSearch": {},
+        "getAggregatedChildren": {
+            "more": {
+                "name": "Retrieving Aggregated Children",
+                "url": "./aggregation/#retrieving-aggregated-children"
+            }
+        }
+    }
+}

@@ -1,0 +1,511 @@
+import { _last } from 'ag-stack';
+
+import type {
+    AgColumn,
+    AgColumnGroup,
+    BeanCollection,
+    ColumnModel,
+    IAggFunc,
+    IClientSideRowModel,
+    IPivotResultColsService,
+    IRowModel,
+    PartialCellRange,
+    RowNode,
+    RowNodeSorter,
+    SortOption,
+    SortService,
+} from 'ag-grid-community';
+import { BeanStub, GROUP_AUTO_COLUMN_ID, _isClientSideRowModel, _isServerSideRowModel } from 'ag-grid-community';
+
+import type { ColState } from '../model/chartDataModel';
+import { DEFAULT_CHART_CATEGORY } from '../model/chartDataModel';
+
+export interface ChartDatasourceParams {
+    dimensionCols: ColState[];
+    grouping: boolean;
+    pivoting: boolean;
+    crossFiltering: boolean;
+    crossFilteringSort: SortOption[] | boolean;
+    valueCols: AgColumn[];
+    startRow: number;
+    endRow: number;
+    isScatter: boolean;
+    aggFunc?: string | IAggFunc;
+    referenceCellRange?: PartialCellRange;
+    /** Used for statistical charts */
+    combineGroupValues?: boolean;
+}
+
+interface IData {
+    chartData: any[];
+    colNames: { [key: string]: string[] };
+    groupChartData?: any[];
+}
+
+export interface ChartValueWrapper<T = any> {
+    value: T;
+    id: number;
+    toString: () => string;
+}
+
+export class ChartDatasource extends BeanStub {
+    private gridRowModel: IRowModel;
+    private pivotResultCols?: IPivotResultColsService;
+    private colModel: ColumnModel;
+    private rowNodeSorter?: RowNodeSorter;
+    private sortSvc?: SortService;
+
+    public wireBeans(beans: BeanCollection): void {
+        this.sortSvc = beans.sortSvc;
+        this.gridRowModel = beans.rowModel;
+        this.colModel = beans.colModel;
+        this.pivotResultCols = beans.pivotResultCols;
+        this.rowNodeSorter = beans.rowNodeSorter;
+    }
+
+    public getData(params: ChartDatasourceParams): IData {
+        if (params.crossFiltering) {
+            if (params.grouping) {
+                this.warn(141);
+                return { chartData: [], colNames: {} };
+            }
+
+            if (!_isClientSideRowModel(this.gos)) {
+                this.warn(142);
+                return { chartData: [], colNames: {} };
+            }
+        }
+
+        const isServerSide = _isServerSideRowModel(this.gos);
+        if (isServerSide && params.pivoting) {
+            this.updatePivotKeysForSSRM();
+        }
+
+        const result = this.extractRowsFromGridRowModel(params);
+        result.chartData = this.aggregateRowsByDimension(params, result.chartData);
+        return result;
+    }
+
+    private extractRowsFromGridRowModel(params: ChartDatasourceParams): IData {
+        const {
+            crossFiltering,
+            startRow,
+            endRow,
+            valueCols,
+            dimensionCols,
+            grouping,
+            crossFilteringSort,
+            combineGroupValues,
+        } = params;
+        let extractedRowData: any[] = [];
+        const colNames: { [key: string]: string[] } = {};
+
+        // maps used to keep track of expanded groups that need to be removed
+        const groupNodeIndexes: { [key: string]: number } = {};
+        const groupsToRemove: { [key: string]: number } = {};
+
+        // only used when cross filtering
+        let filteredNodes: { [key: string]: RowNode } = {};
+        let allRowNodes: RowNode[] = [];
+
+        let numRows;
+        if (crossFiltering) {
+            filteredNodes = this.getFilteredRowNodes();
+            allRowNodes = this.getAllRowNodes(crossFilteringSort);
+            numRows = allRowNodes.length;
+        } else {
+            // make sure enough rows in range to chart. if user filters and less rows, then end row will be
+            // the last displayed row, not where the range ends.
+            const modelLastRow = this.gridRowModel.getRowCount() - 1;
+            // inclusivity is wrong for end row, so can't detect 0 rows properly
+            const hasNoRange =
+                startRow === endRow && startRow === 0 && dimensionCols.length === 0 && valueCols.length === 0;
+            if (hasNoRange) {
+                numRows = 0;
+            } else {
+                const rangeLastRow = endRow >= 0 ? Math.min(endRow, modelLastRow) : modelLastRow;
+                numRows = rangeLastRow - startRow + 1;
+            }
+        }
+
+        if (numRows > 0) {
+            for (const col of valueCols) {
+                let colNamesArr: string[] = [];
+
+                // pivot keys should be added first
+                const pivotKeys = col.colDef.pivotKeys;
+                if (pivotKeys) {
+                    colNamesArr = pivotKeys.slice();
+                }
+
+                // then add column header name to results
+                const headerName = col.colDef.headerName;
+                if (headerName) {
+                    colNamesArr.push(headerName);
+                }
+
+                // add array of column names to results
+                if (colNamesArr.length > 0) {
+                    colNames[col.getId()] = colNamesArr;
+                }
+            }
+        }
+
+        let numRemovedNodes = 0;
+
+        let id = 0;
+
+        const groupingCache: Record<string, any> = {};
+
+        for (let i = 0; i < numRows; i++) {
+            const rowNode = crossFiltering ? allRowNodes[i] : this.gridRowModel.getRow(i + startRow)!;
+
+            if (rowNode.footer || rowNode.detail) {
+                numRemovedNodes++;
+                continue;
+            }
+
+            const data: any = { node: rowNode };
+            // first get data for dimensions columns
+            for (const col of dimensionCols) {
+                const colId = col.colId;
+                const column = this.colModel.getCol(colId);
+
+                if (column) {
+                    const valueObject = rowNode.getDataValue(column, 'data');
+
+                    // when grouping we also need to build up multi category labels for charts
+                    if (grouping) {
+                        const valueString = valueObject?.toString ? String(valueObject.toString()) : ' ';
+
+                        // traverse parents to extract group label path
+                        const labels = this.getGroupLabels(rowNode, valueString);
+                        const value = labels.slice().reverse();
+
+                        let groupingValue: ChartValueWrapper<string[]> = {
+                            value,
+                            // this is needed so that standalone can handle animations properly when data updates
+                            id: id++,
+                            toString: () => value.filter(Boolean).join(' - '),
+                        };
+
+                        if (combineGroupValues) {
+                            // Reuse previously created value object if it already exists
+                            const groupingKey = groupingValue.toString();
+                            const cachedGroupingValue = groupingCache[groupingKey];
+
+                            if (cachedGroupingValue) {
+                                groupingValue = cachedGroupingValue;
+                            } else {
+                                groupingCache[groupingKey] = groupingValue;
+                            }
+                        }
+
+                        data[colId] = groupingValue;
+
+                        // keep track of group node indexes, so they can be padded when other groups are expanded
+                        if (rowNode.group) {
+                            groupNodeIndexes[labels.toString()] = i - numRemovedNodes;
+                        }
+
+                        // if node (group or leaf) has parents then it is expanded and should be removed
+                        const groupKey = labels.slice(1, labels.length).toString();
+
+                        if (groupKey) {
+                            groupsToRemove[groupKey] = groupNodeIndexes[groupKey];
+                        }
+                    } else {
+                        // leaf nodes can be directly added to dimension columns
+                        data[colId] = valueObject;
+                    }
+                } else {
+                    // introduce a default category when no dimensions exist with a value based off row index (+1)
+                    data[DEFAULT_CHART_CATEGORY] = i + 1;
+                }
+            }
+
+            // then get data for value columns
+            for (const col of valueCols) {
+                const colId = col.colId;
+                if (crossFiltering) {
+                    const filteredOutColId = colId + '-filtered-out';
+
+                    // add data value to value column
+                    const value = rowNode.getDataValue(col, 'data');
+                    let actualValue = value;
+
+                    // unwrap value objects if present
+                    if (value != null) {
+                        if (typeof value.toNumber === 'function') {
+                            actualValue = value.toNumber();
+                        } else if (typeof value.value === 'number') {
+                            actualValue = value.value;
+                        }
+                    }
+
+                    if (filteredNodes[rowNode.id as string]) {
+                        data[colId] = actualValue;
+                        data[filteredOutColId] = params.aggFunc || params.isScatter ? undefined : 0;
+                    } else {
+                        data[colId] = params.aggFunc || params.isScatter ? undefined : 0;
+                        data[filteredOutColId] = actualValue;
+                    }
+                } else {
+                    // add data value to value column
+                    let value = rowNode.getDataValue(col, 'data');
+
+                    // unwrap value object if present
+                    if (value && typeof value.value === 'number') {
+                        value = value.value;
+                    }
+
+                    // aggregated value
+                    if (value && Object.prototype.hasOwnProperty.call(value, 'toString')) {
+                        value = parseFloat(value.toString());
+                    }
+
+                    data[colId] = value != null && typeof value.toNumber === 'function' ? value.toNumber() : value;
+                }
+            }
+
+            // add data to results
+            extractedRowData.push(data);
+        }
+
+        let groupChartData: any[] | undefined;
+        if (grouping) {
+            const groupIndexesToRemove = Object.values(groupsToRemove);
+            const allData = extractedRowData;
+            extractedRowData = [];
+            groupChartData = [];
+            for (let i = 0; i < allData.length; i++) {
+                (groupIndexesToRemove.includes(i) ? groupChartData : extractedRowData).push(allData[i]);
+            }
+        }
+
+        return { chartData: extractedRowData, colNames, groupChartData };
+    }
+
+    private aggregateRowsByDimension(params: ChartDatasourceParams, dataFromGrid: any[]): any[] {
+        const dimensionCols = params.dimensionCols;
+
+        if (!params.aggFunc || dimensionCols.length === 0) {
+            return dataFromGrid;
+        }
+
+        const lastCol = _last(dimensionCols);
+        const lastColId = lastCol?.colId;
+        const map: any = {};
+        const dataAggregated: any[] = [];
+
+        for (const data of dataFromGrid) {
+            let currentMap = map;
+
+            for (const col of dimensionCols) {
+                const colId = col.colId;
+                const key = data[colId];
+
+                if (colId === lastColId) {
+                    let groupItem = currentMap[key];
+
+                    if (!groupItem) {
+                        groupItem = { __children: [] };
+
+                        for (const dimCol of dimensionCols) {
+                            const dimColId = dimCol.colId;
+                            groupItem[dimColId] = data[dimColId];
+                        }
+
+                        currentMap[key] = groupItem;
+                        dataAggregated.push(groupItem);
+                    }
+
+                    groupItem.__children.push(data);
+                } else {
+                    // map of maps
+                    if (!currentMap[key]) {
+                        currentMap[key] = {};
+                    }
+
+                    currentMap = currentMap[key];
+                }
+            }
+        }
+
+        if (this.gos.assertModuleRegistered('SharedAggregation', 1)) {
+            // Resolve the aggFunc once for all columns/groups.
+            const aggFuncOrString = params.aggFunc;
+            const aggFunc: IAggFunc | null =
+                typeof aggFuncOrString === 'function'
+                    ? aggFuncOrString
+                    : typeof aggFuncOrString === 'string'
+                      ? this.beans.aggFuncSvc!.getAggFunc(aggFuncOrString)
+                      : null;
+
+            if (typeof aggFunc !== 'function') {
+                this.warn(109, { inputValue: String(aggFuncOrString), allSuggestions: [] });
+                return dataAggregated;
+            }
+
+            const api = this.beans.gridApi;
+            const context = this.gos.get('context');
+
+            for (const groupItem of dataAggregated) {
+                for (const col of params.valueCols) {
+                    const colId = col.colId;
+
+                    if (params.crossFiltering) {
+                        // filtered data
+                        const dataToAgg = groupItem.__children
+                            .filter((child: any) => typeof child[colId] !== 'undefined')
+                            .map((child: any) => child[colId]);
+
+                        const aggResult: any = aggFunc({
+                            values: dataToAgg,
+                            column: col,
+                            colDef: col.colDef,
+                            pivotResultColumn: undefined as any,
+                            rowNode: undefined!,
+                            data: undefined,
+                            aggregatedChildren: [],
+                            api,
+                            context,
+                        });
+                        groupItem[colId] = typeof aggResult?.value !== 'undefined' ? aggResult.value : aggResult;
+
+                        // filtered out data
+                        const filteredOutColId = `${colId}-filtered-out`;
+                        const dataToAggFiltered = groupItem.__children
+                            .filter((child: any) => typeof child[filteredOutColId] !== 'undefined')
+                            .map((child: any) => child[filteredOutColId]);
+
+                        const aggResultFiltered: any = aggFunc({
+                            values: dataToAggFiltered,
+                            column: col,
+                            colDef: col.colDef,
+                            pivotResultColumn: undefined as any,
+                            rowNode: undefined!,
+                            data: undefined,
+                            aggregatedChildren: [],
+                            api,
+                            context,
+                        });
+                        groupItem[filteredOutColId] =
+                            typeof aggResultFiltered?.value !== 'undefined'
+                                ? aggResultFiltered.value
+                                : aggResultFiltered;
+                    } else {
+                        const dataToAgg = groupItem.__children.map((child: any) => child[colId]);
+                        const aggResult = aggFunc({
+                            values: dataToAgg,
+                            column: col,
+                            colDef: col.colDef,
+                            pivotResultColumn: undefined as any,
+                            rowNode: undefined!,
+                            data: undefined,
+                            aggregatedChildren: [],
+                            api,
+                            context,
+                        });
+
+                        groupItem[colId] = typeof aggResult?.value !== 'undefined' ? aggResult.value : aggResult;
+                    }
+                }
+            }
+        }
+
+        return dataAggregated;
+    }
+
+    private updatePivotKeysForSSRM() {
+        const secondaryColumns = this.pivotResultCols?.pivotCols;
+
+        if (!secondaryColumns) {
+            return;
+        }
+
+        // we don't know what the application will use for the pivot key separator (i.e. '_' or '|' ) as the
+        // secondary columns are provided to grid by the application via api.setSecondaryColumns()
+        const pivotKeySeparator = this.extractPivotKeySeparator(secondaryColumns);
+
+        // `pivotKeys` is not used by the SSRM for pivoting, so it is safe to reuse this colDef property. This way
+        // the same logic can be used for CSRM and SSRM to extract legend names in extractRowsFromGridRowModel()
+        for (const col of secondaryColumns) {
+            if (pivotKeySeparator === '') {
+                col.colDef.pivotKeys = [];
+            } else {
+                const keys = col.colId.split(pivotKeySeparator);
+                col.colDef.pivotKeys = keys.slice(0, keys.length - 1);
+            }
+        }
+    }
+
+    private extractPivotKeySeparator(secondaryColumns: AgColumn[]) {
+        if (secondaryColumns.length === 0) {
+            return '';
+        }
+
+        const extractSeparator = (columnGroup: AgColumnGroup, childId: string): string => {
+            const groupId = columnGroup.getGroupId();
+            if (!columnGroup.getParent()) {
+                // removing groupId ('2000') from childId ('2000|Swimming') yields '|Swimming' so first char is separator
+                return childId.split(groupId)[1][0];
+            }
+            return extractSeparator(columnGroup.getParent()!, groupId);
+        };
+
+        const firstSecondaryCol = secondaryColumns[0];
+        if (firstSecondaryCol.getParent() == null) {
+            return '';
+        }
+        return extractSeparator(firstSecondaryCol.getParent()!, firstSecondaryCol.colId);
+    }
+
+    private getGroupLabels(rowNode: RowNode | null, initialLabel: string): string[] {
+        const labels = [initialLabel];
+        while (rowNode && rowNode.level !== 0) {
+            rowNode = rowNode.parent;
+            if (rowNode) {
+                if (rowNode.group) {
+                    // for group nodes we need to resolve the group column value to get the label
+                    // just like we do for the initialLabel
+                    const groupColumn = this.colModel.getCol(GROUP_AUTO_COLUMN_ID);
+                    if (groupColumn) {
+                        const valueObject = rowNode.getDataValue(groupColumn, 'data');
+                        const valueString = valueObject?.toString ? String(valueObject.toString()) : ' ';
+                        labels.push(valueString);
+                    }
+                } else {
+                    labels.push(rowNode.key!);
+                }
+            }
+        }
+        return labels;
+    }
+
+    /** cross filtering only */
+    private getFilteredRowNodes() {
+        const filteredNodes: { [key: string]: RowNode } = {};
+        (this.gridRowModel as IClientSideRowModel).forEachNodeAfterFilterAndSort((rowNode: RowNode) => {
+            filteredNodes[rowNode.id as string] = rowNode;
+        });
+        return filteredNodes;
+    }
+
+    /** cross filtering only */
+    private getAllRowNodes(sortModel: SortOption[] | boolean) {
+        const allRowNodes: RowNode[] = [];
+        this.gridRowModel.forEachNode((rowNode: RowNode) => {
+            allRowNodes.push(rowNode);
+        });
+        const rowNodeSorter = this.rowNodeSorter;
+        if (!rowNodeSorter) {
+            return allRowNodes;
+        }
+        const sortOptions = sortModel === true ? this.sortSvc?.getSortOptions() : sortModel;
+        if (!sortOptions || sortOptions.length == 0) {
+            return allRowNodes;
+        }
+        return rowNodeSorter.doFullSortInPlace(allRowNodes, sortOptions);
+    }
+}

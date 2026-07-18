@@ -1,0 +1,42 @@
+{% if isFramework("react") %}
+Custom date components are controlled components, which receive a date value as part of the props, and pass date value updates back to the grid via the `onDateChange` callback. Note that the date is applied immediately when `onDateChange` is called.
+{% /if %}
+
+{% if isFramework("react") %}
+
+```jsx
+export default ({ date, onDateChange }) => {
+    ...
+    return (
+        <input
+            type="date"
+            value={convertToString(date)}
+            onChange={({ target: { value } }) => onDateChange(convertToDate(value))}
+        />
+    );
+}
+```
+
+{% /if %}
+
+{% if isFramework("react") %}
+{% note %}
+In previous versions of the grid, custom components were declared in an imperative way. See [Migrating to Use reactiveCustomComponents](./upgrading-to-ag-grid-31-1/#migrating-custom-components-to-use-reactivecustomcomponents-option) for details on how to migrate to the current format.
+{% /note %}
+{% /if %}
+
+{% if isFramework("react") %}
+The following props are passed to the custom date components (`CustomDateProps` interface).
+{% /if %}
+
+{% if isFramework("react") %}
+{% interfaceDocumentation interfaceName="CustomDateProps" config={ "description": "" } /%}
+{% /if %}
+
+{% if isFramework("react") %}
+The following callbacks can be passed to the `useGridDate` hook (`CustomDateCallbacks` interface). All the callbacks are optional, and the hook only needs to be used if callbacks are provided.
+{% /if %}
+
+{% if isFramework("react") %}
+{% interfaceDocumentation interfaceName="CustomDateCallbacks" config={ "description": "" } /%}
+{% /if %}

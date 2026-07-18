@@ -1,0 +1,91 @@
+{
+  "name": "ag-grid-angular",
+  "$schema": "../../node_modules/nx/schemas/project-schema.json",
+  "projectType": "application",
+  "sourceRoot": "packages/ag-grid-angular/projects",
+  "targets": {
+    "updateGridAndColumnProperties": {
+      "executor": "nx:run-commands",
+      "dependsOn": ["ag-grid-community:build:package"],
+      "inputs": [
+        "{projectRoot}/node updateGridAndColumnProperties.js",
+        "{workspaceRoot}/packages/ag-grid-community/src/entities/gridOptions.ts"
+      ],
+      "outputs": ["{projectRoot}/projects/ag-grid-angular/src/lib/ag-grid-angular.component.ts"],
+      "cache": true,
+      "options": {
+        "cwd": "{projectRoot}",
+        "command": "node updateGridAndColumnProperties.js"
+      }
+    },
+    "build": {
+      "executor": "nx:run-script",
+      "dependsOn": ["ag-grid-community:build:package", "updateGridAndColumnProperties"],
+      "inputs": [
+        "tsDeclarations",
+        "{projectRoot}/angular.json",
+        "{projectRoot}/projects/**",
+        "!{projectRoot}/dist",
+        "{workspaceRoot}/packages/ag-grid-community/src/components/componentUtil.ts",
+        "{workspaceRoot}/packages/ag-grid-community/src/propertyKeys.ts"
+      ],
+      "cache": true,
+      "outputs": ["{projectRoot}/dist"],
+      "options": {
+        "script": "build"
+      }
+    },
+    "test:e2e": {
+      "executor": "nx:run-script",
+      "dependsOn": ["^build"],
+      "inputs": ["allOutputs"],
+      "options": {
+        "script": "test:e2e"
+      }
+    },
+    "pack": {
+      "executor": "nx:run-commands",
+      "dependsOn": ["build"],
+      "inputs": ["allTransitiveOutputs"],
+      "outputs": ["{workspaceRoot}/dist/artifacts/{projectRoot}.tgz"],
+      "options": {
+        "parallel": false,
+        "commands": [
+          "mkdir -p dist/artifacts/{projectRoot}",
+          "cd {projectRoot}/dist/ag-grid-angular && yarn pack -f ../../../../dist/artifacts/{projectRoot}.tgz",
+          "rm -rf dist/artifacts/{projectRoot}"
+        ]
+      }
+    },
+    "pack:extract": {
+      "executor": "nx:run-commands",
+      "dependsOn": ["pack"],
+      "inputs": ["allOutputs"],
+      "outputs": ["{workspaceRoot}/dist/artifacts/contents/{projectRoot}"],
+      "options": {
+        "command": "scripts/package/extract-contents.sh {projectRoot}"
+      }
+    },
+    "pack:verify": {
+      "executor": "nx:run-commands",
+      "dependsOn": ["pack:extract"],
+      "inputs": ["allOutputs"],
+      "options": {
+        "commands": [
+          "node scripts/package/sanity-check-package.js --allowed-ext map -- dist/artifacts/contents/{projectRoot}/package"
+        ]
+      },
+      "configurations": {
+        "production": {},
+        "archive": {}
+      }
+    },
+    "lint": {
+      "command": "eslint",
+      "options": {
+        "cwd": "{projectRoot}"
+      }
+    }
+  },
+  "tags": ["package", "community", "framework", "angular"]
+}

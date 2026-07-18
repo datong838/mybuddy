@@ -1,0 +1,213 @@
+---
+title: "Row Grouping - Multiple Group Columns"
+enterprise: true
+---
+
+Display the group structure with one group column representing each level of row grouping.
+
+{% gridExampleRunner title="Enabling Single Group Column" name="enabling-multiple-group-column" /%}
+
+## Enabling Multiple Group Columns
+
+The example above demonstrates that both `country` and `year` are grouped. One group column is used to display the group value cells
+for each column that was grouped.
+
+Multiple Group Columns can be enabled by setting the `groupDisplayType` grid option to `"multipleColumns"` as shown below:
+
+```{% frameworkTransform=true %}
+const gridOptions = {
+    groupDisplayType: 'multipleColumns',
+}
+```
+
+## Configuration
+
+The columns are added to the grid when row grouping is present, and can be configured via the `autoGroupColumnDef` grid
+option to define [Column Options](./column-properties/).
+
+{% gridExampleRunner title="Multiple Group Column Configuration" name="multiple-group-column-configuration" /%}
+
+The example above uses the configuration demonstrated below to change the column's header name and apply a minimum width.
+It also [Configures the Group Cell Component](./grouping-multiple-group-columns/#cell-component) using the `cellRendererParams` option to remove
+the count from each row group.
+
+```{% frameworkTransform=true %}
+const gridOptions = {
+    autoGroupColumnDef: {
+        headerValueGetter: params => `${params.colDef.headerName} Group Column`,
+        minWidth: 220,
+        cellRendererParams: {
+            suppressCount: true,
+        }
+    }
+}
+```
+
+### Display the Parent Group Value
+
+The group hierarchy is represented by relative location to the parent. When scrolling through the grid it can become harder
+to keep track of the parent group value.
+
+Setting the grid property `showOpenedGroup` to `true` will show the value of the parent group
+inside the group column.
+
+{% gridExampleRunner title="Show Opened Groups Many Columns" name="show-opened-groups-many-columns" /%}
+
+The example above demonstrates the following configuration to show the parent group value inside the group column:
+
+```{% frameworkTransform=true %}
+const gridOptions = {
+    showOpenedGroup: true,
+}
+```
+
+## Cell Component
+
+The group columns use the `agGroupCellRenderer` component to display the group information, as well as the chevron control
+for expanding and collapsing rows. The renderer also embeds the grouped columns renderer and displays this inside of the group cell.
+
+This can be configured with several [Group Renderer Properties](./grouping-multiple-group-columns/#configurable-options) using
+the `autoGroupColumnDef` property `cellRendererParams`. The example below removes the row count and enables checkboxes for row selection.
+
+{% gridExampleRunner title="Group Cell Renderer Configuration" name="renderer-config-group-cell" /%}
+
+The example above demonstrates the following configuration:
+
+```{% frameworkTransform=true %}
+const gridOptions = {
+    columnDefs: [
+        { field: 'total', rowGroup: true, cellRenderer: CustomMedalCellRenderer },
+        // ... other column definitions
+    ],
+    autoGroupColumnDef: {
+        cellRendererParams: {
+            suppressCount: true,
+        }
+    },
+    rowSelection: {
+        mode: 'singleRow',
+        checkboxLocation: 'autoGroupColumn',
+    }
+}
+```
+
+### Configurable Options
+
+{% interfaceDocumentation interfaceName="IGroupCellRendererParams" overrideSrc="group-cell-renderer/group-cell-renderer.json" config={ "description": "" } /%}
+
+### Checkbox Selection
+
+The `agGroupCellRenderer` can be configured to show checkboxes for row selection. Setting the [Row Selection](./row-selection/)
+`checkboxLocation` property to `'autoGroupColumn'` hides the [Checkbox Column](./row-selection-single-row/#customising-the-checkbox-column)
+instead using the group cell renderer to display checkboxes.
+
+Setting `groupSelects` to `'descendants'` causes selecting a group row to also select all of its children.
+
+{% gridExampleRunner title="Group Cell Renderer Checkbox Selection" name="renderer-config-checkbox" /%}
+
+The example above demonstrates the following configuration:
+
+```{% frameworkTransform=true %}
+const gridOptions = {
+    rowSelection: {
+        mode: 'multiRow',
+        groupSelects: 'descendants',
+        selectAll: 'all',
+        checkboxLocation: 'autoGroupColumn',
+    },
+}
+```
+
+### Custom Inner Renderer
+
+When using the group cell renderer, the `agGroupCellRenderer` component will inherit the grouped columns renderer and display this inside of the group cell,
+adjacent to any configured checkboxes, cell count, and the expand/collapse chevron control.
+
+This inner renderer can be overridden with a [Custom Cell Component](./component-cell-renderer/) by setting the `innerRenderer` and `innerRendererParams` properties
+on the `cellRendererParams` configuration.
+
+{% gridExampleRunner title="Group Cell Renderer Configuration" name="renderer-config-inner" /%}
+
+The example above uses the following configuration to provide a custom inner renderer to the group column:
+
+```{% frameworkTransform=true %}
+const gridOptions = {
+    autoGroupColumnDef: {
+        cellRendererParams: {
+            innerRenderer: CustomMedalCellRenderer,
+        },
+    },
+}
+```
+
+### Custom Cell Renderer
+
+The Group Cell Renderer can be entirely replaced with a [Custom Cell Component](./component-cell-renderer/) by setting the `cellRenderer`
+property on the `autoGroupColumnDef` configuration.
+
+{% gridExampleRunner title="Custom Group Cell Renderer" name="renderer-config-custom" /%}
+
+{% note %}
+It is also possible to [Determine Cell Renderers Dynamically](./component-cell-renderer/#providing-custom-components-dynamically).
+{% /note %}
+
+## Filtering
+
+To enable filters on the group column, set the `filter` property of the `autoGroupColumnDef` to `'agGroupColumnFilter'`. This configuration
+will cause the group column to inherit the filter from the column it is representing.
+
+{% gridExampleRunner title="Group Column Filtering" name="filtering-grouped-columns" /%}
+
+{% note %}
+When the column with row grouping enabled is also visible, the corresponding group column floating filter will be in read-only mode.
+{% /note %}
+
+The example above demonstrates the following configuration to inherit the filter from the grouped column:
+
+```{% frameworkTransform=true %}
+const gridOptions = {
+    autoGroupColumnDef: {
+        filter: 'agGroupColumnFilter',
+        floatingFilter: true,
+    },
+}
+```
+
+## Hiding Expanded Parent Rows
+
+Expanded rows can be configured to disappear when they are open, instead moving the group cell renderer into the first child row.
+To enable this feature set the `groupHideOpenParents` grid option to `true`.
+
+{% gridExampleRunner title="Hide Open Parents" name="hide-open-parents" /%}
+
+{% note %}
+When `groupHideOpenParents` is enabled the grid no longer sticks expanded group rows to the top of the viewport.
+{% /note %}
+
+The example above demonstrates the following configuration to hide open parents:
+
+```{% frameworkTransform=true %}
+const gridOptions = {
+    groupHideOpenParents: true,
+}
+```
+
+## Hiding Group Columns Until Expanded
+
+By default all group columns are visible at all times. Setting `groupHideColumnsUntilExpanded` to `true` hides group columns
+for levels that have not yet been reached through expansion. Only the top-level group column is initially visible; each
+subsequent level's column becomes visible when at least one group at the preceding level is expanded.
+
+Try expanding a Country row to reveal the Year group column, then expand a Year row to reveal the Sport group column.
+Collapsing all rows at a given level will hide the corresponding group column again.
+
+{% gridExampleRunner title="Hide Group Columns Until Expanded" name="hide-columns-until-expanded" /%}
+
+The example above demonstrates the following configuration:
+
+```{% frameworkTransform=true %}
+const gridOptions = {
+    groupDisplayType: 'multipleColumns',
+    groupHideColumnsUntilExpanded: true,
+}
+```

@@ -1,0 +1,163 @@
+@use 'design-system' as *;
+
+$nav-height: 200px;
+
+.githubIcon,
+.youtubeIcon {
+    padding: $spacing-size-1;
+}
+
+.youtubeIcon {
+    fill: red !important;
+
+    #{$selector-darkmode} & {
+        fill: white !important;
+    }
+}
+
+.headerHeading {
+    padding-bottom: 0;
+    margin-bottom: 0;
+    font-size: var(--text-fs-2xl);
+}
+
+.headerTitle {
+    display: flex;
+    flex-direction: row;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: $spacing-size-3;
+    padding-bottom: $spacing-size-1;
+    container-type: normal;
+    container-name: header-title;
+}
+
+.topHeader {
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-start;
+    gap: $spacing-size-4 $spacing-size-12;
+    width: 100%;
+    margin: 0 auto $spacing-size-3;
+    padding-top: $spacing-size-8;
+    container-type: inline-size;
+    container-name: top-header;
+
+    @media screen and (max-width: 700px) {
+        flex-direction: column;
+    }
+
+    @media screen and (max-width: 1900px) {
+        padding-left: 24px;
+        padding-right: 24px;
+    }
+
+    @media screen and (min-width: (1800px + 48px * 2)) {
+        padding-left: 0;
+        max-width: var(--layout-max-width);
+    }
+
+    @media screen and (min-width: 720px) {
+        > div:first-child {
+            width: auto;
+        }
+    }
+
+    @media screen and (max-width: 1000px) {
+        flex-direction: column;
+        height: auto;
+    }
+
+    p {
+        color: var(--color-text-tertiary);
+        padding-top: $spacing-size-1;
+    }
+
+    button {
+        padding-left: $spacing-size-3;
+        font-size: var(--text-fs-sm);
+    }
+
+    span {
+        font-size: var(--text-fs-sm);
+    }
+}
+
+.topHeaderTitle {
+    display: flex;
+    flex-direction: row;
+    align-items: center;
+    gap: $spacing-size-3;
+
+    h1 {
+        line-height: var(--text-lh-1xl);
+    }
+}
+
+.layoutWrapper {
+    width: 100%;
+    position: relative;
+    overflow: hidden;
+}
+
+.loadingLogoContainer {
+    --layout-grid-header-height: calc(var(--layout-site-header-height) + #{$nav-height});
+
+    width: 100%;
+    position: absolute;
+    height: calc(100vh - var(--layout-grid-header-height));
+    pointer-events: none;
+
+    svg[class*='logo-mark'] {
+        position: absolute;
+        display: block;
+        width: 64px * 2;
+        height: 48px * 2;
+        top: 50%;
+        left: 50%;
+        transform: translate(-60px, -48px);
+    }
+
+    @media screen and (max-height: 720px) {
+        min-height: 500px;
+        padding-bottom: $spacing-size-6;
+    }
+}
+
+.layout {
+    --layout-top-header-height: 180px;
+    --layout-grid-header-height: calc(var(--layout-site-header-height) + var(--layout-top-header-height));
+    --layout-grid-margin: 0px;
+
+    @media screen and (max-width: 1900px) {
+        padding-left: 24px;
+        padding-right: 24px;
+    }
+
+    @media screen and (min-width: (1800px + 48px * 2)) {
+        width: var(--layout-max-width);
+        margin: 0 auto;
+    }
+
+    @media screen and (max-height: 728px) {
+        --layout-top-header-height: 125px;
+    }
+}
+
+.topHeader {
+    @media screen and (max-height: 728px) {
+        padding-top: $spacing-size-4;
+
+        .headerHeading {
+            font-size: var(--text-fs-xl);
+        }
+
+        p {
+            font-size: var(--text-fs-sm);
+        }
+
+        .tabWrapper {
+            height: 80px;
+        }
+    }
+}

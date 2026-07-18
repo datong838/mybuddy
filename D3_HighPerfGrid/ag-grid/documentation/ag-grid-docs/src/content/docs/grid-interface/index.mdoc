@@ -1,0 +1,144 @@
+---
+title: "Grid Overview"
+description: "Browse all the $framework Table Grid interfaces. Configure and interact with the grid using Grid Options, Grid Events, Grid State, and the Grid API."
+---
+
+This section provides key information for configuring and interacting with a grid.
+
+## Grid Options
+
+{% partial file="./_index-javascript.mdoc" /%}
+{% partial file="./_index-angular.mdoc" /%}
+{% partial file="./_index-react.mdoc" /%}
+{% partial file="./_index-vue.mdoc" /%}
+
+### Updating Grid Options
+
+It is a common requirement to update a grid option after the grid has been created. For example, you may want to change `rowHeight` via an application toggle.
+
+{% if isFramework("javascript") %}
+Properties can be updated by calling either `api.setGridOption` or `api.updateGridOptions`. In this example all the rows will be redrawn with the new height.
+{% /if %}
+
+{% if isFramework("angular", "vue") %}
+Simply update the bound property and the grid will respond to the new value. In this example all the rows will be redrawn with the new height.
+{% /if %}
+
+{% if isFramework("angular") %}
+
+```js
+<ag-grid-angular
+    [rowHeight]="rowHeight"
+    />
+
+updateHeight() {
+    this.rowHeight = 50;
+}
+```
+
+{% /if %}
+
+{% if isFramework("vue") %}
+
+```jsx
+<ag-grid-vue
+    :row-height="rowHeight"
+</ag-grid-vue>
+
+updateHeight() {
+    this.rowHeight = 50;
+}
+```
+
+{% /if %}
+
+{% if isFramework("angular", "vue") %}
+Properties can also be updated by calling either `api.setGridOption` or `api.updateGridOptions`.
+{% /if %}
+
+{% if isFramework("react") %}
+Simply update your state and the grid will respond to the new value. In this example all the rows will be redrawn with the new height.
+
+```jsx
+const [rowHeight, setRowHeight] = useState(25);
+
+// Callback to update the rowHeight
+const updateHeight = () => setRowHeight(50);
+
+<AgGridReact
+    rowHeight={rowHeight}
+/>
+```
+
+We recommend updating options via `AgGridReact` props but it is also possible to updated a property via `api.setGridOption` or `api.updateGridOptions`.
+{% /if %}
+
+{% if isFramework("javascript", "angular", "vue", "react") %}
+
+```js
+// update the rowHeight
+api.setGridOption('rowHeight', 50);
+```
+
+{% /if %}
+
+### Initial Grid Options
+
+A small number of Grid Options do **not** support updating their value. Their value is only read during the initial setup of the grid. These options are marked as `Initial` on the [Options Reference](./grid-options). For these properties the grid must be destroyed and re-created for the new value to take effect.
+
+{% note %}
+Not all Grid Options support updates. These are marked as Initial.
+{% /note %}
+
+For a full list of options see: [Options Reference](./grid-options).
+
+### Global Grid Options
+
+Global Grid Options can be used to share configuration across all grids in an application. Global grid options are provided by passing the global options to `provideGlobalGridOptions`. Each grid will inherit the global options with local options taking precedence if both define the same property.
+
+```js {% frameworkTransform=false %}
+import { provideGlobalGridOptions } from 'ag-grid-community';
+
+// provide localeText to all grids via global options
+provideGlobalGridOptions({
+    localeText: userLocaleText,
+});
+```
+
+The `provideGlobalGridOptions` function takes an optional second parameter (`deep` / `shallow`) to control the behaviour when object configurations exists on both global and local grid options. With `shallow` an object property on the local grid options will completely replace the global object property. With `deep` the global object properties are merged with the local object properties. Default is `shallow`.
+
+## Grid Events
+
+As a user interacts with the grid events will be fired to enable your application to respond to specific actions.
+
+{% partial file="./_events-javascript.mdoc" /%}
+{% partial file="./_events-angular.mdoc" /%}
+{% partial file="./_events-react.mdoc" /%}
+{% partial file="./_events-vue.mdoc" /%}
+
+{% note %}
+TypeScript users can take advantage of the events' interfaces. Construct the interface name by suffixing the event name with `Event`. For example, the `cellClicked` event uses the interface `CellClickedEvent`. All events support [TypeScript Generics](./typescript-generics/).
+{% /note %}
+
+For a full list of events see: [Grid Events](./grid-events).
+
+## Grid API
+
+{% partial file="./_api-javascript.mdoc" /%}
+{% partial file="./_api-angular.mdoc" /%}
+{% partial file="./_api-react.mdoc" /%}
+{% partial file="./_api-vue.mdoc" /%}
+
+For a full list of api methods see: [Grid API](./grid-api).
+
+## Grid State
+
+As a user interacts with the grid they may change state such as filtering, sorting and column order. This state is independent of the configuration and to provide save and restore capabilities the grid enables applications to save / restore this state.
+
+For a full list of the state properties see: [Grid State](./grid-state/).
+
+## Grid Lifecycle
+
+When working with AG Grid it is a common requirement to perform actions when the grid is first initialised, when data is first rendered and when the grid is about to be destroyed.
+
+For full details about how to interact with the grid at these key moments see: [Grid Lifecycle](./grid-lifecycle/).

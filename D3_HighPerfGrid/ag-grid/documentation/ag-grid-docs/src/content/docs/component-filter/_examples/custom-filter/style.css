@@ -1,0 +1,12 @@
+.person-filter {
+    padding: 12px;
+    width: 200px;
+}
+
+.person-filter > div:first-child {
+    font-weight: bold;
+}
+
+.person-filter > div:not(:last-child) {
+    margin-bottom: 8px;
+}

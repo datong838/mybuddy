@@ -1,0 +1,54 @@
+/* stylelint-disable selector-max-specificity -- we want print styles to be
+   slightly more specific than screen styles to ensure that customers don't break
+   print while overriding screen styles */
+.ag-layout-print {
+    &.ag-grid-scrolling-rows {
+        display: block;
+        height: unset;
+    }
+
+    &.ag-root-wrapper {
+        /* this has to be inline-block otherwise the grid gets constrained by
+        the viewport (AG-5616) and other values like `inline-flex` will add a
+        small gap at the top (AG-9296) */
+        display: inline-block;
+        container-type: normal;
+    }
+
+    .ag-body-vertical-scroll {
+        display: none;
+    }
+
+    .ag-body-horizontal-scroll {
+        display: none;
+    }
+}
+
+@media print {
+    .ag-root-wrapper.ag-layout-print {
+        display: table;
+        container-type: normal;
+
+        .ag-root-wrapper-body,
+        .ag-root,
+        .ag-grid-scrolling-container,
+        .ag-body-horizontal-scroll-viewport,
+        .ag-virtual-list-viewport {
+            /* Need auto height because 100% height elements with overflow hidden
+      cause printing issues in Edge */
+            height: auto !important;
+
+            /* Overflow hidden, because otherwise scroll bars print in IE */
+            overflow: hidden !important;
+
+            /* flex elements cause printing issues in Firefox
+            https://bugzilla.mozilla.org/show_bug.cgi?id=939897 */
+            display: block !important;
+        }
+
+        .ag-row,
+        .ag-cell {
+            break-inside: avoid;
+        }
+    }
+}

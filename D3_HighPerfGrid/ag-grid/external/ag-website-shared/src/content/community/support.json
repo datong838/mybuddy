@@ -1,0 +1,26 @@
+[
+    {
+        "icon": "stackoverflow",
+        "title": "Stack Overflow",
+        "desc": "Have a question? Browse the AG Grid & AG Charts tags or create a new thread",
+        "gridLink": "https://stackoverflow.com/questions/tagged/ag-grid",
+        "chartsLink": "https://stackoverflow.com/questions/tagged/ag-charts",
+        "cta": "Browse questions"
+    },
+    {
+        "icon": "github",
+        "title": "GitHub",
+        "desc": "Found a bug? Raise a GitHub issue and one of our team will take a look",
+        "gridLink": "https://github.com/ag-grid/ag-grid/issues",
+        "chartsLink": "https://github.com/ag-grid/ag-charts/issues",
+        "cta": "Open issue"
+    },
+    {
+        "icon": "zendesk",
+        "title": "Zendesk",
+        "desc": "Enterprise user? Use Zendesk to raise a ticket with our dedicated in-house team",
+        "gridLink": "https://ag-grid.zendesk.com/hc/en-us",
+        "chartsLink": "https://ag-grid.zendesk.com/hc/en-us",
+        "cta": "Raise ticket"
+    }
+]

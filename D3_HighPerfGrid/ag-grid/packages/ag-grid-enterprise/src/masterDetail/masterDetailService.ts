@@ -1,0 +1,200 @@
+import { _exists, _observeResize } from 'ag-stack';
+
+import type {
+    BeanName,
+    DetailGridInfo,
+    IMasterDetailService,
+    NamedBean,
+    RefreshModelParams,
+    RowCtrl,
+    RowNodeDataChangedEvent,
+    _ChangedRowNodes,
+} from 'ag-grid-community';
+import {
+    BeanStub,
+    DETAIL_ROW_ID_PREFIX,
+    RowNode,
+    _getClientSideRowModel,
+    _isClientSideRowModel,
+    _isServerSideRowModel,
+} from 'ag-grid-community';
+
+export class MasterDetailService extends BeanStub implements NamedBean, IMasterDetailService {
+    beanName: BeanName = 'masterDetailSvc' as const;
+
+    public store: { [id: string]: DetailGridInfo | undefined } = {};
+    private enabled: boolean;
+
+    private isEnabled(): boolean {
+        return this.gos.get('masterDetail');
+    }
+
+    public postConstruct(): void {
+        const gos = this.gos;
+        if (_isClientSideRowModel(gos)) {
+            this.enabled = this.isEnabled();
+        }
+        if (_isServerSideRowModel(gos)) {
+            this.addEventListeners();
+        }
+    }
+
+    private addEventListeners() {
+        const rowNodeDataChanged = (event: RowNodeDataChangedEvent) => {
+            this.setMaster(event.node, false, true);
+        };
+
+        let removeListeners: (() => null)[] | undefined;
+        const addOrRemoveListeners = () => {
+            if (removeListeners) {
+                for (const removeListener of removeListeners) {
+                    removeListener();
+                }
+                removeListeners = undefined;
+            }
+            if (this.isEnabled()) {
+                removeListeners = this.addManagedListeners(this.beans.eventSvc, { rowNodeDataChanged });
+            }
+        };
+
+        addOrRemoveListeners();
+        this.gos.addPropertyEventListener('masterDetail', addOrRemoveListeners);
+    }
+
+    public refreshModel(params: RefreshModelParams) {
+        if (params.changedProps) {
+            const enabled = this.isEnabled();
+            if (this.enabled !== enabled) {
+                this.setMasters(null);
+                return;
+            }
+        }
+
+        if (params.rowDataUpdated) {
+            this.setMasters(params.changedRowNodes);
+        }
+    }
+
+    public setMaster(row: RowNode, created: boolean, updated: boolean): void {
+        const oldMaster = row.master;
+        const enabled = this.isEnabled();
+        let newMaster = enabled;
+
+        const gos = this.gos;
+        const isRowMaster = gos.get('isRowMaster');
+        const treeData = gos.get('treeData');
+
+        if (enabled) {
+            if (created || updated) {
+                if (isRowMaster) {
+                    const data = row.data;
+                    newMaster = !!data && !!isRowMaster(data);
+                }
+            } else {
+                newMaster = oldMaster;
+            }
+        }
+
+        if (!treeData) {
+            // Note that with treeData the initialization of the expansed state is delegated to treeGroupStrategy
+            if (
+                (newMaster && created) ||
+                // if changing AWAY from master, forget current state
+                (!newMaster && oldMaster)
+            ) {
+                row._expanded ??= null;
+            }
+        }
+
+        if (newMaster !== oldMaster) {
+            row.master = newMaster;
+            row.dispatchRowEvent('masterChanged');
+        }
+    }
+
+    private setMasters(changedRowNodes: _ChangedRowNodes | null | undefined): void {
+        this.enabled = this.isEnabled();
+        if (changedRowNodes) {
+            for (const node of changedRowNodes.updates) {
+                this.setMaster(node, false, true);
+            }
+            for (const node of changedRowNodes.adds) {
+                this.setMaster(node, true, false);
+            }
+        } else {
+            const allLeafChildren = _getClientSideRowModel(this.beans)?.rootNode?._leafs;
+            if (allLeafChildren) {
+                for (let i = 0, len = allLeafChildren.length; i < len; ++i) {
+                    this.setMaster(allLeafChildren[i], true, false);
+                }
+            }
+        }
+    }
+
+    /** Used by flatten stage to get or create a detail node from a master node */
+    public getDetail(masterNode: RowNode): RowNode | null {
+        if (!masterNode.master || !masterNode.expanded) {
+            return null;
+        }
+
+        let detailNode = masterNode.detailNode;
+        if (detailNode) {
+            return detailNode;
+        }
+
+        detailNode = new RowNode(this.beans);
+        detailNode.detail = true;
+        detailNode.selectable = false;
+        detailNode.parent = masterNode;
+
+        if (_exists(masterNode.id)) {
+            detailNode.id = DETAIL_ROW_ID_PREFIX + masterNode.id;
+        }
+
+        detailNode.data = masterNode.data;
+        detailNode.level = masterNode.level + 1;
+        masterNode.detailNode = detailNode;
+
+        return detailNode;
+    }
+
+    public setupDetailRowAutoHeight(rowCtrl: RowCtrl, eDetailGui: HTMLElement): void {
+        const { gos, beans } = this;
+        if (!gos.get('detailRowAutoHeight')) {
+            return;
+        }
+
+        const checkRowSizeFunc = () => {
+            const clientHeight = eDetailGui.clientHeight;
+
+            // if the UI is not ready, the height can be 0, which we ignore, as otherwise a flicker will occur
+            // as UI goes from the default height, to 0, then to the real height as UI becomes ready. this means
+            // it's not possible for have 0 as auto-height, however this is an improbable use case, as even an
+            // empty detail grid would still have some styling around it giving at least a few pixels.
+            if (clientHeight != null && clientHeight > 0) {
+                // we do the update in a timeout, to make sure we are not calling from inside the grid
+                // doing another update
+                const updateRowHeightFunc = () => {
+                    const { rowModel } = this.beans;
+                    const { rowNode } = rowCtrl;
+                    rowNode.setRowHeight(clientHeight);
+                    if (_isClientSideRowModel(gos, rowModel) || _isServerSideRowModel(gos, rowModel)) {
+                        rowModel.onRowHeightChanged();
+                    }
+                };
+                window.setTimeout(updateRowHeightFunc, 0);
+            }
+        };
+
+        const resizeObserverDestroyFunc = _observeResize(beans, eDetailGui, checkRowSizeFunc);
+
+        rowCtrl.addDestroyFunc(resizeObserverDestroyFunc);
+
+        checkRowSizeFunc();
+    }
+
+    public override destroy(): void {
+        this.store = {};
+        super.destroy();
+    }
+}

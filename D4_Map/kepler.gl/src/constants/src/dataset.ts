@@ -1,0 +1,136 @@
+// SPDX-License-Identifier: MIT
+// Copyright contributors to the kepler.gl project
+
+export enum DatasetType {
+  LOCAL = 'local',
+  VECTOR_TILE = 'vector-tile',
+  RASTER_TILE = 'raster-tile',
+  WMS_TILE = 'wms-tile',
+  TILE_3D = 'tile-3d',
+  BITMAP = 'bitmap'
+}
+
+export enum RemoteTileFormat {
+  MVT = 'mvt',
+  PMTILES = 'pmtiles',
+  WMS = 'wms'
+}
+
+export enum PMTilesType {
+  RASTER = 'raster',
+  MVT = 'mvt'
+}
+
+export const REMOTE_TILE = 'remote';
+
+export type VectorTileDatasetMetadata = {
+  type: typeof REMOTE_TILE;
+  remoteTileFormat: RemoteTileFormat;
+  tilesetDataUrl: string;
+  tilesetMetadataUrl?: string;
+};
+
+/**
+ * Raster tileset metadata in STAC Item format. STAC version must be >= 1.0.0,
+ * and the EO and Raster STAC extensions are required. This metadata shape can
+ * be passed to the map to synchronously add a raster tileset.
+ * @see https://github.com/radiantearth/stac-spec/blob/master/item-spec/item-spec.md
+ */
+export type RasterTileLocalMetadata = {
+  type: 'Feature';
+
+  /** URL for tileset metadata. */
+  metadataUrl?: string;
+  stac_version: string;
+  stac_extensions: string[];
+  assets: Record<string, any>;
+};
+
+/**
+ * Raster tileset metadata with a remote metadata URL. This metadata can
+ * be passed to the map to asynchronously load a raster tileset.
+ */
+export type RasterTileRemoteMetadata = {
+  metadataUrl: string;
+};
+
+export enum RasterTileType {
+  STAC = 'stac',
+  PMTILES = 'pmtiles'
+}
+
+export type RasterTileMetadataSourceType = {
+  pmtilesType?: PMTilesType;
+};
+
+/**
+ * Raster tileset metadata.
+ */
+export type RasterTileDatasetMetadata = (RasterTileLocalMetadata | RasterTileRemoteMetadata) &
+  RasterTileMetadataSourceType;
+
+export type WMSDatasetMetadata = {
+  type: typeof REMOTE_TILE;
+  remoteTileFormat: RemoteTileFormat.WMS;
+  tilesetDataUrl: string;
+  tilesetMetadataUrl: string;
+  version: string;
+  layers: {name: string; title: string; boundingBox: number[] | null}[];
+  label?: string;
+  attribution?: string;
+};
+
+export type Tile3DProviderAttribution = {
+  title: string;
+  url: string;
+  logoUrl?: string;
+  height?: number;
+  bottom?: number;
+};
+
+export type Tile3DProvider = {
+  name: string;
+  urlKey: string;
+  attribution?: Tile3DProviderAttribution;
+};
+
+export const TILE3D_PROVIDERS: Record<string, Tile3DProvider> = {
+  google: {
+    name: 'Google 3D Tiles',
+    urlKey: 'google',
+    attribution: {
+      title: 'Built with Google Maps.',
+      url: '',
+      logoUrl:
+        'https://studio-public-data.foursquare.com/statics/images/google-watermark-white.png',
+      height: 17,
+      bottom: 0
+    }
+  },
+  cesium: {
+    name: 'Cesium ion',
+    urlKey: 'ion.cesium',
+    attribution: {title: 'Cesium.', url: 'https://cesium.com/', height: 19, bottom: 0}
+  },
+  arcgis: {
+    name: 'ArcGIS',
+    urlKey: 'arcgis',
+    attribution: {title: 'Powered by Esri.', url: 'https://arcgis.com/', height: 16}
+  }
+};
+
+export type Tile3DDatasetMetadata = {
+  tile3dUrl: string;
+  tile3dAccessToken?: string;
+  tile3dProvider?: string;
+};
+
+export type BitmapBounds =
+  | [number, number, number, number]
+  | [[number, number], [number, number], [number, number], [number, number]];
+
+export type BitmapDatasetMetadata = {
+  imageUrl: string;
+  bounds: BitmapBounds;
+  isDataUri?: boolean;
+};

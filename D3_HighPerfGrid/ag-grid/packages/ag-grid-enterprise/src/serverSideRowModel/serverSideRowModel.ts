@@ -1,0 +1,716 @@
+import { _debounce, _jsonEquals } from 'ag-stack';
+
+import type {
+    AdvancedFilterModel,
+    AgColumn,
+    BeanCollection,
+    ColumnModel,
+    ColumnNameService,
+    ColumnVO,
+    FilterManager,
+    FilterModel,
+    IColsService,
+    IPivotColDefService,
+    IPivotResultColsService,
+    IServerSideDatasource,
+    IServerSideRowModel,
+    LoadSuccessParams,
+    NamedBean,
+    OverlayType,
+    RefreshServerSideParams,
+    RowBounds,
+    RowModelType,
+    RowRenderer,
+    ServerSideGroupLevelState,
+    SortModelItem,
+    SortService,
+    StoreRefreshAfterParams,
+} from 'ag-grid-community';
+import {
+    BeanStub,
+    GRAND_TOTAL_ROW_ID,
+    GROUP_TOTAL_ROW_ID_PREFIX,
+    ROOT_NODE_ID,
+    RowNode,
+    _getRowHeightAsNumber,
+    _getRowHeightForNode,
+    _getSortModel,
+    _isGetRowHeightFunction,
+    _isRowSelection,
+} from 'ag-grid-community';
+
+import type { NodeManager } from './nodeManager';
+import type { LazyStore } from './stores/lazy/lazyStore';
+import type { StoreFactory } from './stores/storeFactory';
+
+export interface SSRMParams {
+    sortModel: SortModelItem[];
+    filterModel: FilterModel | AdvancedFilterModel | null;
+    lastAccessedSequence: { value: number };
+    dynamicRowHeight: boolean;
+    rowGroupCols: ColumnVO[];
+    valueCols: ColumnVO[];
+    pivotCols: ColumnVO[];
+    pivotMode: boolean;
+    datasource?: IServerSideDatasource;
+}
+
+export class ServerSideRowModel extends BeanStub implements NamedBean, IServerSideRowModel {
+    beanName = 'rowModel' as const;
+
+    public readonly hierarchical: boolean = true;
+
+    private colModel: ColumnModel;
+    private colNames: ColumnNameService;
+    private pivotResultCols?: IPivotResultColsService;
+    private rowGroupColsSvc?: IColsService;
+    private pivotColsSvc?: IColsService;
+    private valueColsSvc?: IColsService;
+    private filterManager?: FilterManager;
+    private sortSvc?: SortService;
+    private rowRenderer: RowRenderer;
+    private nodeManager: NodeManager;
+    private storeFactory: StoreFactory;
+    private pivotColDefSvc?: IPivotColDefService;
+
+    public wireBeans(beans: BeanCollection) {
+        this.colModel = beans.colModel;
+        this.colNames = beans.colNames;
+        this.pivotResultCols = beans.pivotResultCols;
+        this.rowGroupColsSvc = beans.rowGroupColsSvc;
+        this.pivotColsSvc = beans.pivotColsSvc;
+        this.valueColsSvc = beans.valueColsSvc;
+        this.filterManager = beans.filterManager;
+        this.sortSvc = beans.sortSvc;
+        this.rowRenderer = beans.rowRenderer;
+        this.nodeManager = beans.ssrmNodeManager as NodeManager;
+        this.storeFactory = beans.ssrmStoreFactory as StoreFactory;
+        this.pivotColDefSvc = beans.pivotColDefSvc;
+    }
+
+    public rootNode: RowNode;
+    private datasource: IServerSideDatasource | undefined;
+
+    private storeParams: SSRMParams;
+
+    private started = false;
+
+    private managingPivotResultColumns = false;
+
+    // we don't implement as lazy row heights is not supported in this row model
+    public ensureRowHeightsValid(): boolean {
+        return false;
+    }
+
+    public start(): void {
+        this.started = true;
+        this.updateDatasource();
+    }
+
+    private destroyDatasource(): void {
+        if (!this.datasource) {
+            return;
+        }
+
+        if (this.datasource.destroy) {
+            this.datasource.destroy();
+        }
+
+        this.rowRenderer.datasourceChanged();
+        this.datasource = undefined;
+    }
+
+    public postConstruct(): void {
+        const resetListener = this.resetRootStore.bind(this);
+        this.addManagedEventListeners({
+            newColumnsLoaded: this.onColumnEverything.bind(this),
+            storeUpdated: this.onStoreUpdated.bind(this),
+            columnValueChanged: resetListener,
+            columnPivotChanged: resetListener,
+            columnRowGroupChanged: resetListener,
+            columnPivotModeChanged: resetListener,
+        });
+
+        this.addManagedPropertyListeners(
+            [
+                /**
+                 * Following properties omitted as they are likely to come with undesired  side effects.
+                 * 'getRowId', 'isRowMaster', 'getRowHeight', 'isServerSideGroup', 'getServerSideGroupKey',
+                 * */
+                'masterDetail',
+                'treeData',
+                'removePivotHeaderRowWhenSingleValueColumn',
+                'cacheBlockSize',
+            ],
+            resetListener
+        );
+        this.addManagedPropertyListeners(['groupAllowUnbalanced', 'groupTotalRow', 'grandTotalRow'], () =>
+            this.onStoreUpdated()
+        );
+        this.addManagedPropertyListener('rowHeight', () => this.resetRowHeights());
+        this.verifyProps();
+
+        this.addManagedPropertyListener('serverSideDatasource', () => this.updateDatasource());
+    }
+
+    private updateDatasource(): void {
+        const datasource = this.gos.get('serverSideDatasource');
+
+        if (datasource) {
+            this.setDatasource(datasource);
+        }
+    }
+
+    private verifyProps(): void {
+        if (_isRowSelection(this.gos) && !this.gos.exists('getRowId')) {
+            this.warn(188, { feature: 'selection' });
+        }
+    }
+
+    public setDatasource(datasource: IServerSideDatasource): void {
+        // sometimes React, due to async, can call gridApi.setDatasource() before we have started.
+        // this happens when React app does this:
+        //      useEffect(() => setDatasource(ds), []);
+        // thus if we set the datasource before the grid UI has finished initialising, we do not set it,
+        // and the ssrm.start() method will set the datasoure when the grid is ready.
+        if (!this.started) {
+            return;
+        }
+
+        this.destroyDatasource();
+        this.datasource = datasource;
+        this.resetRootStore();
+    }
+
+    public applyRowData(rowDataParams: LoadSuccessParams, startRow: number, route: string[]) {
+        const rootStore = this.getRootStore();
+        if (!rootStore) {
+            return;
+        }
+
+        const storeToExecuteOn = rootStore.getChildStore(route);
+
+        if (!storeToExecuteOn) {
+            return;
+        }
+
+        storeToExecuteOn.applyRowData(rowDataParams, startRow, rowDataParams.rowData.length);
+    }
+
+    public isLastRowIndexKnown(): boolean {
+        const cache = this.getRootStore();
+        if (!cache) {
+            return false;
+        }
+        return cache.isLastRowIndexKnown();
+    }
+
+    private onColumnEverything(): void {
+        // if first time, always reset
+        if (!this.storeParams) {
+            this.resetRootStore();
+            return;
+        }
+
+        // check if anything pertaining to fetching data has changed, and if it has, reset, but if
+        // it has not, don't reset
+        const rowGroupColumnVos = this.columnsToValueObjects(this.rowGroupColsSvc?.columns);
+        const valueColumnVos = this.columnsToValueObjects(this.valueColsSvc?.columns);
+        const pivotColumnVos = this.columnsToValueObjects(this.pivotColsSvc?.columns);
+
+        // compares two sets of columns, ensuring no columns have been added or removed (unless specified via allowRemovedColumns)
+        // if the columns are found, also ensures the field and aggFunc properties have not been changed.
+        const areColsSame = (params: { oldCols: ColumnVO[]; newCols: ColumnVO[]; allowRemovedColumns?: boolean }) => {
+            const oldColsMap: { [key: string]: ColumnVO } = {};
+            for (const col of params.oldCols) {
+                oldColsMap[col.id] = col;
+            }
+
+            const allColsUnchanged = params.newCols.every((col) => {
+                const equivalentCol = oldColsMap[col.id];
+                if (equivalentCol) {
+                    delete oldColsMap[col.id];
+                }
+                return equivalentCol && equivalentCol.field === col.field && equivalentCol.aggFunc === col.aggFunc;
+            });
+
+            const missingCols = !params.allowRemovedColumns && !!Object.values(oldColsMap).length;
+            return allColsUnchanged && !missingCols;
+        };
+
+        const sortModelDifferent = !_jsonEquals(this.storeParams.sortModel, _getSortModel(this.sortSvc));
+        const rowGroupDifferent = !areColsSame({
+            oldCols: this.storeParams.rowGroupCols,
+            newCols: rowGroupColumnVos,
+        });
+        const pivotDifferent = !areColsSame({
+            oldCols: this.storeParams.pivotCols,
+            newCols: pivotColumnVos,
+        });
+        const valuesDifferent =
+            !!rowGroupColumnVos?.length &&
+            !areColsSame({
+                oldCols: this.storeParams.valueCols,
+                newCols: valueColumnVos,
+                allowRemovedColumns: true,
+            });
+
+        const resetRequired = sortModelDifferent || rowGroupDifferent || pivotDifferent || valuesDifferent;
+
+        if (resetRequired) {
+            this.resetRootStore();
+        } else {
+            // cols may have changed even if we didn't do a reset. storeParams ref will be provided when getRows
+            // is called, so it's important to keep it up to date.
+            const newParams = this.createStoreParams();
+            this.storeParams.rowGroupCols = newParams.rowGroupCols;
+            this.storeParams.pivotCols = newParams.pivotCols;
+            this.storeParams.valueCols = newParams.valueCols;
+        }
+    }
+
+    private destroyRootStore(): void {
+        if (!this.rootNode?.childStore) {
+            return;
+        }
+        this.rootNode.childStore = this.destroyBean(this.rootNode.childStore)!;
+        this.nodeManager.clear();
+    }
+
+    public refreshAfterSort(newSortModel: SortModelItem[], params: StoreRefreshAfterParams): void {
+        if (this.storeParams) {
+            this.storeParams.sortModel = newSortModel;
+        }
+
+        const rootStore = this.getRootStore();
+        if (!rootStore) {
+            return;
+        }
+
+        rootStore.refreshAfterSort(params);
+
+        this.onStoreUpdated();
+    }
+
+    public generateSecondaryColumns(pivotFields: string[]) {
+        if (!this.pivotColDefSvc) {
+            this.gos.assertModuleRegistered('SharedPivot', 2);
+            return;
+        }
+
+        const pivotColumnGroupDefs = this.pivotColDefSvc.createColDefsFromFields(pivotFields);
+        this.managingPivotResultColumns = true;
+        this.pivotResultCols?.setPivotResultCols(pivotColumnGroupDefs, 'rowModelUpdated');
+    }
+
+    public resetRowHeights(): void {
+        const atLeastOne = this.resetRowHeightsForAllRowNodes();
+
+        const rootNodeHeight = _getRowHeightForNode(this.beans, this.rootNode);
+        this.rootNode.setRowHeight(rootNodeHeight.height, rootNodeHeight.estimated);
+        if (this.rootNode.sibling) {
+            const rootNodeSibling = _getRowHeightForNode(this.beans, this.rootNode.sibling);
+            this.rootNode.sibling.setRowHeight(rootNodeSibling.height, rootNodeSibling.estimated);
+        }
+
+        // when pivotMode but pivot not active, root node is displayed on its own
+        // because it's only ever displayed alone, refreshing the model (onRowHeightChanged) is not required
+        if (atLeastOne) {
+            this.onRowHeightChanged();
+        }
+    }
+
+    private resetRowHeightsForAllRowNodes(): boolean {
+        let atLeastOne = false;
+        this.forEachNode((rowNode) => {
+            const rowHeightForNode = _getRowHeightForNode(this.beans, rowNode);
+            rowNode.setRowHeight(rowHeightForNode.height, rowHeightForNode.estimated);
+            // we keep the height each row is at, however we set estimated=true rather than clear the height.
+            // this means the grid will not reset the row heights back to defaults, rather it will re-calc
+            // the height for each row as the row is displayed. otherwise the scroll will jump when heights are reset.
+            const detailNode = rowNode.detailNode;
+            if (detailNode) {
+                const detailRowHeight = _getRowHeightForNode(this.beans, detailNode);
+                detailNode.setRowHeight(detailRowHeight.height, detailRowHeight.estimated);
+            }
+
+            if (rowNode.sibling) {
+                const siblingRowHeight = _getRowHeightForNode(this.beans, rowNode.sibling);
+                detailNode?.setRowHeight(siblingRowHeight.height, siblingRowHeight.estimated);
+            }
+            atLeastOne = true;
+        });
+
+        return atLeastOne;
+    }
+
+    public resetRootStore(): void {
+        this.destroyRootStore();
+
+        this.rootNode = new RowNode(this.beans);
+        this.rootNode.group = true;
+        this.rootNode.level = -1;
+
+        if (this.datasource) {
+            this.storeParams = this.createStoreParams();
+            this.rootNode.childStore = this.createBean(this.storeFactory.createStore(this.storeParams, this.rootNode));
+            this.updateRowIndexesAndBounds();
+        }
+
+        if (this.managingPivotResultColumns) {
+            // if managing pivot columns, also reset secondary columns.
+            this.pivotResultCols?.setPivotResultCols(null, 'api');
+            this.managingPivotResultColumns = false;
+        }
+
+        // this gets the row to render rows (or remove the previously rendered rows, as it's blank to start).
+        // important to NOT pass in an event with keepRenderedRows or animate, as we want the renderer
+        // to treat the rows as new rows, as it's all new data
+        this.dispatchModelUpdated(true);
+    }
+
+    public columnsToValueObjects(columns: AgColumn[] = []): ColumnVO[] {
+        return columns.map(
+            (col) =>
+                ({
+                    id: col.getId(),
+                    aggFunc: col.aggFunc,
+                    displayName: this.colNames.getDisplayNameForColumn(col, 'model'),
+                    field: col.field,
+                }) as ColumnVO
+        );
+    }
+
+    private createStoreParams(): SSRMParams {
+        const rowGroupColumnVos = this.columnsToValueObjects(this.rowGroupColsSvc?.columns);
+        const valueColumnVos = this.columnsToValueObjects(this.valueColsSvc?.columns);
+        const pivotColumnVos = this.columnsToValueObjects(this.pivotColsSvc?.columns);
+
+        const dynamicRowHeight = _isGetRowHeightFunction(this.gos);
+
+        const params: SSRMParams = {
+            // the columns the user has grouped and aggregated by
+            valueCols: valueColumnVos,
+            rowGroupCols: rowGroupColumnVos,
+            pivotCols: pivotColumnVos,
+            pivotMode: this.colModel.pivotMode,
+
+            // sort and filter model
+            filterModel: this.filterManager?.isAdvFilterEnabled()
+                ? this.filterManager?.getAdvFilterModel()
+                : (this.filterManager?.getFilterModel() ?? {}),
+            sortModel: _getSortModel(this.sortSvc),
+
+            datasource: this.datasource,
+            lastAccessedSequence: { value: 0 },
+            // blockSize: blockSize == null ? 100 : blockSize,
+            dynamicRowHeight: dynamicRowHeight,
+        };
+
+        return params;
+    }
+
+    public getParams(): SSRMParams {
+        return this.storeParams;
+    }
+
+    private dispatchModelUpdated(reset = false): void {
+        this.eventSvc.dispatchEvent({
+            type: 'modelUpdated',
+            animate: !reset,
+            keepRenderedRows: !reset,
+            newPage: false,
+            newData: false,
+        });
+    }
+
+    private onStoreUpdated(): void {
+        this.updateRowIndexesAndBounds();
+        this.dispatchModelUpdated();
+    }
+
+    public onRowHeightChanged(): void {
+        this.updateRowIndexesAndBounds();
+        this.dispatchModelUpdated();
+    }
+
+    public updateRowIndexesAndBounds(): void {
+        const rootStore = this.getRootStore();
+        if (!rootStore) {
+            return;
+        }
+        rootStore.setDisplayIndexes({ value: 0 }, { value: 0 }, 0);
+    }
+
+    public retryLoads(): void {
+        const rootStore = this.getRootStore();
+        if (!rootStore) {
+            return;
+        }
+        rootStore.retryLoads();
+        this.onStoreUpdated();
+    }
+
+    public getRow(index: number): RowNode | undefined {
+        const rootStore = this.getRootStore();
+        if (!rootStore) {
+            return undefined;
+        }
+        return rootStore.getRowUsingDisplayIndex(index) as RowNode;
+    }
+
+    public refreshAfterFilter(
+        newFilterModel: FilterModel | AdvancedFilterModel | null,
+        params: StoreRefreshAfterParams
+    ): void {
+        if (this.storeParams) {
+            this.storeParams.filterModel = newFilterModel;
+        }
+        const rootStore = this.getRootStore();
+        if (!rootStore) {
+            return;
+        }
+        rootStore.refreshAfterFilter(params);
+
+        this.onStoreUpdated();
+    }
+
+    public getRootStore(): LazyStore | undefined {
+        return this.rootNode?.childStore as LazyStore | undefined;
+    }
+
+    public getRowCount(): number {
+        const rootStore = this.getRootStore();
+        if (!rootStore) {
+            return 0;
+        }
+
+        return rootStore.getDisplayIndexEnd()!;
+    }
+
+    public getTopLevelRowCount(): number {
+        const rootStore = this.getRootStore();
+        if (!rootStore) {
+            return 1;
+        }
+        return rootStore.getRowCount();
+    }
+
+    public getTopLevelRowDisplayedIndex(topLevelIndex: number): number {
+        const rootStore = this.getRootStore();
+        if (!rootStore) {
+            return topLevelIndex;
+        }
+        return rootStore.getTopLevelRowDisplayedIndex(topLevelIndex);
+    }
+
+    public getRowBounds(index: number): RowBounds {
+        const rootStore = this.getRootStore();
+        if (!rootStore) {
+            const rowHeight = _getRowHeightAsNumber(this.beans);
+            return {
+                rowTop: 0,
+                rowHeight: rowHeight,
+            };
+        }
+        return rootStore.getRowBounds(index)!;
+    }
+
+    public getBlockStates() {
+        const root = this.getRootStore();
+        if (!root) {
+            return undefined;
+        }
+
+        const states: any = {};
+        root.forEachStoreDeep((store) => {
+            const blockStates = store.getBlockStates();
+            for (const block of Object.keys(blockStates)) {
+                states[block] = blockStates[block];
+            }
+        });
+        return states;
+    }
+
+    public getRowIndexAtPixel(pixel: number): number {
+        const rootStore = this.getRootStore();
+        if (pixel <= 0 || !rootStore) {
+            return 0;
+        }
+
+        return rootStore.getRowIndexAtPixel(pixel)!;
+    }
+
+    public isEmpty(): boolean {
+        return false;
+    }
+
+    public getOverlayType(): OverlayType | null {
+        // server side does not use the loading overlay as it has its own mechanism
+        const rootStore = this.getRootStore();
+        if (rootStore?.getDisplayIndexEnd() === 0) {
+            return this.filterManager?.isAnyFilterPresent() ? 'noMatchingRows' : 'noRows';
+        }
+        return null;
+    }
+
+    public isRowsToRender(): boolean {
+        return this.getRootStore() != null && this.getRowCount() > 0;
+    }
+
+    public getType(): RowModelType {
+        return 'serverSide';
+    }
+
+    public forEachNode(callback: (rowNode: RowNode, index: number) => void): void {
+        const rootStore = this.getRootStore();
+        if (!rootStore) {
+            return;
+        }
+        rootStore.forEachNodeDeep(callback);
+    }
+
+    public forEachDisplayedNode(callback: (rowNode: RowNode<any>, index: number) => void): void {
+        const wrappedCallback = (node: RowNode, index: number) => {
+            if (node.stub || !node.displayed) {
+                return;
+            }
+            callback(node, index);
+        };
+        this.forEachNode(wrappedCallback);
+    }
+
+    public forEachNodeAfterFilterAndSort(
+        callback: (node: RowNode, index: number) => void,
+        includeFooterNodes = false
+    ): void {
+        const rootStore = this.getRootStore();
+        if (!rootStore) {
+            return;
+        }
+        rootStore.forEachNodeDeepAfterFilterAndSort(callback, undefined, includeFooterNodes);
+    }
+
+    /** @returns false if store hasn't started */
+    public executeOnStore(route: string[], callback: (cache: LazyStore) => void): boolean {
+        if (!this.started) {
+            return false;
+        }
+        const rootStore = this.getRootStore();
+        if (!rootStore) {
+            return true;
+        }
+
+        const storeToExecuteOn = rootStore.getChildStore(route);
+
+        if (storeToExecuteOn) {
+            callback(storeToExecuteOn);
+        }
+        return true;
+    }
+
+    public refreshStore(params: RefreshServerSideParams = {}): void {
+        const route = params.route ? params.route : [];
+        this.executeOnStore(route, (store) => store.refreshStore(params.purge == true));
+    }
+
+    public getStoreState(): ServerSideGroupLevelState[] {
+        const res: ServerSideGroupLevelState[] = [];
+        const rootStore = this.getRootStore();
+        if (rootStore) {
+            rootStore.addStoreStates(res);
+        }
+        return res;
+    }
+
+    public getNodesInRangeForSelection(firstInRange: RowNode, lastInRange: RowNode): RowNode[] | null {
+        const startIndex = firstInRange.rowIndex;
+        const endIndex = lastInRange.rowIndex;
+
+        if (startIndex === null && endIndex === null) {
+            return [];
+        }
+
+        if (endIndex === null) {
+            return firstInRange ? [firstInRange] : [];
+        }
+
+        if (startIndex === null) {
+            return [lastInRange];
+        }
+
+        const nodeRange: RowNode[] = [];
+        const [firstIndex, lastIndex] = [startIndex, endIndex].sort((a, b) => a - b);
+        this.forEachNode((node) => {
+            const thisRowIndex = node.rowIndex;
+            if (thisRowIndex == null || node.stub) {
+                return;
+            }
+
+            if (thisRowIndex >= firstIndex && thisRowIndex <= lastIndex) {
+                nodeRange.push(node);
+            }
+        });
+
+        // don't allow range selection if we don't have the full range of rows
+        if (nodeRange.length !== lastIndex - firstIndex + 1) {
+            return null;
+        }
+
+        return nodeRange;
+    }
+
+    public getRowNode(id: string): RowNode | undefined {
+        if (typeof id !== 'string') {
+            id = String(id);
+        }
+        if (id === GRAND_TOTAL_ROW_ID) {
+            return this.getRootStore()?.getGrandTotalNode();
+        }
+        let result: RowNode | undefined;
+        this.forEachNode((rowNode) => {
+            if (rowNode.id === id) {
+                result = rowNode;
+            }
+            if (rowNode.detailNode?.id === id) {
+                result = rowNode.detailNode;
+            }
+        });
+        if (id === ROOT_NODE_ID) {
+            return this.rootNode;
+        }
+        if (!result && id.startsWith(GROUP_TOTAL_ROW_ID_PREFIX)) {
+            const groupId = id.slice(GROUP_TOTAL_ROW_ID_PREFIX.length);
+            const groupNode = this.getRowNode(groupId);
+            result = groupNode?.sibling?.footer ? groupNode.sibling : undefined;
+        }
+        return result;
+    }
+
+    public isRowPresent(rowNode: RowNode): boolean {
+        const foundRowNode = this.getRowNode(rowNode.id!);
+        return !!foundRowNode;
+    }
+
+    public setRowCount(rowCount: number, lastRowIndexKnown?: boolean): void {
+        const rootStore = this.getRootStore();
+        if (!rootStore) {
+            return;
+        }
+        rootStore.setRowCount(rowCount, lastRowIndexKnown);
+    }
+
+    public override destroy(): void {
+        this.destroyDatasource();
+        this.destroyRootStore();
+        super.destroy();
+    }
+
+    private readonly onRowHeightChanged_debounced = _debounce(this, this.onRowHeightChanged.bind(this), 100);
+    /**
+     * @deprecated v33.1
+     */
+    public onRowHeightChangedDebounced(): void {
+        this.onRowHeightChanged_debounced();
+    }
+}

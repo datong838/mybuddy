@@ -1,0 +1,322 @@
+import { basename } from 'path';
+
+import { ANGULAR_GENERATED_MAIN_FILE_NAME } from '../constants';
+import { vanillaToAngular } from '../transformation-scripts/grid-vanilla-to-angular';
+import { vanillaToReactFunctionalTs } from '../transformation-scripts/grid-vanilla-to-react-functional-ts';
+import { vanillaToTypescript } from '../transformation-scripts/grid-vanilla-to-typescript';
+import { vanillaToVue3 } from '../transformation-scripts/grid-vanilla-to-vue3';
+import {
+    getEnableAGTestIdLogic,
+    getIntegratedDarkModeCode,
+    readAsJsFile,
+    removeModuleRegistration,
+} from '../transformation-scripts/parser-utils';
+import type { ExampleConfig, FileContents, InternalFramework, ParsedBindings } from '../types';
+import { deepCloneObject } from './deepCloneObject';
+import { formatFile } from './fileFormatUtils';
+import { convertTsxToJsx, getBoilerPlateFiles, getEntryFileName, getMainFileName } from './fileUtils';
+
+interface FrameworkFiles {
+    files: FileContents;
+    hasProvidedExamples?: boolean;
+    scriptFiles?: string[];
+}
+
+export type TransformEntryFile = (params: { entryFile: string }) => string;
+
+type ConfigGenerator = ({
+    entryFile,
+    indexHtml,
+    isEnterprise,
+    bindings,
+    typedBindings,
+    componentScriptFiles,
+    otherScriptFiles,
+    styleFiles,
+    ignoreDarkMode,
+    transformEntryFile,
+    isDev,
+    exampleConfig,
+}: {
+    entryFile: string;
+    indexHtml: string;
+    isEnterprise: boolean;
+    bindings: ParsedBindings;
+    typedBindings: ParsedBindings;
+    componentScriptFiles: FileContents;
+    otherScriptFiles: FileContents;
+    styleFiles: FileContents;
+    ignoreDarkMode?: boolean;
+    transformEntryFile?: TransformEntryFile;
+    isDev: boolean;
+    exampleConfig: ExampleConfig;
+}) => Promise<FrameworkFiles>;
+
+// The example generator does not currently extract grid imports in the component files
+// This is a shortcut to be able to support adding support for agGrid.isCombinedFilterModel in a custom component file
+const AG_GRID_EXPORTED_FUNCS_USED_IN_EXAMPLES_COMPS = ['isCombinedFilterModel'];
+
+export const frameworkFilesGenerator: Partial<Record<InternalFramework, ConfigGenerator>> = {
+    vanilla: async ({
+        bindings,
+        entryFile,
+        indexHtml,
+        componentScriptFiles,
+        otherScriptFiles,
+        transformEntryFile,
+        isDev,
+    }) => {
+        const internalFramework: InternalFramework = 'vanilla';
+        const entryFileName = getEntryFileName(internalFramework)!;
+        let mainJs = readAsJsFile(entryFile, 'vanilla');
+
+        const symbolsImportedGridPackage = bindings.imports
+            .filter((i) => i.module.includes('ag-grid-') && !i.module.includes('@ag-grid-community/locale'))
+            .flatMap((i) => i.imports);
+
+        const importNamePattern = '\\b(' + [...symbolsImportedGridPackage].map(regExpEscape).join('|') + ')\\b';
+        mainJs = mainJs.replace(new RegExp(importNamePattern, 'g'), 'agGrid.$&');
+
+        if (componentScriptFiles) {
+            const compImportNamePattern =
+                '\\b(' + AG_GRID_EXPORTED_FUNCS_USED_IN_EXAMPLES_COMPS.map(regExpEscape).join('|') + ')\\b';
+            for (const key in componentScriptFiles) {
+                const compFile = componentScriptFiles[key];
+                if (compFile) {
+                    componentScriptFiles[key] = compFile.replace(new RegExp(compImportNamePattern, 'g'), 'agGrid.$&');
+                }
+            }
+        }
+
+        // Javascript is packages only
+        mainJs = removeModuleRegistration(mainJs);
+
+        const integratedDarkModeCode = getIntegratedDarkModeCode(bindings.exampleName, false, 'gridApi') ?? '';
+        mainJs = mainJs.replace(/agGrid\.createGrid(.*);/g, `agGrid.createGrid$1; ${integratedDarkModeCode}`);
+
+        if (transformEntryFile) {
+            mainJs = transformEntryFile({ entryFile: mainJs });
+        }
+
+        const enableDevValidations = '// Development only — remove for production\nagGrid.enableDevValidations();';
+        mainJs = enableDevValidations + '\n\n' + getEnableAGTestIdLogic(true) + '\n\n' + mainJs;
+
+        // remove any leading new lines
+        mainJs = mainJs.replace(/^\s*[\r\n]/, '');
+
+        const scriptFiles = { ...otherScriptFiles, ...componentScriptFiles };
+        if (!isDev) {
+            mainJs = await formatFile(internalFramework, mainJs);
+        }
+
+        return {
+            files: {
+                ...scriptFiles,
+                [entryFileName]: mainJs,
+                'index.html': indexHtml,
+            },
+            scriptFiles: Object.keys(scriptFiles).concat(entryFileName),
+        };
+    },
+    typescript: async ({
+        entryFile,
+        indexHtml,
+        otherScriptFiles,
+        componentScriptFiles,
+        typedBindings,
+        transformEntryFile,
+        isDev,
+    }) => {
+        const internalFramework: InternalFramework = 'typescript';
+        const entryFileName = getEntryFileName(internalFramework)!;
+        const mainFileName = getMainFileName(internalFramework)!;
+
+        let mainTs = vanillaToTypescript(deepCloneObject(typedBindings), mainFileName, entryFile)();
+
+        if (transformEntryFile) {
+            mainTs = transformEntryFile({ entryFile: mainTs });
+        }
+
+        if (!isDev) {
+            mainTs = await formatFile(internalFramework, mainTs);
+        }
+
+        const scriptFiles = { ...otherScriptFiles, ...componentScriptFiles };
+
+        return {
+            files: {
+                ...scriptFiles,
+                [entryFileName]: mainTs,
+                'index.html': indexHtml,
+            },
+            // NOTE: `scriptFiles` not required, as system js handles import
+        };
+    },
+    reactFunctional: async ({
+        typedBindings,
+        indexHtml,
+        otherScriptFiles,
+        componentScriptFiles,
+        styleFiles,
+        transformEntryFile,
+        isDev,
+        exampleConfig,
+    }) => {
+        const internalFramework: InternalFramework = 'reactFunctional';
+        const entryFileName = getEntryFileName(internalFramework)!;
+        const componentNames = getComponentName(componentScriptFiles);
+        const indexTsx = vanillaToReactFunctionalTs(
+            deepCloneObject(typedBindings),
+            exampleConfig,
+            componentNames,
+            Object.keys(styleFiles)
+        )();
+
+        let indexJsx = convertTsxToJsx(indexTsx);
+
+        if (transformEntryFile) {
+            indexJsx = transformEntryFile({ entryFile: indexJsx });
+        }
+
+        if (!isDev) {
+            indexJsx = await formatFile(internalFramework, indexJsx);
+        }
+
+        return {
+            files: {
+                ...otherScriptFiles,
+                ...componentScriptFiles,
+                [entryFileName]: indexJsx,
+                'index.html': indexHtml,
+            },
+            // NOTE: `scriptFiles` not required, as system js handles import
+        };
+    },
+    reactFunctionalTs: async ({
+        typedBindings,
+        indexHtml,
+        otherScriptFiles,
+        componentScriptFiles,
+        styleFiles,
+        transformEntryFile,
+        isDev,
+        exampleConfig,
+    }) => {
+        const internalFramework: InternalFramework = 'reactFunctionalTs';
+        const entryFileName = getEntryFileName(internalFramework)!;
+        const componentNames = getComponentName(componentScriptFiles);
+        let indexTsx = vanillaToReactFunctionalTs(
+            deepCloneObject(typedBindings),
+            exampleConfig,
+            componentNames,
+            Object.keys(styleFiles)
+        )();
+
+        if (transformEntryFile) {
+            indexTsx = transformEntryFile({ entryFile: indexTsx });
+        }
+
+        if (!isDev) {
+            indexTsx = await formatFile(internalFramework, indexTsx);
+        }
+
+        return {
+            files: {
+                ...otherScriptFiles,
+                ...componentScriptFiles,
+                [entryFileName]: indexTsx,
+                'index.html': indexHtml,
+            },
+            // NOTE: `scriptFiles` not required, as system js handles import
+        };
+    },
+    angular: async ({
+        typedBindings,
+        otherScriptFiles,
+        componentScriptFiles,
+        styleFiles,
+        transformEntryFile,
+        isDev,
+        exampleConfig,
+    }) => {
+        const internalFramework: InternalFramework = 'angular';
+        const entryFileName = getEntryFileName(internalFramework)!;
+        const boilerPlateFiles = await getBoilerPlateFiles(isDev, internalFramework);
+
+        const componentNames = getComponentName(componentScriptFiles);
+        let appComponent = vanillaToAngular(
+            deepCloneObject(typedBindings),
+            exampleConfig,
+            componentNames,
+            Object.keys(styleFiles)
+        )();
+
+        if (transformEntryFile) {
+            appComponent = transformEntryFile({ entryFile: appComponent });
+        }
+
+        if (!isDev) {
+            appComponent = await formatFile(internalFramework, appComponent);
+        }
+
+        return {
+            files: {
+                ...otherScriptFiles,
+                ...componentScriptFiles,
+                // NOTE: No `index.html` as the contents are generated in the `app.component` file
+                // NOTE: Duplicating entrypoint boilerplate file here, so examples
+                // load from the same directory as these files, rather than
+                // boilerplate files
+                [entryFileName]: boilerPlateFiles[entryFileName],
+                [ANGULAR_GENERATED_MAIN_FILE_NAME]: appComponent,
+            },
+        };
+    },
+    vue3: async ({
+        indexHtml,
+        typedBindings,
+        otherScriptFiles,
+        componentScriptFiles,
+        styleFiles,
+        transformEntryFile,
+        isDev,
+        exampleConfig,
+    }) => {
+        const internalFramework: InternalFramework = 'vue3';
+        const componentNames = getComponentName(componentScriptFiles);
+        let mainJs = vanillaToVue3(
+            deepCloneObject(typedBindings),
+            exampleConfig,
+            componentNames,
+            Object.keys(styleFiles)
+        )();
+
+        if (transformEntryFile) {
+            mainJs = transformEntryFile({ entryFile: mainJs });
+        }
+
+        if (!isDev) {
+            mainJs = await formatFile(internalFramework, mainJs);
+        }
+
+        const entryFileName = getEntryFileName(internalFramework)!;
+        const scriptFiles = { ...otherScriptFiles, ...componentScriptFiles };
+
+        return {
+            files: {
+                ...scriptFiles,
+                [entryFileName]: mainJs,
+                'index.html': indexHtml,
+            },
+            // NOTE: `scriptFiles` not required, as system js handles import
+        };
+    },
+};
+
+function getComponentName(otherScriptFiles: FileContents) {
+    return Object.keys(otherScriptFiles).map((file) => basename(file));
+}
+
+function regExpEscape(input: string) {
+    return input.replace(/[-[\]{}()*+!<=:?./\\^$|#\s,]/g, '\\$&');
+}

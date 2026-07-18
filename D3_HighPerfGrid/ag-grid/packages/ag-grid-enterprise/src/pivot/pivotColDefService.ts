@@ -1,0 +1,626 @@
+import type {
+    AgColumn,
+    BeanCollection,
+    ColDef,
+    ColGroupDef,
+    ColumnModel,
+    ColumnNameService,
+    IPivotColDefService,
+    IPivotColsService,
+    IValueColsService,
+    NamedBean,
+} from 'ag-grid-community';
+import { BeanStub } from 'ag-grid-community';
+
+const PIVOT_ROW_TOTAL_PREFIX = 'PivotRowTotal_';
+
+const headerNameComparator = (
+    { headerName: a }: ColGroupDef | ColDef,
+    { headerName: b }: ColGroupDef | ColDef
+): number => {
+    if (a && !b) {
+        return 1;
+    } else if (!a && b) {
+        return -1;
+    } else if (!a && !b) {
+        return 0;
+    }
+    if (a! < b!) {
+        return -1;
+    } else if (a! > b!) {
+        return 1;
+    } else {
+        return 0;
+    }
+};
+
+const convertToHeaderNameComparator =
+    (comparator: (valueA: string, valueB: string) => number) => (a: ColGroupDef | ColDef, b: ColGroupDef | ColDef) =>
+        comparator(a.headerName!, b.headerName!);
+
+// `pivotSort: null` is an explicit "no sort": keep the order the columns were generated in (stable sort no-op).
+const naturalOrderComparator = (): number => 0;
+
+export class PivotColDefService extends BeanStub implements NamedBean, IPivotColDefService {
+    beanName = 'pivotColDefSvc' as const;
+
+    private colModel: ColumnModel;
+    private pivotColsSvc?: IPivotColsService;
+    private valueColsSvc?: IValueColsService;
+    private colNames: ColumnNameService;
+
+    public wireBeans(beans: BeanCollection) {
+        this.colModel = beans.colModel;
+        this.pivotColsSvc = beans.pivotColsSvc;
+        this.valueColsSvc = beans.valueColsSvc;
+        this.colNames = beans.colNames;
+    }
+
+    private fieldSeparator: string;
+    private pivotDefaultExpanded: number;
+
+    public postConstruct(): void {
+        const getFieldSeparator = () => this.gos.get('serverSidePivotResultFieldSeparator') ?? '_';
+        this.fieldSeparator = getFieldSeparator();
+        this.addManagedPropertyListener('serverSidePivotResultFieldSeparator', () => {
+            this.fieldSeparator = getFieldSeparator();
+        });
+
+        const getPivotDefaultExpanded = () => this.gos.get('pivotDefaultExpanded');
+        this.pivotDefaultExpanded = getPivotDefaultExpanded();
+        this.addManagedPropertyListener('pivotDefaultExpanded', () => {
+            this.pivotDefaultExpanded = getPivotDefaultExpanded();
+        });
+    }
+
+    public createPivotColumnDefs(uniqueValues: Map<string, any>): (ColDef | ColGroupDef)[] {
+        // this is passed to the colModel, to configure the columns and groups we show
+
+        const pivotColumnGroupDefs: (ColDef | ColGroupDef)[] = this.createPivotColumnsFromUniqueValues(uniqueValues);
+
+        function extractColDefs(input: (ColDef | ColGroupDef)[], arr: ColDef[] = []): ColDef[] {
+            input.forEach((def: any) => {
+                if (def.children !== undefined) {
+                    extractColDefs(def.children, arr);
+                } else {
+                    arr.push(def);
+                }
+            });
+            return arr;
+        }
+        const pivotColumnDefs = extractColDefs(pivotColumnGroupDefs);
+
+        // additional columns that contain the aggregated total for each value column per row
+        this.addRowGroupTotals(pivotColumnGroupDefs, pivotColumnDefs);
+
+        // additional group columns that contain child totals for each collapsed child column / group
+        this.addExpandablePivotGroups(pivotColumnGroupDefs, pivotColumnDefs);
+
+        // additional group columns that contain an aggregated total across all child columns
+        this.addPivotTotalsToGroups(pivotColumnGroupDefs, pivotColumnDefs);
+
+        return pivotColumnGroupDefs;
+    }
+
+    private createPivotColumnsFromUniqueValues(uniqueValues: Map<string, any>): (ColDef | ColGroupDef)[] {
+        const pivotColumns = this.pivotColsSvc?.columns ?? [];
+        const maxDepth = pivotColumns.length;
+
+        const pivotColumnGroupDefs: (ColDef | ColGroupDef)[] = this.recursivelyBuildGroup(
+            0,
+            uniqueValues,
+            [],
+            maxDepth,
+            pivotColumns
+        );
+        return pivotColumnGroupDefs;
+    }
+
+    private recursivelyBuildGroup(
+        index: number,
+        uniqueValue: Map<string, any>,
+        pivotKeys: string[],
+        maxDepth: number,
+        primaryPivotColumns: AgColumn[]
+    ): ColGroupDef[] | ColDef[] {
+        if (index >= maxDepth) {
+            // Base case - build the measure columns
+            return this.buildMeasureCols(pivotKeys);
+        }
+
+        // sort by either user provided comparator, or our own one
+        const primaryColumn = primaryPivotColumns[index];
+        const primaryColDef = primaryColumn.colDef;
+        const comparator = this.getPivotGroupComparator(primaryColumn);
+
+        const measureColumns = this.valueColsSvc?.columns;
+        // Base case for the compact layout, instead of recursing build the last layer of groups as measure columns instead
+        if (
+            measureColumns?.length === 1 &&
+            this.gos.get('removePivotHeaderRowWhenSingleValueColumn') &&
+            index === maxDepth - 1
+        ) {
+            const leafCols: ColDef[] = [];
+
+            for (const key of uniqueValue.keys()) {
+                const newPivotKeys = [...pivotKeys, key];
+                const headerName = getPivotHeaderName(key, primaryColDef);
+                const colDef = this.createColDef(measureColumns[0], headerName, newPivotKeys);
+                colDef.columnGroupShow = 'open';
+                leafCols.push(colDef);
+            }
+            leafCols.sort(comparator);
+            return leafCols;
+        }
+
+        // Recursive case
+        const groups: ColGroupDef[] = [];
+        for (const key of uniqueValue.keys()) {
+            // expand group by default based on depth of group. (pivotDefaultExpanded provides desired level of depth for expanding group by default)
+            const openByDefault = this.pivotDefaultExpanded === -1 || index < this.pivotDefaultExpanded;
+
+            const newPivotKeys = [...pivotKeys, key];
+            groups.push({
+                children: this.recursivelyBuildGroup(
+                    index + 1,
+                    uniqueValue.get(key),
+                    newPivotKeys,
+                    maxDepth,
+                    primaryPivotColumns
+                ),
+                headerName: getPivotHeaderName(key, primaryColDef),
+                pivotKeys: newPivotKeys,
+                columnGroupShow: 'open',
+                openByDefault,
+                groupId: this.generateColumnGroupId(newPivotKeys),
+            });
+        }
+        groups.sort(comparator);
+        return groups;
+    }
+
+    private buildMeasureCols(pivotKeys: string[]): ColDef[] {
+        const measureColumns = this.valueColsSvc?.columns ?? [];
+        if (measureColumns.length === 0) {
+            // if no value columns selected, then we insert one blank column, so the user at least sees columns
+            // rendered. otherwise the grid would render with no columns (just empty groups) which would give the
+            // impression that the grid is broken
+            return [this.createColDef(null, '-', pivotKeys)];
+        }
+        return measureColumns.map((measureCol) => {
+            const columnName = this.colNames.getDisplayNameForColumn(measureCol, 'header');
+            const colDef = this.createColDef(measureCol, columnName, pivotKeys);
+            colDef.columnGroupShow = 'open';
+            return colDef;
+        });
+    }
+
+    private addExpandablePivotGroups(pivotColumnGroupDefs: (ColDef | ColGroupDef)[], pivotColumnDefs: ColDef[]) {
+        const isSuppressExpand = this.gos.get('suppressExpandablePivotGroups');
+        if (isSuppressExpand || this.gos.get('pivotColumnGroupTotals')) {
+            return;
+        }
+
+        const recursivelyAddSubTotals = (
+            def: ColGroupDef | ColDef,
+            currentPivotColumnDefs: ColDef[],
+            acc: Map<string, string[]>
+        ) => {
+            if ('children' in def) {
+                const { valueColsSvc } = this;
+                const { columns: valueCols = [] } = valueColsSvc ?? {};
+                const childAcc = new Map();
+
+                def.children.forEach((grp: ColDef | ColGroupDef) => {
+                    recursivelyAddSubTotals(grp, currentPivotColumnDefs, childAcc);
+                });
+
+                const leafGroup = !def.children.some((child) => (child as ColGroupDef).children);
+                const hasCollapsedLeafGroup =
+                    leafGroup && valueCols.length === 1 && this.gos.get('removePivotHeaderRowWhenSingleValueColumn');
+
+                for (const valueColumn of valueCols) {
+                    const columnName: string | null = this.colNames.getDisplayNameForColumn(valueColumn, 'header');
+                    const totalColDef = this.createColDef(valueColumn, columnName, def.pivotKeys);
+                    totalColDef.pivotTotalColumnIds = childAcc.get(valueColumn.colId);
+
+                    totalColDef.columnGroupShow = !isSuppressExpand ? 'closed' : 'open';
+
+                    totalColDef.aggFunc = valueColumn.aggFunc;
+
+                    if (!leafGroup || hasCollapsedLeafGroup) {
+                        // add total colDef to group and pivot colDefs array
+                        const children = def.children;
+                        children.push(totalColDef);
+                        currentPivotColumnDefs.push(totalColDef);
+                    }
+                }
+
+                this.merge(acc, childAcc);
+
+                return;
+            }
+
+            // check that value column exists, i.e. aggFunc is supplied
+            const pivotValueColumn = def.pivotValueColumn as AgColumn | null | undefined;
+            if (!pivotValueColumn) {
+                return;
+            }
+
+            const pivotValueColId = pivotValueColumn.colId;
+            const exists = acc.has(pivotValueColId);
+            if (exists) {
+                const arr = acc.get(pivotValueColId)!;
+                arr.push(def.colId!);
+            } else {
+                acc.set(pivotValueColId, [def.colId!]);
+            }
+        };
+
+        pivotColumnGroupDefs.forEach((groupDef: ColGroupDef | ColDef) => {
+            recursivelyAddSubTotals(groupDef, pivotColumnDefs, new Map());
+        });
+    }
+
+    private addPivotTotalsToGroups(pivotColumnGroupDefs: (ColDef | ColGroupDef)[], pivotColumnDefs: ColDef[]) {
+        if (!this.gos.get('pivotColumnGroupTotals')) {
+            return;
+        }
+
+        const insertAfter = this.gos.get('pivotColumnGroupTotals') === 'after';
+
+        const valueCols = this.valueColsSvc?.columns;
+        const aggFuncs = valueCols?.map((valueCol) => valueCol.aggFunc);
+
+        // don't add pivot totals if there is less than 1 aggFunc or they are not all the same
+        if (!aggFuncs || aggFuncs.length < 1 || !this.sameAggFuncs(aggFuncs)) {
+            // value columns require same aggFunc for pivot totals
+            return;
+        }
+
+        if (valueCols) {
+            // arbitrarily select a value column to use as a template for pivot columns
+            const valueColumn = valueCols[0];
+
+            pivotColumnGroupDefs.forEach((groupDef: ColGroupDef | ColDef) => {
+                this.recursivelyAddPivotTotal(groupDef, pivotColumnDefs, valueColumn, insertAfter);
+            });
+        }
+    }
+
+    private recursivelyAddPivotTotal(
+        groupDef: ColGroupDef | ColDef,
+        pivotColumnDefs: ColDef[],
+        valueColumn: AgColumn,
+        insertAfter: boolean
+    ): string[] | null {
+        const group = groupDef as ColGroupDef;
+        if (!group.children) {
+            const def: ColDef = groupDef as ColDef;
+            return def.colId ? [def.colId] : null;
+        }
+
+        let colIds: string[] = [];
+
+        // need to recurse children first to obtain colIds used in the aggregation stage
+        group.children.forEach((grp: ColDef | ColGroupDef) => {
+            const childColIds = this.recursivelyAddPivotTotal(grp, pivotColumnDefs, valueColumn, insertAfter);
+            if (childColIds) {
+                colIds = colIds.concat(childColIds);
+            }
+        });
+
+        // only add total colDef if there is more than 1 child node
+        if (group.children.length > 1) {
+            const localeTextFunc = this.getLocaleTextFunc();
+            const headerName = localeTextFunc('pivotColumnGroupTotals', 'Total');
+
+            //create total colDef using an arbitrary value column as a template
+            const totalColDef = this.createColDef(valueColumn, headerName, groupDef.pivotKeys, true);
+            totalColDef.pivotTotalColumnIds = colIds;
+            totalColDef.aggFunc = valueColumn.aggFunc;
+            totalColDef.columnGroupShow = this.gos.get('suppressExpandablePivotGroups') ? 'open' : undefined;
+
+            // add total colDef to group and pivot colDefs array
+            const children = (groupDef as ColGroupDef).children;
+            if (insertAfter) {
+                children.push(totalColDef);
+            } else {
+                children.unshift(totalColDef);
+            }
+            pivotColumnDefs.push(totalColDef);
+        }
+
+        return colIds;
+    }
+
+    private addRowGroupTotals(pivotColumnGroupDefs: (ColDef | ColGroupDef)[], pivotColumnDefs: ColDef[]) {
+        if (!this.gos.get('pivotRowTotals')) {
+            return;
+        }
+
+        const insertAtEnd = this.gos.get('pivotRowTotals') === 'after';
+
+        const valueColumns = this.valueColsSvc?.columns ?? [];
+        const valueCols = valueColumns.slice();
+
+        if (!insertAtEnd) {
+            // if inserting before, we use unshift to insert at the start, so reverse the order to maintain the order of value cols
+            valueCols.reverse();
+        }
+
+        const isCreateTotalGroups = valueCols.length > 1 || !this.gos.get('removePivotHeaderRowWhenSingleValueColumn');
+        for (let i = 0; i < valueCols.length; i++) {
+            const valueCol = valueCols[i];
+
+            const columnName: string | null = this.colNames.getDisplayNameForColumn(valueCol, 'header');
+            const colDef = this.createColDef(valueCol, columnName, []);
+
+            const colIds: string[] = [];
+            for (let i = 0; i < pivotColumnDefs.length; i++) {
+                const colDef = pivotColumnDefs[i];
+                if (colDef.pivotValueColumn === valueCol) {
+                    colIds.push(colDef.colId!);
+                }
+            }
+
+            colDef.pivotTotalColumnIds = colIds;
+            colDef.colId = PIVOT_ROW_TOTAL_PREFIX + colDef.colId;
+
+            const valueGroup: ColGroupDef | ColDef = isCreateTotalGroups
+                ? {
+                      children: [colDef],
+                      pivotKeys: [],
+                      groupId: `${PIVOT_ROW_TOTAL_PREFIX}_pivotGroup_${valueCol.colId}`,
+                  }
+                : colDef;
+
+            pivotColumnDefs.push(colDef);
+            if (insertAtEnd) {
+                pivotColumnGroupDefs.push(valueGroup);
+            } else {
+                pivotColumnGroupDefs.unshift(valueGroup);
+            }
+        }
+    }
+
+    /**
+     * Recreate a pivot colDef to update from a changed valueColumn colDef
+     */
+    public recreateColDef(colDef: ColDef): ColDef {
+        const {
+            pivotValueColumn,
+            headerName,
+            pivotKeys,
+            pivotTotalColumnIds,
+            columnGroupShow,
+            colId,
+            field,
+            valueGetter,
+            aggFunc,
+        } = colDef;
+
+        if (!pivotValueColumn) {
+            // if this is not a pivot value column, then we don't need to recreate it
+            return colDef;
+        }
+
+        const newColDef = this.createColDef(pivotValueColumn as AgColumn, headerName, pivotKeys, !!pivotTotalColumnIds);
+
+        // preserve pivot-result identity from the old colDef.
+        newColDef.columnGroupShow = columnGroupShow;
+        newColDef.colId = colId;
+        newColDef.field = field;
+        newColDef.valueGetter = valueGetter;
+        newColDef.aggFunc = aggFunc;
+        newColDef.pivotTotalColumnIds = pivotTotalColumnIds;
+
+        this.gos.get('processPivotResultColDef')?.(newColDef);
+
+        return newColDef;
+    }
+
+    private createColDef(
+        valueColumn: AgColumn | null,
+        headerName: any,
+        pivotKeys: string[] | undefined,
+        totalColumn: boolean = false
+    ): ColDef {
+        const colDef: ColDef = {};
+
+        // This is null when there are no measure columns and we're creating placeholder columns
+        if (valueColumn) {
+            const colDefToCopy = valueColumn.colDef;
+            Object.assign(colDef, colDefToCopy);
+
+            // even if original column was hidden, we always show the pivot value column, otherwise it would be
+            // very confusing for people thinking the pivot is broken
+            colDef.hide = false;
+
+            // A pivot result column aggregates its source's per-leaf values. If the source is a calculated
+            // column, drop its calc-col fields so the result aggregates instead of re-evaluating the formula.
+            if (valueColumn.isCalculatedCol) {
+                colDef.calculatedExpression = undefined;
+                colDef.allowFormula = undefined;
+            }
+        }
+
+        colDef.headerName = headerName;
+        colDef.colId = this.generateColumnId(pivotKeys || [], valueColumn && !totalColumn ? valueColumn.colId : '');
+
+        // pivot columns repeat over field, so it makes sense to use the unique id instead. For example if you want to
+        // assign values to pinned bottom rows using setPinnedBottomRowData the value service will use this colId.
+        colDef.field = colDef.colId;
+        // this is to support using pinned rows, normally the data will be extracted from the aggData object using the colId
+        // however pinned rows still access the data object by field, this prevents values with dots from being treated as complex objects
+        colDef.valueGetter = (params) => params.data?.[params.colDef.field!];
+
+        colDef.pivotKeys = pivotKeys;
+        colDef.pivotValueColumn = valueColumn;
+        if (colDef.filter === true) {
+            colDef.filter = 'agNumberColumnFilter';
+        }
+
+        return colDef;
+    }
+
+    private sameAggFuncs(aggFuncs: any[]) {
+        if (aggFuncs.length == 1) {
+            return true;
+        }
+        //check if all aggFunc's match
+        for (let i = 1; i < aggFuncs.length; i++) {
+            if (aggFuncs[i] !== aggFuncs[0]) {
+                return false;
+            }
+        }
+        return true;
+    }
+
+    private merge(m1: Map<string, string[]>, m2: Map<any, any>) {
+        m2.forEach((value, key) => {
+            const existingList = m1.has(key) ? m1.get(key) : [];
+            const updatedList = [...existingList!, ...value];
+            m1.set(key, updatedList);
+        });
+    }
+
+    private generateColumnGroupId(pivotKeys: string[]): string {
+        const pivotCols = (this.pivotColsSvc?.columns ?? []).map((col) => col.colId);
+        return `pivotGroup_${pivotCols.join('-')}_${pivotKeys.join('-')}`;
+    }
+
+    private generateColumnId(pivotKeys: string[], measureColumnId: string) {
+        const pivotCols = (this.pivotColsSvc?.columns ?? []).map((col) => col.colId);
+        return `pivot_${pivotCols.join('-')}_${pivotKeys.join('-')}_${measureColumnId}`;
+    }
+
+    /** Comparator ordering a pivot column's groups. `pivotSort` is isolated from `colDef.sort`:
+     *  `null` keeps the natural (generated) order, `'desc'` reverses, and the unset default (`undefined`)
+     *  and `'asc'` both sort ascending by the custom `pivotComparator` or header name. */
+    private getPivotGroupComparator(
+        primaryColumn: AgColumn
+    ): (a: ColGroupDef | ColDef, b: ColGroupDef | ColDef) => number {
+        const pivotSort = primaryColumn.pivotSort;
+        if (pivotSort === null) {
+            return naturalOrderComparator;
+        }
+        const pivotComparator = primaryColumn.colDef.pivotComparator;
+        const baseComparator = pivotComparator ? convertToHeaderNameComparator(pivotComparator) : headerNameComparator;
+        if (pivotSort === 'desc') {
+            return (a, b) => baseComparator(b, a);
+        }
+        return baseComparator;
+    }
+
+    /**
+     * Used by the SSRM to create secondary columns from provided fields
+     * @param fields
+     */
+    public createColDefsFromFields(fields: string[]): (ColDef | ColGroupDef)[] {
+        const pivotColumns = this.pivotColsSvc?.columns ?? [];
+        // The comparator only depends on the level's pivot column, so resolve one per level up front rather
+        // than reconstructing it for every group node during the recursive walk.
+        const levelComparators = pivotColumns.map((col) => this.getPivotGroupComparator(col));
+        type UniqueValue = Map<string, UniqueValue>;
+        // tear the ids down into groups, while this could be done in-step with the next stage, the lookup is faster
+        // than searching col group children array for the right group
+        const uniqueValues: UniqueValue = new Map(); // use maps over objects as objects sort numeric keys
+        for (let i = 0; i < fields.length; i++) {
+            const field = fields[i];
+            const parts = field.split(this.fieldSeparator);
+
+            let level: UniqueValue = uniqueValues;
+            for (let p = 0; p < parts.length; p++) {
+                const part = parts[p];
+                let map = level.get(part);
+                if (!map) {
+                    map = new Map();
+                    level.set(part, map);
+                }
+                level = map;
+            }
+        }
+
+        const uniqueValuesToGroups = (
+            id: string,
+            key: string,
+            uniqueValues: UniqueValue,
+            depth: number,
+            path: string[]
+        ): ColDef | ColGroupDef => {
+            const children: (ColDef | ColGroupDef)[] = [];
+            for (const [childKey, item] of uniqueValues) {
+                const child = uniqueValuesToGroups(
+                    `${id}${this.fieldSeparator}${childKey}`,
+                    childKey,
+                    item,
+                    depth + 1,
+                    [...path, childKey]
+                );
+                children.push(child);
+            }
+
+            // Children are the next pivot level; the measure level (>= pivot column count) keeps server order.
+            const childLevel = depth + 1;
+            if (childLevel < pivotColumns.length) {
+                children.sort(levelComparators[childLevel]);
+            }
+
+            if (children.length === 0) {
+                // The leaf's own key is the measure column; the preceding path entries are the pivot keys.
+                const pivotKeys = path.slice(0, -1);
+                const potentialAggCol = this.colModel.getNonPivotCol(key);
+                if (potentialAggCol) {
+                    const headerName = this.colNames.getDisplayNameForColumn(potentialAggCol, 'header') ?? key;
+                    const colDef = this.createColDef(potentialAggCol, headerName, undefined, false);
+                    colDef.colId = id;
+                    colDef.aggFunc = potentialAggCol.aggFunc;
+                    colDef.valueGetter = (params) => params.data?.[id];
+                    colDef.pivotKeys = pivotKeys;
+                    return colDef;
+                }
+
+                const col: ColDef = {
+                    colId: id,
+                    headerName: key,
+                    pivotKeys,
+                    // this is to support using pinned rows, normally the data will be extracted from the aggData object using the colId
+                    // however pinned rows still access the data object by field, this prevents values with dots from being treated as complex objects
+                    valueGetter: (params) => params.data?.[id],
+                };
+                return col;
+            }
+
+            // this is a bit sketchy. As the fields can be anything we just build groups as deep as the fields go.
+            // nothing says user has to give us groups the same depth.
+            const collapseSingleChildren = this.gos.get('removePivotHeaderRowWhenSingleValueColumn');
+            if (collapseSingleChildren && children.length === 1 && 'colId' in children[0]) {
+                children[0].headerName = key;
+                return children[0];
+            }
+
+            const group: ColGroupDef = {
+                openByDefault: this.pivotDefaultExpanded === -1 || depth < this.pivotDefaultExpanded,
+                groupId: id,
+                headerName: key,
+                children,
+            };
+            return group;
+        };
+
+        const res: (ColDef | ColGroupDef)[] = [];
+        for (const [key, item] of uniqueValues) {
+            const col = uniqueValuesToGroups(key, key, item, 0, [key]);
+            res.push(col);
+        }
+        if (pivotColumns.length > 0) {
+            res.sort(levelComparators[0]);
+        }
+        return res;
+    }
+}
+
+function getPivotHeaderName(key: string, colDef: ColDef): string {
+    return colDef.refData?.[key] ?? key;
+}

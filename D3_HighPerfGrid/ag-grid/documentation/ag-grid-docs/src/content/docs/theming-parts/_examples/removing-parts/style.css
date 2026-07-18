@@ -1,0 +1,35 @@
+.ag-checkbox-input-wrapper {
+    border-radius: 4px;
+    /** You can reference theme parameters like `foregroundColor` in
+        your CSS, add the --ag- prefix and convert to kebab-case */
+    box-shadow: 0 0 10px var(--ag-foreground-color);
+    width: 16px;
+    height: 16px;
+
+    &.ag-checked {
+        box-shadow: 0 0 5px 4px red;
+        &::before {
+            content: '✔';
+            position: absolute;
+            pointer-events: none;
+            inset: 0;
+            text-align: center;
+            line-height: 16px;
+            font-size: 14px;
+        }
+    }
+}
+
+.ag-checkbox-input {
+    width: 16px;
+    height: 16px;
+    margin: 0;
+    appearance: none;
+    -webkit-appearance: none;
+    border-radius: 4px;
+
+    &:focus {
+        box-shadow: 0 0 3px 3px yellow;
+        outline: none;
+    }
+}

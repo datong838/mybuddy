@@ -1,0 +1,321 @@
+@use 'ag';
+@use './material-variables';
+
+.ag-theme-material,
+.ag-theme-material-dark,
+.ag-theme-material-auto-dark {
+    .ag-filter-toolpanel-header,
+    .ag-filter-toolpanel-search,
+    .ag-status-bar,
+    .ag-header-row,
+    .ag-row-number-cell,
+    .ag-panel-title-bar-title,
+    .ag-multi-filter-group-title-bar {
+        font-size: calc(var(--ag-font-size) - 1px);
+        font-weight: 600;
+        color: var(--ag-header-foreground-color);
+    }
+
+    .ag-tab {
+        height: calc(var(--ag-grid-size) * 4.5);
+        flex: 1 1 auto;
+    }
+
+    .ag-tabs-header,
+    .ag-column-drop-horizontal {
+        background-color: var(--ag-subheader-background-color);
+    }
+
+    .ag-toolbar-item:where(:not(.ag-toolbar-panel)) {
+        font-weight: 600;
+    }
+
+    .ag-toolbar-item {
+        font-size: calc(var(--ag-font-size) - 1px);
+    }
+
+    .ag-toolbar .ag-column-drop-horizontal {
+        background-color: transparent;
+    }
+
+    .ag-toolbar .ag-toolbar-panel {
+        padding-inline-start: var(--ag-grid-size);
+    }
+
+    .ag-tabs-body {
+        padding: calc(var(--ag-grid-size) * 0.5) 0;
+    }
+
+    .ag-tabs-body .ag-menu-list {
+        padding-top: 0;
+        padding-bottom: 0;
+    }
+
+    .ag-header-cell,
+    .ag-header-group-cell {
+        transition: background-color 0.5s;
+    }
+
+    .ag-row-last:not(.ag-row-first) .ag-cell-inline-editing {
+        bottom: 0;
+    }
+
+    .ag-cell-inline-editing {
+        padding: var(--ag-grid-size);
+        height: calc(var(--ag-row-height) + var(--ag-grid-size) * 3);
+        border-color: var(--ag-border-color) !important;
+    }
+
+    .ag-has-focus {
+        .ag-cell-inline-editing {
+            border-color: var(--ag-input-focus-border-color) !important;
+        }
+    }
+
+    .ag-column-drop-vertical {
+        border-bottom: solid 1px;
+        border-bottom-color: var(--ag-border-color);
+        padding-top: var(--ag-grid-size);
+
+        &.ag-last-column-drop {
+            border-bottom: none;
+        }
+    }
+
+    .ag-column-drop-vertical-cell {
+        margin-left: 0;
+    }
+
+    .ag-column-drop-vertical-empty-message {
+        font-size: calc(var(--ag-font-size) - 1px);
+        font-weight: 600;
+        color: var(--ag-disabled-foreground-color);
+
+        @include ag.theme-rtl(
+            (
+                padding-left: calc(var(--ag-icon-size) + var(--ag-grid-size) * 2),
+                padding-right: var(--ag-grid-size),
+            )
+        );
+    }
+
+    .ag-status-bar {
+        border: solid 1px;
+        border-color: var(--ag-border-color);
+    }
+
+    .ag-column-panel-column-select {
+        border-top: solid 1px;
+        border-top-color: var(--ag-border-color);
+    }
+
+    .ag-column-select,
+    .ag-column-select-header {
+        border-bottom: solid 1px;
+        border-bottom-color: var(--ag-border-color);
+    }
+
+    .ag-column-select-header {
+        height: var(--ag-header-height);
+    }
+
+    .ag-group-title-bar {
+        padding: calc(var(--ag-grid-size) * 0.75) var(--ag-grid-size);
+    }
+
+    .ag-charts-format-sub-level-group-title-bar {
+        padding: calc(var(--ag-grid-size) * 0.5) var(--ag-grid-size);
+    }
+
+    .ag-chart-data-section,
+    .ag-chart-format-section,
+    .ag-chart-advanced-settings-section {
+        padding-bottom: calc(var(--ag-grid-size) * 0.5);
+    }
+
+    @include ag.text-input {
+        background: transparent;
+        color: var(--ag-foreground-color);
+        font-family: inherit;
+        font-size: inherit;
+        padding-bottom: var(--ag-grid-size);
+
+        border-width: 0;
+        border-radius: 0;
+        border-bottom: 2px solid;
+        border-bottom-color: var(--ag-border-color);
+
+        &:not(textarea) {
+            height: calc(var(--ag-grid-size) * 5);
+        }
+
+        &:focus {
+            border-bottom: 2px solid;
+            border-bottom-color: var(--ag-material-primary-color);
+            outline: none;
+            box-shadow: none;
+        }
+
+        &::placeholder {
+            color: var(--ag-disabled-foreground-color);
+        }
+
+        &:disabled {
+            border-bottom: 1px solid;
+            border-bottom-color: var(--ag-border-color);
+        }
+
+        &:invalid {
+            border-width: 0;
+            border-bottom: 1px solid;
+            border-bottom-color: var(--ag-invalid-color);
+            color: var(--ag-invalid-color);
+        }
+    }
+
+    // Toolbar: button hover animation matching header cells
+    .ag-toolbar-button-wrapper {
+        transition: background-color 0.5s;
+    }
+
+    // Toolbar: underlined inputs matching Material text-input style
+    .ag-toolbar-find,
+    .ag-toolbar-input {
+        border-left: none;
+        border-right: none;
+        border-top: none;
+        box-shadow: none;
+    }
+
+    .ag-toolbar-find {
+        height: calc(var(--ag-grid-size) * 5);
+        border-bottom: 2px solid var(--ag-border-color);
+    }
+
+    .ag-toolbar-find:focus-within {
+        border-top: none;
+        border-left: none;
+        border-right: none;
+        box-shadow: none;
+        border-bottom: 2px solid var(--ag-material-primary-color);
+    }
+
+    .ag-toolbar-input-field:focus {
+        border-top: none;
+        border-left: none;
+        border-right: none;
+        box-shadow: none;
+    }
+
+    // Remove text-input mixin's padding-bottom so toolbar input text aligns with the icon
+    .ag-toolbar {
+        @include ag.text-input {
+            padding-bottom: 0;
+        }
+    }
+
+    // Reduce text-input mixin's padding-bottom so the page-number text stays centred.
+    // Input text was vertically off by 1px all this time in the legacy theme; corrected here.
+    .ag-paging-number .ag-input-field-input.ag-number-field-input {
+        padding-bottom: 1px;
+    }
+
+    .ag-standard-button {
+        appearance: none;
+        background-color: transparent;
+        border: 0;
+        color: var(--ag-material-primary-color);
+        font-family: inherit;
+        font-size: inherit;
+        margin: 0;
+        padding: 0;
+        text-transform: uppercase;
+
+        &:disabled {
+            color: var(--ag-disabled-foreground-color);
+            background-color: var(--ag-input-disabled-background-color);
+            border-color: var(--ag-input-disabled-border-color);
+        }
+    }
+
+    .ag-dnd-ghost {
+        font-size: calc(var(--ag-font-size) - 1px);
+        font-weight: 600;
+    }
+
+    .ag-filter-toolpanel-header {
+        height: calc(var(--ag-grid-size) * 4);
+    }
+
+    .ag-filter-toolpanel-group-level-0-header {
+        height: calc(var(--ag-grid-size) * 7);
+    }
+
+    .ag-filter-card-title {
+        font-size: calc(var(--ag-font-size) - 1px);
+        font-weight: 600;
+    }
+
+    .ag-filter-panel .ag-standard-button {
+        padding: var(--ag-grid-size);
+    }
+
+    .ag-filter-add-button {
+        border-bottom: 2px solid var(--ag-material-primary-color);
+    }
+
+    .ag-filter-add-button .ag-icon {
+        color: var(--ag-material-active-color);
+    }
+
+    .ag-filter-apply-panel-button,
+    .ag-advanced-filter-apply-button,
+    .ag-advanced-filter-builder-button {
+        @include ag.theme-rtl(
+            (
+                margin-left: var(--ag-grid-size),
+            )
+        );
+    }
+
+    .ag-picker-field-wrapper:focus-within {
+        box-shadow: 0 0 0 1px var(--ag-material-primary-color);
+    }
+
+    .ag-rich-select-list {
+        box-shadow:
+            rgba(0, 0, 0, 0.2) 0px 5px 5px -3px,
+            rgba(0, 0, 0, 0.14) 0px 8px 10px 1px,
+            rgba(0, 0, 0, 0.12) 0px 3px 14px 2px;
+    }
+
+    .ag-advanced-filter-builder-button-label {
+        text-transform: uppercase;
+    }
+
+    .ag-filter-active .ag-icon-filter {
+        color: var(--ag-material-accent-color);
+    }
+
+    .ag-list-item-hovered::after {
+        background-color: var(--ag-material-primary-color);
+    }
+
+    .ag-pill .ag-pill-button:hover {
+        color: var(--ag-material-primary-color);
+    }
+
+    .ag-header-highlight-before::after,
+    .ag-header-highlight-after::after {
+        background-color: var(--ag-material-primary-color);
+    }
+
+    .ag-advanced-filter-builder-item-button-disabled,
+    .ag-disabled,
+    .ag-column-select-column-group-readonly,
+    [disabled] {
+        .ag-icon {
+            color: var(--ag-disabled-foreground-color);
+        }
+    }
+}

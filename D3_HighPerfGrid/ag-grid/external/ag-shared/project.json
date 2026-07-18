@@ -1,0 +1,62 @@
+{
+  "name": "ag-shared",
+  "$schema": "../../node_modules/nx/schemas/project-schema.json",
+  "projectType": "library",
+  "sourceRoot": "{projectRoot}/src",
+  "targets": {
+    "build": {
+      "executor": "nx:noop",
+      "dependsOn": ["build:types", "build:package"],
+      "inputs": [],
+      "outputs": [],
+      "configurations": {
+        "watch": {},
+        "production": {}
+      }
+    },
+    "build:package": {
+      "command": "swc -d dist/package --delete-dir-on-start scripts/",
+      "inputs": ["{projectRoot}/scripts/plugin-utils/**/*.ts"],
+      "outputs": ["{projectRoot}/dist/package"],
+      "cache": true,
+      "options": { "cwd": "{projectRoot}" }
+    },
+    "build:types": {
+      "executor": "@nx/js:tsc",
+      "dependsOn": ["^build:types"],
+      "inputs": [
+        "{projectRoot}/package.json",
+        "{projectRoot}/src/**/*",
+        "{projectRoot}/tsconfig.*.json",
+        "{projectRoot}/scripts/plugin-utils/**/*.ts",
+        "tsDeclarations",
+        "sharedGlobals",
+        "defaultExcludes",
+        {
+          "externalDependencies": ["npm:typescript"]
+        }
+      ],
+      "outputs": ["{options.outputPath}"],
+      "options": {
+        "outputPath": "{projectRoot}/dist/types",
+        "main": "{projectRoot}/src/main.ts",
+        "additionalEntryPoints": ["{projectRoot}/scripts/plugin-utils/index.ts"],
+        "tsConfig": "{projectRoot}/tsconfig.types.json",
+        "compiler": "tsc"
+      },
+      "configurations": {
+        "watch": {
+          "tsConfig": "{projectRoot}/tsconfig.types.watch.json"
+        },
+        "production": {}
+      }
+    },
+    "lint": {
+      "command": "eslint",
+      "options": {
+        "cwd": "{projectRoot}"
+      }
+    }
+  },
+  "tags": ["shared"]
+}

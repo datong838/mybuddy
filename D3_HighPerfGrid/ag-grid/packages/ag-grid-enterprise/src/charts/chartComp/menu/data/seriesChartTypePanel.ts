@@ -1,0 +1,171 @@
+import { _areEqual, _clearElement } from 'ag-stack';
+
+import type { BeanCollection, ChartType, GridCheckbox, GridSelect, SeriesChartType } from 'ag-grid-community';
+import { AgCheckbox, AgSelect, Component } from 'ag-grid-community';
+
+import { AgGroupComponent } from '../../../../agStack/agGroupComponent';
+import type { GroupComponent } from '../../../../widgets/gridEnterpriseWidgetTypes';
+import type { ChartController } from '../../chartController';
+import type { ColState } from '../../model/chartDataModel';
+import type { ChartTranslationService } from '../../services/chartTranslationService';
+import { getFullChartNameTranslationKey } from '../../utils/seriesTypeMapper';
+
+export class SeriesChartTypePanel extends Component {
+    private chartTranslation: ChartTranslationService;
+
+    public wireBeans(beans: BeanCollection): void {
+        this.chartTranslation = beans.chartTranslation as ChartTranslationService;
+    }
+
+    private seriesChartTypeGroupComp: GroupComponent;
+    private selectedColIds: string[] = [];
+    private readonly chartTypeComps: Map<string, GridSelect> = new Map();
+    private readonly secondaryAxisComps: Map<string, GridCheckbox> = new Map();
+
+    constructor(
+        private readonly chartController: ChartController,
+        private columns: ColState[],
+        private isOpen?: boolean
+    ) {
+        super(/* html */ `<div id="seriesChartTypeGroup"></div>`);
+    }
+
+    public postConstruct() {
+        this.createSeriesChartTypeGroup(this.columns);
+    }
+
+    public refresh(columns: ColState[]): void {
+        if (!_areEqual(this.getValidColIds(columns), this.selectedColIds)) {
+            this.recreate(columns);
+        } else {
+            this.refreshComps();
+        }
+    }
+
+    private recreate(columns: ColState[]): void {
+        this.isOpen = this.seriesChartTypeGroupComp.isExpanded();
+        _clearElement(this.getGui());
+        this.destroyBean(this.seriesChartTypeGroupComp);
+        this.columns = columns;
+        this.selectedColIds = [];
+        this.clearComps();
+        this.postConstruct();
+    }
+
+    private getValidColIds(columns: ColState[]): string[] {
+        const seriesChartTypes = this.chartController.getSeriesChartTypes();
+
+        return columns
+            .filter((col) => col.selected && !!seriesChartTypes.filter((s) => s.colId === col.colId)[0])
+            .map(({ colId }) => colId);
+    }
+
+    private createSeriesChartTypeGroup(columns: ColState[]): void {
+        this.seriesChartTypeGroupComp = this.createBean(
+            new AgGroupComponent({
+                title: this.chartTranslation.translate('seriesChartType'),
+                enabled: true,
+                suppressEnabledCheckbox: true,
+                suppressOpenCloseIcons: false,
+                cssIdentifier: 'charts-data',
+                expanded: this.isOpen,
+            })
+        );
+
+        const seriesChartTypes = this.chartController.getSeriesChartTypes();
+
+        for (const col of columns) {
+            if (!col.selected) {
+                continue;
+            }
+
+            const seriesChartType: SeriesChartType = seriesChartTypes.filter((s) => s.colId === col.colId)[0];
+            if (!seriesChartType) {
+                continue;
+            }
+
+            this.selectedColIds.push(col.colId);
+
+            const seriesItemGroup: GroupComponent = this.seriesChartTypeGroupComp.createManagedBean(
+                new AgGroupComponent({
+                    title: col.displayName!,
+                    enabled: true,
+                    suppressEnabledCheckbox: true,
+                    suppressOpenCloseIcons: true,
+                    cssIdentifier: 'charts-format-sub-level',
+                })
+            );
+
+            const isSecondaryAxisDisabled = (chartType: ChartType) =>
+                ['groupedColumn', 'stackedColumn', 'stackedArea'].includes(chartType);
+
+            const secondaryAxisComp = this.seriesChartTypeGroupComp.createManagedBean<GridCheckbox>(
+                new AgCheckbox({
+                    label: this.chartTranslation.translate('secondaryAxis'),
+                    labelWidth: 'flex',
+                    disabled: isSecondaryAxisDisabled(seriesChartType.chartType),
+                    value: !!seriesChartType.secondaryAxis,
+                    onValueChange: (enabled: boolean) =>
+                        this.chartController.updateSeriesChartType(col.colId, undefined, enabled),
+                })
+            );
+
+            seriesItemGroup.addItem(secondaryAxisComp);
+
+            const options = (['line', 'area', 'stackedArea', 'groupedColumn', 'stackedColumn'] as const).map(
+                (value) => ({
+                    value,
+                    text: this.chartTranslation.translate(getFullChartNameTranslationKey(value)),
+                })
+            );
+
+            const chartTypeComp = seriesItemGroup.createManagedBean<GridSelect>(
+                new AgSelect({
+                    options,
+                    value: seriesChartType.chartType,
+                    onValueChange: (chartType: ChartType) =>
+                        this.chartController.updateSeriesChartType(col.colId, chartType),
+                })
+            );
+
+            seriesItemGroup.addItem(chartTypeComp);
+
+            this.seriesChartTypeGroupComp.addItem(seriesItemGroup);
+            this.chartTypeComps.set(col.colId, chartTypeComp);
+            this.secondaryAxisComps.set(col.colId, secondaryAxisComp);
+        }
+
+        this.getGui().appendChild(this.seriesChartTypeGroupComp.getGui());
+    }
+
+    private refreshComps(): void {
+        const seriesChartTypes = this.chartController.getSeriesChartTypes();
+        for (const colId of this.selectedColIds) {
+            const seriesChartType = seriesChartTypes.find((chartType) => chartType.colId === colId);
+            if (!seriesChartType) {
+                continue;
+            }
+            const chartTypeComp = this.chartTypeComps.get(colId);
+            const secondaryAxisComp = this.secondaryAxisComps.get(colId);
+
+            chartTypeComp?.setValue(seriesChartType.chartType);
+            secondaryAxisComp?.setValue(!!seriesChartType.secondaryAxis);
+            secondaryAxisComp?.setDisabled(this.isSecondaryAxisDisabled(seriesChartType.chartType));
+        }
+    }
+
+    private clearComps(): void {
+        this.chartTypeComps.clear();
+        this.secondaryAxisComps.clear();
+    }
+
+    private isSecondaryAxisDisabled(chartType: ChartType): boolean {
+        return ['groupedColumn', 'stackedColumn', 'stackedArea'].includes(chartType);
+    }
+
+    public override destroy(): void {
+        this.clearComps();
+        this.seriesChartTypeGroupComp = this.destroyBean(this.seriesChartTypeGroupComp)!;
+        super.destroy();
+    }
+}

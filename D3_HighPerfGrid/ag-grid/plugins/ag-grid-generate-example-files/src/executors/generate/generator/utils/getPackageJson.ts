@@ -1,0 +1,101 @@
+import { readFileSync } from 'fs';
+
+import type { InternalFramework } from '../types';
+
+interface Params {
+    isLocale: boolean;
+    internalFramework: InternalFramework;
+    isIntegratedCharts: boolean;
+}
+
+export const agChartsVersion = 'latest'; // TODO have this set properly
+
+function getPackageJsonVersion(packageName: string, isModule: boolean = false) {
+    const path = isModule
+        ? `${process.cwd()}/community-modules/${packageName}/package.json`
+        : `${process.cwd()}/packages/${packageName}/package.json`;
+    const packageJsonStr = readFileSync(path, 'utf-8');
+    const packageJson = JSON.parse(packageJsonStr);
+    // Strip pre-release suffix (e.g. "35.1.0-beta.20260218.1143" → "35.1.0")
+    // This enables Plunker to locate types via the dummy package.json.
+    // These have to be published externally.
+    return (packageJson.version as string).replace(/-.*$/, '');
+}
+
+export function getPackageJson({ isLocale, internalFramework, isIntegratedCharts }: Params) {
+    const supportedFrameworks = new Set([
+        'angular',
+        'typescript',
+        'reactFunctional',
+        'reactFunctionalTs',
+        'vanilla',
+        'vue3',
+    ]);
+    if (!supportedFrameworks.has(internalFramework)) {
+        return;
+    }
+
+    const packageJson = {
+        name: `ag-grid-example`,
+        dependencies: {},
+        devDependencies: {
+            '@types/node': '^22',
+        },
+    };
+
+    const addDependency = (name, version) => {
+        packageJson.dependencies[name] = version;
+    };
+
+    if (internalFramework === 'angular') {
+        addDependency('@angular/core', '20.0.0');
+        addDependency('@angular/common', '20.0.0');
+        addDependency('@angular/forms', '20.0.0');
+        addDependency('@angular/platform-browser', '20.0.0');
+    }
+
+    if (internalFramework === 'vue3') {
+        addDependency('vue', '^3.5.0');
+    }
+
+    function isFrameworkReact() {
+        return new Set(['reactFunctional', 'reactFunctionalTs']).has(internalFramework);
+    }
+
+    if (isFrameworkReact()) {
+        addDependency('react', '19.2.1');
+        addDependency('react-dom', '19.2.1');
+
+        addDependency('@types/react', '19.2.1');
+        addDependency('@types/react-dom', '19.2.1');
+    }
+
+    const agGridVersion = getPackageJsonVersion('ag-grid-community');
+    const agGridEnterpriseVersion = getPackageJsonVersion('ag-grid-enterprise');
+    const agGridReactVersion = getPackageJsonVersion('ag-grid-react');
+    const agGridAngularVersion = getPackageJsonVersion('ag-grid-angular');
+    const agGridVue3Version = getPackageJsonVersion('ag-grid-vue3');
+    const agGridLocaleVersion = getPackageJsonVersion('locale', true);
+
+    if (isLocale) {
+        addDependency('@ag-grid-community/locale', agGridLocaleVersion);
+    }
+
+    if (internalFramework === 'angular') {
+        addDependency('ag-grid-angular', agGridAngularVersion);
+    }
+    if (internalFramework === 'vue3') {
+        addDependency('ag-grid-vue3', agGridVue3Version);
+    }
+    if (isFrameworkReact()) {
+        addDependency('ag-grid-react', agGridReactVersion);
+    }
+    addDependency('ag-grid-community', agGridVersion);
+    addDependency('ag-grid-enterprise', agGridEnterpriseVersion);
+    if (isIntegratedCharts) {
+        addDependency('ag-charts-community', `${agChartsVersion}`);
+        addDependency('ag-charts-enterprise', `${agChartsVersion}`);
+    }
+
+    return packageJson;
+}

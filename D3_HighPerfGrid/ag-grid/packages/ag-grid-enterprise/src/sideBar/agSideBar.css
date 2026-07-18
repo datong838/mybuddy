@@ -1,0 +1,184 @@
+.ag-tool-panel-wrapper {
+    overflow: hidden;
+    user-select: none;
+    width: var(--ag-horizontal-size, var(--ag-side-bar-panel-width));
+}
+
+.ag-tool-panel-content {
+    display: flex;
+    height: 100%;
+    overflow: hidden auto;
+}
+
+.ag-tool-panel-wrapper.ag-tool-panel-animating {
+    /* !important required to override .ag-hidden to tool panel remains visible while animating */
+    display: block !important;
+    transition: width var(--ag-side-bar-panel-animation-duration) ease-in-out;
+}
+
+@media (prefers-reduced-motion: reduce) {
+    .ag-tool-panel-wrapper.ag-tool-panel-animating {
+        transition: none;
+    }
+}
+
+.ag-tool-panel-external {
+    width: 100%;
+    display: flex;
+    flex-direction: row;
+    background-color: var(--ag-wrapper-background-color);
+}
+
+:where(.ag-tool-panel-external) .ag-tool-panel-wrapper {
+    flex-grow: 1;
+}
+
+.ag-select-agg-func-item {
+    position: relative;
+    align-items: center;
+    display: flex;
+    flex-flow: row nowrap;
+    height: 100%;
+    flex: 1 1 auto;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.ag-tool-panel-horizontal-resize {
+    cursor: ew-resize;
+    height: 100%;
+    position: absolute;
+    top: 0;
+    width: 5px;
+    z-index: 1;
+}
+
+.ag-side-bar {
+    position: relative;
+    display: flex;
+    flex-direction: row-reverse;
+    background-color: var(--ag-side-bar-background-color);
+}
+
+:where(.ag-side-bar-left) .ag-tool-panel-horizontal-resize {
+    right: -3px;
+}
+
+:where(.ag-side-bar-right) .ag-tool-panel-horizontal-resize {
+    left: -3px;
+}
+
+.ag-side-bar-left {
+    order: -1;
+    flex-direction: row;
+}
+
+.ag-side-buttons {
+    background-color: var(--ag-side-button-bar-background-color);
+    position: relative;
+    padding-top: var(--ag-side-button-bar-top-padding);
+    overflow: hidden auto;
+    scrollbar-width: thin;
+}
+
+.ag-side-button {
+    position: relative;
+    color: var(--ag-side-button-text-color);
+    background-color: var(--ag-side-button-background-color);
+    border-top: var(--ag-side-button-border);
+    border-bottom: var(--ag-side-button-border);
+
+    /* hide button border on top button if it's flush with container top, which
+       has its own border */
+    margin-top: -1px;
+}
+
+.ag-side-button::before {
+    content: '';
+    display: block;
+    position: absolute;
+    left: 0;
+    top: 0;
+    bottom: 0;
+    width: var(--ag-side-button-selected-underline-width);
+    background-color: transparent;
+    transition: background-color var(--ag-side-button-selected-underline-transition-duration);
+}
+
+.ag-side-button:hover {
+    background-color: var(--ag-side-button-hover-background-color);
+    color: var(--ag-side-button-hover-text-color);
+}
+
+.ag-side-button.ag-selected {
+    color: var(--ag-side-button-selected-text-color);
+    background-color: var(--ag-side-button-selected-background-color);
+    border-top: var(--ag-side-button-selected-border);
+    border-bottom: var(--ag-side-button-selected-border);
+}
+
+.ag-side-button.ag-selected::before {
+    background-color: var(--ag-side-button-selected-underline-color);
+}
+
+.ag-side-button-button {
+    position: relative;
+    display: flex;
+    flex-direction: column;
+    gap: var(--ag-spacing);
+    align-items: center;
+    white-space: nowrap;
+    padding: var(--ag-side-button-vertical-padding) var(--ag-side-button-right-padding)
+        var(--ag-side-button-vertical-padding) var(--ag-side-button-left-padding);
+    width: 100%;
+
+    &:focus {
+        box-shadow: none;
+    }
+}
+
+.ag-side-button-button:focus-visible {
+    box-shadow: inset var(--ag-focus-shadow);
+}
+
+.ag-side-button-label {
+    writing-mode: vertical-lr;
+}
+
+@media (resolution <= 1.5x) {
+    /* On Windows, on low res screens only, most custom fonts look awful in
+         vertical-lr mode. Use "Segoe UI" in preference. In practice this is a
+         Windows-only fix since most non-Windows computers don't have Segoe UI
+         installed. */
+    .ag-side-button-label {
+        font-family: 'Segoe UI', var(--ag-font-family);
+
+        /* ... and additionally apply a rotation to fix rendering in Firefox */
+        transform: rotate(0.05deg);
+    }
+}
+
+/* sidebar visually on left */
+:where(.ag-ltr) .ag-side-bar-left,
+:where(.ag-rtl) .ag-side-bar-right {
+    /* rtl:ignore */
+    border-right: var(--ag-side-panel-border);
+
+    :where(.ag-tool-panel-wrapper) {
+        /* rtl:ignore */
+        border-left: var(--ag-side-panel-border);
+    }
+}
+
+/* sidebar visually on right */
+:where(.ag-rtl) .ag-side-bar-left,
+:where(.ag-ltr) .ag-side-bar-right {
+    /* rtl:ignore */
+    border-left: var(--ag-side-panel-border);
+
+    :where(.ag-tool-panel-wrapper) {
+        /* rtl:ignore */
+        border-right: var(--ag-side-panel-border);
+    }
+}

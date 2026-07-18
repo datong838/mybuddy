@@ -1,0 +1,170 @@
+---
+title: "Column Definitions"
+description: "Column Definitions define each column within the $framework Data Grid. Configure and update column properties individually or apply defaults to all columns."
+---
+
+{% if isFramework("javascript", "angular", "vue") %}
+Each column in the grid is defined using a Column Definition (`ColDef`). Columns are positioned in the grid according to the order the Column Definitions are specified in the Grid Options.
+{% /if %}
+
+{% if isFramework("react") %}
+{% videoSection id="aDCepyF_DUY" title="React Column Definitions" showHeader=true %}
+Each column in the grid is defined using a Column Definition (`ColDef`). Columns are positioned in the grid according to the order the Column Definitions are specified in the Grid Options.
+{% /videoSection %}
+{% /if %}
+
+{% gridExampleRunner title="Simple Definitions" name="simple" exampleHeight=300 /%}
+
+```{% frameworkTransform=true %}
+const gridOptions = {
+    columnDefs: [
+        { field: 'athlete' },
+        { field: 'sport' },
+        { field: 'age' }
+    ]
+}
+```
+
+See [Column Options](./column-properties/) for all available properties.
+
+## Column Defaults {% #default-column-definitions %}
+
+Use `defaultColDef` to set properties across ALL Columns.
+
+```{% frameworkTransform=true spaceBetweenProperties=true %}
+const gridOptions = {
+    defaultColDef: {
+        width: 150,
+        cellStyle: { fontWeight: 'bold' },
+    }
+}
+```
+
+{% gridExampleRunner title="Default Col Def" name="default-col-def" exampleHeight=300 /%}
+
+## Cell Data Types
+
+The grid provides built-in [Cell Data Types](./cell-data-types/) for common data types such as `text`, `number`, `boolean`, `date` and more. By default these types are [inferred](./cell-data-types/#inferring-data-types) from the row data and configure appropriate rendering, editing, filtering, and sorting behaviour for each column without the need for explicit configuration via `columnDefs`.
+
+## Column Types
+
+Use `columnTypes` to define a set of Column properties to be applied together. The properties in a column type are applied to a Column by setting its `type` property.
+
+```{% frameworkTransform=true spaceBetweenProperties=true %}
+const gridOptions = {
+    // Define column types
+    columnTypes: {
+        currency: {
+            width: 150,
+            valueFormatter: currencyFormatter
+        },
+        shaded: {
+            cellClass: 'shaded-class'
+        }
+    },
+    columnDefs: [
+        { field: 'productName'},
+
+        // uses properties from currency type
+        { field: 'boughtPrice', type: 'currency'},
+
+        // uses properties from currency AND shaded types
+        { field: 'soldPrice', type: ['currency', 'shaded'] },
+    ]
+}
+```
+
+{% note %}
+Column Types work on Columns only and not Column Groups.
+{% /note %}
+
+The below example shows Column Types.
+
+{% gridExampleRunner title="Column Definition Example" name="column-types" exampleHeight=300 /%}
+
+## Provided Column Types
+
+The grid provides the Column Types `rightAligned` and `numericColumn`.
+Both of these types right align the header and cell contents
+by applying CSS classes `ag-right-aligned-header` to Column Headers and `ag-right-aligned-cell` to Cells.
+
+```{% frameworkTransform=true %}
+const gridOptions = {
+    columnDefs: [
+        { headerName: 'Column A', field: 'a' },
+        { headerName: 'Column B', field: 'b', type: 'rightAligned' },
+        { headerName: 'Column C', field: 'c', type: 'numericColumn' },
+    ]
+}
+```
+
+{% note %}
+The provided column types use cell classes to apply styling. The `CellStyleModule` is required for these types to work correctly.
+{% /note %}
+
+## Updating Columns
+
+Columns can be controlled by updating the column state, or updating the column definition.
+
+[Column State](./column-state/) should be used when restoring a users grid, for example saving and restoring column widths.
+
+Column Definitions should be updated to modify properties that the user cannot control, and as such are not supported by Column State.
+Whilst column definitions can be used to change stateful properties, this can cause additional side effects.
+
+### Using Column State
+
+The [Grid Api](./grid-api/#reference-state-applyColumnState) function `applyColumnState` can be used to update [Column State](./column-state/).
+
+```{% frameworkTransform=true %}
+// Sort Athlete column ascending
+api.applyColumnState({
+    state: [
+        {
+            colId: 'athlete',
+            sort: 'asc'
+        }
+    ]
+});
+```
+
+In the example below, use the 'Sort Athlete' button to apply a column state.
+
+{% gridExampleRunner title="Column State" name="column-state" exampleHeight=321 /%}
+
+### Updating Column Definitions
+
+To update an attribute by [Updating Column Definitions](./column-updating-definitions/#changing-column-definition), pass a new array of [Column Definitions](./column-definitions/) to the grid options.
+
+{% if isFramework("javascript", "angular", "vue") %}
+
+```{% frameworkTransform=false %}
+// Define new column definitions
+const updatedHeaderColumnDefs = [
+  { field: 'athlete', headerName: 'C1' },
+  { field: 'age', headerName: 'C2' },
+  { field: 'country', headerName: 'C3' },
+  { field: 'sport', headerName: 'C4' },
+]
+// Supply new column definitions to the grid
+gridApi.setGridOption('columnDefs', updatedHeaderColumnDefs);
+```
+
+{% /if %}
+
+{% if isFramework("react") %}
+
+```{% frameworkTransform=false %}
+// Supply new column definitions to the grid
+setColumnDefs([
+  { field: 'athlete', headerName: 'C1' },
+  { field: 'age', headerName: 'C2' },
+  { field: 'country', headerName: 'C3' },
+  { field: 'sport', headerName: 'C4' },
+]);
+```
+
+{% /if %}
+
+In the example below, use the 'Update Header Names' button to update the column definitions.
+
+{% gridExampleRunner title="Column Definition Update" name="column-definition-update" exampleHeight=321 /%}

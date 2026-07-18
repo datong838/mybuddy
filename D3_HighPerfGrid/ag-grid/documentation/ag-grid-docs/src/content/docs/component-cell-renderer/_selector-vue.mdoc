@@ -1,0 +1,33 @@
+{% if isFramework("vue") %}
+
+```js
+cellRendererSelector: params => {
+
+    const type = params.data.type;
+
+    if (type === 'gender') {
+        return {
+            component: 'GenderCellRenderer',
+            params: {values: ['Male', 'Female']}
+        };
+    }
+
+    if (type === 'mood') {
+        return {
+            component: 'MoodCellRenderer'
+        };
+    }
+
+    return undefined;
+}
+```
+
+Another use case for the Selector function is to only render a custom cell component in leaf nodes when [Row Grouping](./grouping). This is done by checking `params.node.group` and returning `undefined` for the group nodes.
+
+```js
+cellRendererSelector: params => {
+    return params.node.group ? undefined : { component: 'CellRenderer' };
+},
+```
+
+{% /if %}

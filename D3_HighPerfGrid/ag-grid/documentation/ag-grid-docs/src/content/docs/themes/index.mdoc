@@ -1,0 +1,67 @@
+---
+title: "Built-in themes"
+---
+
+Built-in themes provide a starting point for theming your application.
+
+Themes are objects imported from the `ag-grid-community` package and provided to grid instances using the `theme` grid option.
+
+```js
+import { themeBalham } from 'ag-grid-community';
+
+{% if isFramework("javascript") %}
+const gridOptions = {
+    theme: themeBalham,
+    ...
+}
+{% /if %}
+{% if isFramework("react") %}
+<AgGridReact
+    theme={themeBalham}
+    ...
+/>
+{% /if %}
+{% if isFramework("vue") %}
+// in template
+<ag-grid-vue
+    :theme="theme"
+    ...
+></ag-grid-vue>
+
+// in component setup hook
+setup() {
+    return {
+        theme: themeBalham,
+    };
+}
+{% /if %}
+{% if isFramework("angular") %}
+// in template
+<ag-grid-angular
+    [theme]="theme"
+/>
+
+// in component class
+public theme = themeBalham;
+{% /if %}
+```
+
+## Built-in Themes
+
+- Quartz - Our default theme, with high contrast and generous padding. Will use the IBM Plex Sans font if available**⁺**.
+- Balham - A more traditional theme modelled after a spreadsheet application.
+- Material - A theme designed according to Google's [Material v2](https://m2.material.io/) design system. This theme looks great for simple applications with lots of white space, and is the obvious choice if the rest of your application uses Material Design. Will use the Google Roboto font if available**⁺**.
+- Alpine - The default theme before Quartz. We recommend quartz for new projects; this theme is intended to ease migration to the Theming API for applications already using Alpine.
+
+**⁺** You can load these fonts yourself or pass the `loadThemeGoogleFonts` grid option to load them from Google's CDN. See [Customising Fonts](./theming-fonts/) for more information.
+
+{% gridExampleRunner title="Built-in themes" name="built-in-themes" /%}
+
+## Customising Built-in Themes
+
+Themes are simply preset configurations of parts and parameters. After choosing a theme as a starting point, you can:
+
+1. Choose a different [Color Scheme](./theming-colors/#colour-schemes) if required.
+2. Use [Theme Parameters](./theming-parameters/) to customise borders, compactness, fonts and more.
+3. Use [Theme Parts](./theming-parts/) mix and match elements from different themes, for example the icons from Quartz with the text inputs from Material.
+4. [Write your own CSS](./theming-css/) for unlimited control over grid appearance.

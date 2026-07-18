@@ -1,0 +1,24 @@
+---
+title: "Range Handle"
+enterprise: true
+---
+
+When working with cell selection, it can be useful to have a handle inside the last cell to enable the size of the current range to be adjusted.
+
+## Enabling the Range Handle
+
+To enable the Range Handle, set `cellSelection.handle` to `{ mode: 'range' }` in the `gridOptions`.
+
+```{% frameworkTransform=true %}
+const gridOptions = {
+    cellSelection: {
+        handle: {
+            mode: 'range',
+        }
+    }
+}
+```
+
+The example below demonstrates simple range selection with a range handle.
+
+{% gridExampleRunner title="Range Handle" name="range-selection-handle" /%}

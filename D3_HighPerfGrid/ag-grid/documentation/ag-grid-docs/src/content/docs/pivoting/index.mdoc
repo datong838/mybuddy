@@ -1,0 +1,130 @@
+---
+title: "Pivoting"
+enterprise: true
+---
+
+Pivoting breaks down data in an additional dimension.
+
+Pivoting can be configured in the grid column definitions or can be applied using the grid API. Users can also configure pivoting through the UI
+using either the [Side Bar](./pivoting/#using-the-side-bar) or the [Pivot Panel](./pivoting/#enabling-the-pivot-panel/), as shown below:
+
+{% gridExampleRunner title="Pivot Overview" name="pivot-overview" exampleHeight=650 /%}
+
+## Enabling Pivoting
+
+To enable pivoting, set `pivotMode: true` in the gridOptions and enable the `pivot` column property on the desired column as shown below:
+
+```{% frameworkTransform=true %}
+const gridOptions = {
+    columnDefs: [
+        { field: 'country', rowGroup: true },
+        { field: 'gold', aggFunc: 'sum' },
+        { field: 'sport', pivot: true },
+    ],
+    pivotMode: true,
+};
+```
+
+In the snippet above, the rows are [Grouped](./grouping) on the `Country` column and [Aggregated](./aggregation)
+to total the number of `Gold` medals won by each country. You must provide at least one aggregation column as only aggregated rows are shown when pivoting.
+
+Pivoting is then applied to the `Sport` column values which generates a [Pivot Result Column](./pivoting-result-columns/)
+showing the total number of `Gold` medals won by each country in each sport, as seen in this example:
+
+{% gridExampleRunner title="Simple Example" name="simple" /%}
+
+{% note %}
+Pivoting with [Tree Data](./tree-data) enabled is currently not supported. Pivoting can only be used with [Row Grouping](./grouping).
+{% /note %}
+
+## Configuring via the UI
+
+Pivoting is often controlled by end users rather than configured by developers. The grid provides some UI options for users to control these settings.
+
+### Using the Side Bar
+
+The [Side Bar](./side-bar) is the most common control for pivoting as it allows users to toggle pivot mode (equivalent to setting the grid option `pivotMode`), as well as
+setting the [Row Grouped](./grouping), [Aggregated](./aggregation) and pivoted columns via right click context menus or drag and drop.
+
+{% gridExampleRunner title="Side Bar" name="side-bar" exampleHeight=600 /%}
+
+In the example above, the `Sport` column is configured with `enablePivot: true`. This enables users to pivot by the column using UI controls, for example
+when right clicking the column in the side bar, the option to add `Sport` to labels becomes available.
+
+```{% frameworkTransform=true %}
+const gridOptions = {
+    columnDefs: [
+        // ...other column definitions
+        { field: 'sport', enablePivot: true },
+    ],
+    sideBar: 'columns',
+    pivotMode: true,
+};
+```
+
+Refer to the [Column Tool Panel](./tool-panel-columns/) documentation for more information on configuring the [Side Bar](./side-bar).
+
+### Enabling the Pivot Panel
+
+The pivot panel is an alternative UI control for allowing users to control pivot columns. It is a panel attached to the top of the grid similar to the [Row Group Panel](./grouping-group-panel)
+allowing users to reorder, remove, or add pivot columns via drag and drop.
+
+The example below demonstrates the pivot panel alongside a [Column Tool Panel](./tool-panel-columns/) which has been configured to increase the available space in the [Side Bar](./side-bar) by hiding the pivoting section.
+
+{% gridExampleRunner title="Enabling Pivot Panel" name="pivot-panel"  /%}
+
+This uses the following configuration to only show the pivot panel while pivoting is active:
+
+```{% frameworkTransform=true %}
+const gridOptions = {
+    columnDefs: [
+        // ...other column definitions
+        { field: 'sport', pivot: true, enablePivot: true },
+        { field: 'year', pivot: true, enablePivot: true },
+    ],
+    pivotMode: true,
+    pivotPanelShow: 'onlyWhenPivoting',
+};
+```
+
+### Pivot Panel in the Toolbar
+
+The Pivot Panel can be embedded in the [Quick Access Toolbar](./toolbar/#row-group-and-pivot-panels) using the `agPivotPanelToolbarItem` built-in item, configured independently of `pivotPanelShow`.
+
+```{% frameworkTransform=true %}
+const gridOptions = {
+    toolbar: {
+        items: ['agPivotPanelToolbarItem'],
+    },
+}
+```
+
+## Pivot Mode vs Pivot Active
+
+It is possible to have pivot mode turned on even though there is no pivot active, on the grid. A pivot is active when one or more of the pivot columns is used as a column label. In this scenario, the grid will display the data as normal but will strip out columns that have no grouping or value active.
+
+The example below demonstrates the difference between pivot mode and having a column with pivot active. The example has three modes of operation that can be switched between using the top buttons. The modes are as follows:
+
+- **1 - Grouping Active:** This is normal grouping. The grid groups with aggregations over Gold, Silver and Bronze. The user can drill down to the lowest level row data and columns without aggregation or group (eg Country, Year, Date and Sport) are shown.
+
+- **2 - Grouping Active with Pivot Mode:** This is grouping with `pivotMode=true`, but without any pivot active. The data shown is identical to the first option except the grid removes access to the lowest level row data and columns without aggregation or group are not shown.
+
+- **3 - Grouping Active with Pivot Mode and Pivot Active:** This is grouping with pivotMode=true and pivot active. Note that the Year column has been added to the Column Labels and there are now pivot result columns for each year.
+
+{% gridExampleRunner title="Pivot Mode Vs Pivot Active" name="pivot-mode"  exampleHeight=630 /%}
+
+Note that a pivot can only be active if pivot mode is on. If pivot mode is off, all pivot columns are ignored.
+
+## API Reference
+
+{% note %}
+The pivot state can be saved and restored as part of [Grid State](./grid-state/).
+{% /note %}
+
+Pivoting can be controlled using the following grid API methods:
+
+{% apiDocumentation source="grid-api/api.json" section="rowPivoting" /%}
+
+## See Also
+
+- [Editing Groups](./grouping-edit/) for editing pivot aggregated values with cascading updates to children

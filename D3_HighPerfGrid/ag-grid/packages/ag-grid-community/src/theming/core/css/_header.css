@@ -1,0 +1,358 @@
+/* stylelint-disable selector-max-specificity */
+
+.ag-header {
+    font-size: var(--ag-header-font-size);
+    font-family: var(--ag-header-font-family);
+    font-weight: var(--ag-header-font-weight);
+    color: var(--ag-header-text-color);
+}
+
+.ag-header-row {
+    .ag-grid-scrolling-cells {
+        background-color: var(--ag-header-background-color);
+    }
+
+    /* Pinned header sections need an opaque background, but --ag-header-background-color might be
+       semi-transparent, so apply an opaque base and re-apply the header color on top */
+    > .ag-grid-pinned-left-cells,
+    > .ag-grid-pinned-right-cells {
+        /* apply an opaque background */
+        background-image: linear-gradient(var(--ag-background-color), var(--ag-background-color));
+    }
+
+    .ag-grid-container-wrapper {
+        /* re-apply the transparent header color over the opaque background */
+        background-color: var(--ag-header-background-color);
+        width: 100%;
+        height: 100%;
+    }
+
+    position: absolute;
+    height: var(--ag-header-height);
+    border-bottom: none;
+
+    .ag-grid-pinned-left-cells,
+    .ag-grid-pinned-right-cells {
+        overflow: visible;
+    }
+}
+
+/* stylelint-enable selector-max-specificity */
+
+.ag-header-cell-menu-button,
+.ag-header-cell-filter-button,
+.ag-panel-title-bar-button,
+.ag-floating-filter-button-button,
+:where(.ag-header-cell-sortable) .ag-header-cell-label,
+:where(.ag-header-group-cell-selectable) .ag-header-cell-comp-wrapper,
+.ag-header-expand-icon {
+    cursor: pointer;
+}
+
+.ag-header-expand-icon {
+    margin-left: 4px;
+}
+
+:where(.ag-header-row.ag-header-row-not-first) {
+    :where(.ag-header-cell:not(.ag-header-span-height.ag-header-span-total, .ag-header-parent-hidden)),
+    :where(.ag-header-group-cell.ag-header-group-cell-with-group) {
+        border-top: var(--ag-header-row-border);
+    }
+}
+
+.ag-header-row:where(:not(.ag-header-row-column-group)) {
+    overflow: visible;
+}
+
+:where(.ag-grid-pinned-top-rows-container.ag-header-allow-overflow) .ag-header-row {
+    overflow: visible;
+}
+
+/* HEADER CELL AND GROUP CELL */
+
+.ag-header-cell {
+    display: inline-flex;
+
+    /* without this the ag-header-row becomes scrollable */
+    overflow: hidden;
+}
+
+.ag-header-group-cell {
+    display: flex;
+    contain: paint;
+}
+
+.ag-header-cell,
+.ag-header-group-cell {
+    align-items: center;
+    position: absolute;
+    height: 100%;
+    gap: var(--ag-cell-widget-spacing);
+    padding: 0 var(--ag-cell-horizontal-padding);
+}
+
+/* Define these vars to allow transition animation of color values */
+@property --ag-internal-moving-color {
+    syntax: '<color>';
+    inherits: false;
+    initial-value: transparent;
+}
+
+@property --ag-internal-hover-color {
+    syntax: '<color>';
+    inherits: false;
+    initial-value: transparent;
+}
+
+/* Implement header cell hover and moving background colors as a pseudo element,
+   because some applications set the color of the header cells and we want the
+   hover effect to overlay on top of this color rather than replacing it. */
+
+.ag-header-cell:where(:not(.ag-floating-filter))::before,
+.ag-header-group-cell::before {
+    content: '';
+    position: absolute;
+    inset: 0;
+
+    /* Use two stacked background-images so that hover and moving colors can
+           be individually controlled and overlaid on top of each other.
+           background-image can't be smoothly animated so instead define the
+           colors as internal vars and transition them */
+    background-image:
+        linear-gradient(var(--ag-internal-hover-color), var(--ag-internal-hover-color)),
+        linear-gradient(var(--ag-internal-moving-color), var(--ag-internal-moving-color));
+
+    --ag-internal-moving-color: transparent;
+    --ag-internal-hover-color: transparent;
+
+    transition:
+        --ag-internal-moving-color var(--ag-header-cell-background-transition-duration),
+        --ag-internal-hover-color var(--ag-header-cell-background-transition-duration);
+}
+
+.ag-header-cell:where(:not(.ag-floating-filter)):where(:hover)::before,
+.ag-header-group-cell:where(:hover)::before {
+    --ag-internal-hover-color: var(--ag-header-cell-hover-background-color);
+}
+
+.ag-header-cell:where(:not(.ag-floating-filter)):where(.ag-header-cell-moving)::before,
+.ag-header-group-cell:where(.ag-header-cell-moving)::before {
+    --ag-internal-moving-color: var(--ag-header-cell-moving-background-color);
+    --ag-internal-hover-color: var(--ag-header-cell-hover-background-color);
+}
+
+/* stylelint-disable-next-line ag/no-low-performance-key-selector -- Any child
+    of these components needs to be relative to appear above the hover
+    background. It seemed worth the slow selector in this case to make it more
+    maintainable and have low risk of regressions compared to maintaining a list
+    of children that can appear here */
+:where(.ag-header-cell:not(.ag-floating-filter) > *, .ag-header-group-cell > *) {
+    /* Ensure cell content shows above cell hover background */
+    position: relative;
+
+    /* keep interactive header content above the hover/move pseudo-backgrounds. */
+    z-index: 1;
+}
+
+.ag-header-cell-menu-button:where(:not(.ag-header-menu-always-show)) {
+    transition: opacity 0.2s;
+    opacity: 0;
+}
+
+:where(.ag-header-cell.ag-header-active) .ag-header-cell-menu-button,
+.ag-header-cell-filter-button {
+    opacity: 1;
+}
+
+.ag-header-group-cell-label,
+.ag-header-cell-label {
+    display: flex;
+    flex: 1 1 auto;
+    align-self: stretch;
+    align-items: center;
+    padding: 5px 0;
+    overflow: hidden;
+}
+
+.ag-sort-indicator-icon {
+    padding-left: var(--ag-spacing);
+}
+
+.ag-header-cell-label {
+    text-overflow: ellipsis;
+}
+
+.ag-header-group-cell-label.ag-sticky-label {
+    position: sticky;
+    flex: none;
+    max-width: 100%;
+    left: var(--ag-cell-horizontal-padding);
+    overflow: visible;
+}
+
+.ag-header-group-text {
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.ag-header-cell-text {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    overflow-wrap: break-word;
+}
+
+.ag-header-cell-comp-wrapper {
+    width: 100%;
+}
+
+:where(.ag-header-group-cell) .ag-header-cell-comp-wrapper {
+    display: flex;
+}
+
+:where(.ag-header-cell:not(.ag-header-cell-auto-height)) .ag-header-cell-comp-wrapper {
+    height: 100%;
+    display: flex;
+    align-items: center;
+}
+
+.ag-header-cell-wrap-text .ag-header-cell-comp-wrapper {
+    white-space: normal;
+}
+
+/* stylelint-disable-next-line ag/no-low-performance-key-selector -- Requires a
+    slow selector because we allow custom header cell components as direct
+    children of the wrapper, so we can't control the class name */
+.ag-header-cell-comp-wrapper-limited-height > * {
+    overflow: hidden;
+}
+
+:where(.ag-right-aligned-header) .ag-header-cell-label {
+    flex-direction: row-reverse;
+}
+
+:where(.ag-header-cell:not(.ag-right-aligned-header)) {
+    .ag-calculated-column-icon,
+    .ag-header-col-ref {
+        margin-right: var(--ag-spacing);
+    }
+
+    .ag-header-col-ref {
+        color: var(--ag-subtle-text-color);
+    }
+
+    .ag-header-label-icon,
+    .ag-header-menu-icon {
+        margin-left: var(--ag-spacing);
+    }
+}
+
+:where(.ag-header-cell.ag-right-aligned-header) {
+    .ag-header-col-ref {
+        margin-left: var(--ag-spacing);
+        color: var(--ag-subtle-text-color);
+    }
+
+    .ag-header-label-icon,
+    .ag-header-menu-icon {
+        margin-right: var(--ag-spacing);
+    }
+}
+
+/* "Show Values As" header indicator: heavily muted when the active mode is not applicable in the current
+ * view (dormant — the raw value is shown), to flag that the chosen mode has no effect here. */
+.ag-show-values-as-dormant {
+    opacity: 0.35;
+}
+
+/* COLUMN SEPARATOR */
+
+.ag-header-cell::after,
+.ag-header-group-cell::after {
+    content: '';
+    position: absolute;
+
+    /* render separators above header backgrounds and below interactive controls. */
+    z-index: 1;
+    height: var(--ag-header-column-border-height);
+    top: calc(50% - var(--ag-header-column-border-height) * 0.5);
+    border-right: var(--ag-header-column-border);
+    right: 0;
+}
+
+:where(.ag-body-horizontal-content-no-gap) {
+    .ag-header-cell:where(.ag-column-last)::after,
+    .ag-header-group-cell:where(.ag-column-last)::after {
+        border-right-color: transparent;
+    }
+}
+
+/* DRAG-DROP HIGHLIGHT */
+
+.ag-header-highlight-before::after,
+.ag-header-highlight-after::after {
+    content: '';
+    position: absolute;
+    height: 100%;
+    top: 0;
+    width: var(--ag-column-drag-indicator-width);
+    border-radius: calc(var(--ag-column-drag-indicator-width) / 2);
+    background-color: var(--ag-column-drag-indicator-color);
+}
+
+.ag-header-highlight-before::after {
+    left: 0;
+}
+
+.ag-header-highlight-after::after {
+    right: 0;
+
+    /* stylelint-disable-next-line selector-max-specificity */
+    :where(.ag-grid-pinned-left-cells) & {
+        right: 1px;
+    }
+}
+
+/* RESIZE HANDLE */
+
+.ag-header-cell-resize {
+    display: flex;
+    align-items: center;
+    position: absolute;
+
+    /* keep the resize hit-target above header text/icons in the same cell. */
+    z-index: 2;
+    height: 100%;
+    width: 8px;
+    top: 0;
+    cursor: col-resize;
+
+    /* unpinned headers get their resize handle on the right in normal mode and left in RTL mode */
+    right: -3px;
+}
+
+.ag-header-cell-resize::after {
+    content: '';
+    position: absolute;
+
+    /* draw the visual resize marker above header backgrounds. */
+    z-index: 1;
+    top: calc(50% - var(--ag-header-column-resize-handle-height) * 0.5);
+    left: calc(50% - var(--ag-header-column-resize-handle-width));
+    width: var(--ag-header-column-resize-handle-width);
+    height: var(--ag-header-column-resize-handle-height);
+    background-color: var(--ag-header-column-resize-handle-color);
+}
+
+:where(.ag-header-cell.ag-header-span-height) .ag-header-cell-resize::after {
+    height: calc(100% - calc(var(--ag-spacing) * 4));
+    top: calc(var(--ag-spacing) * 2);
+}
+
+.ag-header-group-cell-no-group:where(.ag-header-span-height) {
+    display: none;
+}
+
+.ag-sort-indicator-container {
+    display: flex;
+    gap: var(--ag-spacing);
+}

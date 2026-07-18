@@ -1,0 +1,103 @@
+---
+title: "Row Grouping - Expanding Groups"
+enterprise: true
+---
+
+Configure the initial expanded group row state when using Tree Data.
+
+## Expanding by Group Level
+
+When providing a hierarchy, all levels will default to a collapsed state. This can be configured by setting the `groupDefaultExpanded`
+grid option. Providing a number will expand all groups down to that level, or providing -1 will expand all groups.
+
+{% gridExampleRunner title="Group Default Expanded" name="group-default-expanded" /%}
+
+The example above uses the following configuration to expand the first level of groups, but no others:
+
+```{% frameworkTransform=true %}
+const gridOptions = {
+    groupDefaultExpanded: 1,
+}
+```
+
+## Expanding via Callback
+
+To granularly determine which groups should be expanded by default, use the `isGroupOpenByDefault` grid callback.
+
+{% apiDocumentation source="grid-options/properties.json" section="rowGrouping" names=["isGroupOpenByDefault"] /%}
+
+{% gridExampleRunner title="Open by Default" name="open-by-default" /%}
+
+The example above uses the following configuration to expand the `Australia` and its child `2004` groups by default:
+
+```{% frameworkTransform=true %}
+const gridOptions = {
+    isGroupOpenByDefault: (params) => {
+        const route = params.rowNode.getRoute();
+        const destPath = ['Australia', '2004'];
+        return route.every((item, idx) => destPath[idx] === item);
+    }
+}
+```
+
+{% note %}
+Row keys are only unique within their groups, so it is recommended to instead use the entire [Row Route](./row-object/#reference-serverSide-getRoute)
+to identify the row.
+{% /note %}
+
+## Prevent Sticky Groups
+
+When scrolling through an expanded group, the group row will stick to the top of the grid. To prevent this behaviour, set the `suppressGroupRowsSticky` property to `true`.
+
+{% gridExampleRunner title="Sticky Groups" name="suppress-sticky-groups" /%}
+
+The example above uses the following configuration to prevent groups from sticking:
+
+```{% frameworkTransform=true %}
+const gridOptions = {
+    suppressGroupRowsSticky: true,
+}
+```
+
+## Scrolling Child Rows into View
+
+When expanding a group the vertical scroll does not change, which can result in the child rows not being visible.
+You can use the `ensureIndexVisible()` function on the API to ensure the index is visible, scrolling the table if needed.
+
+In the example below, if you expand a group at the bottom, the grid will scroll so that all of the children of the group are visible.
+
+{% gridExampleRunner title="Row Group Scroll" name="row-group-scroll" exampleHeight=261 /%}
+
+## API
+
+{% note %}
+The row group expansion state can be saved and restored as part of [Grid State](./grid-state/).
+{% /note %}
+
+The grid exposes API methods to expand or collapse groups programmatically.
+{% apiDocumentation source="grid-api/api.json" section="rowExpansion" names=["setRowNodeExpanded", "expandAll", "collapseAll", "resetRowGroupExpansion"] /%}
+
+### Expand Row Ancestors
+
+When expanding rows via the API, the `setRowNodeExpanded` function can be used to expand a specific row as well as all of its ancestors.
+
+{% gridExampleRunner title="Expand to Row" name="expand-collapse-api" /%}
+
+The example above uses [Row IDs](./row-ids/#row-ids) to demonstrate the following configuration to expand all of the ancestors of the row with the ID `"2"`:
+
+```
+const expandToRow = () => {
+  const node = gridApi.getRowNode('2');
+  if (node) {
+      gridApi.setRowNodeExpanded(node, true, true);
+  }
+}
+```
+
+### Reset Group Expansion
+
+After users have expanded or collapsed groups, `resetRowGroupExpansion()` discards all overrides and re-evaluates each group against the configured defaults (`groupDefaultExpanded` or `isGroupOpenByDefault`).
+
+In the example below, the `isGroupOpenByDefault` callback expands the `Australia > 2004` path by default. Try expanding or collapsing groups, then click **Reset to Defaults** to restore the original expansion state.
+
+{% gridExampleRunner title="Reset Group Expansion" name="reset-group-expansion" /%}

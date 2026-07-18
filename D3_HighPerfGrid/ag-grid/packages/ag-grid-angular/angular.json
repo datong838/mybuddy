@@ -1,0 +1,42 @@
+{
+    "$schema": "./node_modules/@angular/cli/lib/config/schema.json",
+    "version": 1,
+    "newProjectRoot": "projects",
+    "projects": {
+        "ag-grid-angular": {
+            "projectType": "library",
+            "root": "projects/ag-grid-angular",
+            "sourceRoot": "projects/ag-grid-angular/src",
+            "prefix": "lib",
+            "architect": {
+                "build": {
+                    "builder": "@angular/build:ng-packagr",
+                    "options": {
+                        "project": "projects/ag-grid-angular/ng-package.json"
+                    },
+                    "configurations": {
+                        "production": {
+                            "tsConfig": "projects/ag-grid-angular/tsconfig.lib.prod.json"
+                        },
+                        "development": {
+                            "tsConfig": "projects/ag-grid-angular/tsconfig.lib.json"
+                        }
+                    },
+                    "defaultConfiguration": "production"
+                },
+                "test": {
+                    "builder": "@angular/build:karma",
+                    "options": {
+                        "main": "projects/ag-grid-angular/src/test.ts",
+                        "polyfills": ["zone.js", "zone.js/testing"],
+                        "tsConfig": "projects/ag-grid-angular/tsconfig.spec.json",
+                        "karmaConfig": "projects/ag-grid-angular/karma.conf.js"
+                    }
+                }
+            }
+        }
+    },
+    "cli": {
+        "analytics": false
+    }
+}

@@ -1,0 +1,45 @@
+---
+title: "SSRM Row Height"
+enterprise: true
+---
+
+Learn how to set Row Height when using the Server-Side Row Model.
+
+## Dynamic Row Height
+
+To enable [Dynamic Row Height](./row-height/) when using the Server-Side Row Model you need to provide an implementation for the `getRowHeight` Grid Options property. This is demonstrated in the example below:
+
+{% apiDocumentation source="grid-options/properties.json" section="styling" names=["getRowHeight"] /%}
+
+{% gridExampleRunner title="Dynamic Row Height Example" name="dynamic-row-height"  exampleHeight=630 /%}
+
+{% note %}
+Ensure `maxBlocksInCache` is not set when using dynamic row height.
+{% /note %}
+
+## Auto Row Height
+
+To have the grid calculate the row height based on the cell contents, set `autoHeight=true` on columns that require
+variable height. The grid will calculate the height once when the data is loaded into the grid.
+
+In the example below, Column A & B have `autoHeight=true` and `wrapText=true`. See [Row Height](./row-height/) for
+details on these properties.
+
+{% gridExampleRunner title="Auto Row Height Example" name="auto-row-height"  exampleHeight=610 /%}
+
+{% note %}
+Ensure `maxBlocksInCache` is not set when using auto row height.
+{% /note %}
+
+## Changing Row Height
+
+To dynamically set or restore row heights in the Server-Side Row Model, use `setRowHeight()` to apply custom heights to specific rows and `resetRowHeights()` to revert all rows to the values calculated by the `getRowHeight()` in Grid Options. See [Changing Row Height](./row-height/#rownodesetrowheightheight-and-apionrowheightchanged) for more.
+
+{% apiDocumentation source="grid-api/api.json" section="serverSideRowModel" names=["resetRowHeights"] /%}
+
+The following example demonstrates this functionality:
+
+- Clicking on a row sets its height to `100px` using `setRowHeight()`.
+- Clicking the "Reset Row Heights" button resets all rows to their original heights using `resetRowHeights()`.
+
+{% gridExampleRunner title="Reset Row Height Example" name="resetting-row-height" exampleHeight=630 /%}

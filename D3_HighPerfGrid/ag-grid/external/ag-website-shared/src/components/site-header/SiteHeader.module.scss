@@ -1,0 +1,462 @@
+@use 'design-system' as *;
+@use './breakpoints' as *;
+
+// Every @container query below queries the "site-header" container defined on .header.
+// See ./_breakpoints.scss for the single source of truth on what each named threshold
+// controls and why.
+//
+// Exception: .header's own sticky behaviour stays @media — a container cannot query
+// its own size.
+.header {
+    display: flex;
+    align-items: center;
+    position: relative;
+    background-color: var(--color-bg-site-header);
+    transition: background-color 0.5s ease-in-out;
+    container-type: inline-size;
+    container-name: site-header;
+
+    @media screen and (min-width: $sticky-at) {
+        position: sticky;
+        top: 0;
+        width: 100%;
+        z-index: 10002; // needed in order to prevent grid z-indexes overlapping on small height
+    }
+
+    #{$selector-darkmode}:has([data-is-homepage='false']) &,
+    #{$selector-darkmode}:has([data-is-homepage='true']) &:global(.header-scrolled) {
+        background: var(--color-bg-primary);
+        border-bottom: 1px solid var(--color-border-primary);
+    }
+}
+
+// `.header` required for charts specificity bug
+.header .headerInner {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    width: 100%;
+    max-width: calc(var(--layout-max-width) + var(--layout-horizontal-margins) * 2);
+    margin-left: auto;
+    margin-right: auto;
+    justify-content: space-between;
+
+    // Below $docs-search-inline the header stays a wrapping flex row (logo on its own
+    // line, then the optional docs/search cluster, then the nav — however many rows
+    // that takes). Flexbox's implicit multi-row wrap has no clean Grid equivalent, so
+    // this state intentionally stays flex.
+    @container site-header (min-width: #{$docs-search-inline}) {
+        // Above this width the header is a single row with four named regions: logo,
+        // the docs+search cluster (flexible — absorbs whatever space the other three
+        // don't need), the product/site switcher, and the nav. The switcher sits
+        // directly to the left of the nav so the "Products" dropdown reads as the item
+        // immediately before the first nav link. Each region's own CSS rule declares
+        // its `grid-area` below rather than relying on flex order/margin tricks to
+        // land in the right place.
+        display: grid;
+        grid-template-columns: auto 1fr auto auto;
+        grid-template-areas: 'logo docs-search switcher nav';
+        align-items: center;
+        column-gap: $spacing-size-4;
+    }
+}
+
+.headerLogo {
+    display: flex;
+    align-items: center;
+    min-height: var(--layout-site-header-height);
+    padding: $spacing-size-2 10px;
+    margin-left: calc(var(--layout-horizontal-margins) - 16px);
+    grid-area: logo;
+
+    :global(.logotype) {
+        width: unset;
+        height: 34px;
+    }
+
+    :global(.logo-mark) {
+        width: 48px;
+        height: unset;
+        transform: translateY(0.5px); // improve logo rendering for low dpi screens
+    }
+}
+
+.docsNavBtnSearchContainer {
+    display: flex;
+    flex-wrap: wrap;
+    gap: $spacing-size-2 $spacing-size-4;
+    width: 100%;
+    // This margin (particularly the bottom value) exists for the wrapped/mobile layout,
+    // where this cluster sits on its own row below the logo and needs a gap before the
+    // next wrapped row. Previously erased for free by display:contents once inline
+    // (this box generated no box at that width at all); now that it's a real grid cell,
+    // it must be explicitly reset there or the leftover margin-bottom throws this
+    // cluster's vertical centering off within the row (align-items: center on
+    // .headerInner centers the item's full margin box, so an asymmetric margin skews it).
+    margin: 0 var(--layout-horizontal-margins) $spacing-size-4 var(--layout-horizontal-margins);
+    grid-area: docs-search;
+
+    @container site-header (min-width: #{$docs-search-stack}) {
+        flex-wrap: nowrap;
+    }
+
+    // Only meaningful while .headerInner is still flex (below $docs-search-inline) —
+    // pushes this cluster after the nav, which sits at the default order (0), once the
+    // nav itself has room to render inline (from $nav-collapse). Once .headerInner
+    // switches to grid at $docs-search-inline, `order` has no effect and grid-area
+    // (above) takes over positioning instead.
+    @container site-header (min-width: #{$nav-collapse}) {
+        order: 4;
+    }
+
+    @container site-header (min-width: #{$docs-search-inline}) {
+        margin: 0;
+        width: auto;
+    }
+}
+
+button.mobileNavButton {
+    width: 100%;
+    background-color: rgba(255, 255, 255, 0.15);
+    border: none;
+    border-radius: var(--radius-lg);
+    color: var(--color-button-primary-fg);
+    border: 1px solid rgba(255, 255, 255, 0.05);
+
+    &:hover {
+        background-color: rgba(255, 255, 255, 0.19);
+        color: var(--color-button-primary-fg);
+    }
+
+    :global(.icon) {
+        --icon-size: #{$spacing-size-6};
+        --icon-color: var(--color-button-primary-fg);
+
+        margin-left: $spacing-size-1;
+        margin-right: -$spacing-size-1;
+        fill: var(--color-button-primary-fg);
+
+        #{$selector-darkmode} & {
+            --icon-color: var(--color-fg-white);
+            fill: var(--color-fg-white);
+        }
+    }
+
+    @container site-header (min-width: #{$docs-search-stack}) {
+        max-width: 120px;
+    }
+
+    @container site-header (min-width: #{$docs-search-inline}) {
+        display: none;
+    }
+
+    #{$selector-darkmode} & {
+        background-color: rgba(255, 255, 255, 0.1);
+        color: var(--color-fg-white);
+
+        &:hover {
+            background-color: rgba(255, 255, 255, 0.19);
+        }
+    }
+}
+
+.mobileMenuButton {
+    appearance: none;
+    position: absolute;
+    top: 0;
+    right: 6px;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    height: var(--layout-site-header-height);
+    width: var(--layout-site-header-height);
+    padding: 0 16px 0 14px;
+    border-radius: var(--radius-none);
+    border: none;
+    color: transparent;
+    background-color: transparent;
+    transition: background-color 0.4s ease-in-out;
+
+    &:hover {
+        background-color: transparent;
+    }
+
+    &:focus {
+        box-shadow: none;
+    }
+
+    &:focus-visible {
+        box-shadow: inset 0 0 0 2px var(--color-button-primary-shadow-focus);
+    }
+
+    svg {
+        position: relative;
+        left: 1px;
+    }
+
+    @container site-header (min-width: #{$nav-collapse}) {
+        display: none;
+    }
+}
+
+.menuIcon {
+    g {
+        transition: transform 0.2s 0.2s;
+    }
+
+    rect {
+        fill: var(--color-white);
+        transition: transform 0.2s;
+    }
+
+    :global(.middle) {
+        transition: opacity 0s 0.2s;
+    }
+
+    :global(.top) rect {
+        transform-origin: center 8px;
+    }
+
+    :global(.bottom) rect {
+        transform-origin: center 28px;
+    }
+
+    .mobileMenuButton[aria-expanded='true'] & {
+        g {
+            transition: transform 0.2s;
+        }
+
+        rect {
+            transition: transform 0.2s 0.2s;
+        }
+
+        :global(.top) {
+            transform: translateY(10px);
+        }
+
+        :global(.top) rect {
+            transform: rotate(45deg);
+        }
+
+        :global(.middle) {
+            opacity: 0;
+        }
+
+        :global(.bottom) {
+            transform: translateY(-10px);
+        }
+
+        :global(.bottom) rect {
+            transform: rotate(-45deg);
+        }
+    }
+}
+
+.mainNavLarge {
+    display: none;
+
+    @container site-header (min-width: #{$nav-collapse}) {
+        display: block;
+    }
+}
+
+// Direct .headerInner grid child for the desktop nav (see .headerInner's grid-template
+// above). #mainNavSmall (below) shares the same `nav` area — safe, since only one of
+// the two is ever visually non-empty at a given width.
+.mainNavLargeContainer {
+    grid-area: nav;
+}
+
+#mainNavSmall {
+    width: 100%;
+    grid-area: nav;
+
+    @container site-header (min-width: #{$nav-collapse}) {
+        display: none;
+    }
+}
+
+.mainNav,
+#mainNav {
+    width: 100%;
+    background-color: var(--color-bg-mobile-nav);
+    transition: background-color 0.5s ease-in-out;
+
+    @container site-header (min-width: #{$nav-collapse}) {
+        width: auto;
+        margin-right: $spacing-size-2;
+        margin-left: $spacing-size-2;
+    }
+}
+
+.navItemList {
+    @container site-header (min-width: #{$nav-collapse}) {
+        display: flex;
+        height: var(--layout-site-header-height);
+        align-items: center;
+        justify-content: flex-end;
+    }
+}
+
+.navItem {
+    @container site-header (max-width: #{$nav-collapse}) {
+        border-top: 1px solid rgba(255, 255, 255, 0.1);
+    }
+
+    @container site-header (min-width: #{$nav-collapse}) {
+        &:hover a::after {
+            opacity: 0.25;
+            transform: scaleX(1);
+        }
+
+        &.navItemActive .navLink {
+            #{$selector-darkmode} & {
+                opacity: 1;
+            }
+        }
+
+        &.navItemActive a::after {
+            opacity: 0.5;
+            transform: scaleX(1);
+
+            #{$selector-darkmode} & {
+                opacity: 0.75;
+            }
+        }
+    }
+
+    #{$selector-darkmode} & {
+        @container site-header (min-width: #{$nav-collapse}) {
+            border-bottom: none;
+        }
+    }
+}
+
+a.navLink,
+button.navLink {
+    // clamp() compresses nav link padding gracefully as the header narrows, widening the
+    // zone in which all links still fit before the hamburger kicks in. The fixed 14px
+    // ceiling and 8px floor keep touch targets reasonable at both extremes.
+    --horizontal-padding: clamp(8px, 1vw, 14px);
+
+    display: block;
+    position: relative;
+    width: 100%;
+    padding: 19px var(--layout-horizontal-margins) 16px;
+    font-size: 17px;
+    white-space: nowrap;
+    font-weight: 500;
+    letter-spacing: 0.01em;
+    color: var(--color-white);
+    transition:
+        color $transition-default-timing,
+        opacity $transition-default-timing;
+    cursor: pointer;
+
+    @at-root button#{&} {
+        color: var(--color-white);
+    }
+
+    &:hover {
+        text-decoration: none;
+        color: var(--color-white);
+    }
+
+    @container site-header (min-width: #{$nav-collapse}) {
+        padding-left: var(--horizontal-padding);
+        padding-right: var(--horizontal-padding);
+
+        &::after {
+            content: '';
+            position: absolute;
+            height: 2px;
+            bottom: 12px;
+            left: calc(var(--horizontal-padding) - #{$spacing-size-1});
+            right: calc(var(--horizontal-padding) - #{$spacing-size-1});
+            border-radius: 2px;
+            background-color: var(--color-white);
+            opacity: 0;
+            transform: scaleX(0);
+            transition:
+                transform 0.33s ease-in-out,
+                opacity 0.33s ease-in-out;
+        }
+    }
+
+    #{$selector-darkmode}:has([data-is-homepage='false']) &,
+    #{$selector-darkmode}:has([data-is-homepage='true'] :global(.header-scrolled)) & {
+        opacity: 0.8;
+    }
+}
+
+button.navLink {
+    display: flex;
+    align-items: center;
+}
+
+.githubItem {
+    order: 2;
+}
+
+.buttonItem {
+    a::after {
+        display: none;
+    }
+
+    svg:global(.icon),
+    .pseudoIcon {
+        --icon-size: 24px;
+
+        margin-right: 4px;
+        border-radius: 50%;
+        fill: var(--color-white);
+    }
+
+    @container site-header (min-width: #{$nav-collapse}) {
+        span:not(.navLink) {
+            display: none;
+        }
+
+        .navLink {
+            padding-left: 12px;
+            padding-right: 12px;
+        }
+
+        svg,
+        .pseudoIcon {
+            margin-right: 0;
+            transition: box-shadow 0.33s ease-in-out;
+        }
+
+        .navLink:hover svg,
+        .navLink:hover .pseudoIcon {
+            box-shadow:
+                0 0 0 4px var(--color-bg-mobile-nav),
+                0 0 0 6px rgba(white, 0.3);
+
+            #{$selector-darkmode}:has([data-is-homepage='false']) & {
+                box-shadow:
+                    0 0 0 4px var(--color-bg-primary),
+                    0 0 0 6px rgba(white, 0.3);
+            }
+        }
+    }
+}
+
+.toggleDarkText {
+    display: none;
+
+    @container site-header (max-width: #{$nav-collapse}) {
+        display: inline;
+    }
+}
+
+.icon {
+    width: 24px;
+    height: 24px;
+    margin: 2px;
+    background-image: var(--dark-icon);
+    background-repeat: no-repeat;
+    background-position: center;
+    background-size: cover;
+}

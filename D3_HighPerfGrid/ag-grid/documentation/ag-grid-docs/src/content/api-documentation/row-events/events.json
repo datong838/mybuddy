@@ -1,0 +1,119 @@
+{
+    "_config_": {
+        "codeSrc": "row-node.AUTO.json"
+    },
+    "rowNodeEvents": {
+        "meta": {
+            "displayName": "Row Events",
+            "isEvent": true
+        },
+        "rowSelected": {
+            "description": "Row was selected or unselected.",
+            "type": {
+                "arguments": {
+                    "event": "RowNodeSelectedEvent"
+                },
+                "returnType": "void"
+            }
+        },
+        "mouseEnter": {
+            "description": "Mouse has entered the row.",
+            "type": {
+                "arguments": {
+                    "event": "MouseEnterEvent"
+                },
+                "returnType": "void"
+            }
+        },
+        "mouseLeave": {
+            "description": "Mouse has left the row.",
+            "type": {
+                "arguments": {
+                    "event": "MouseLeaveEvent"
+                },
+                "returnType": "void"
+            }
+        },
+        "cellChanged": {
+            "description": "One cell value has changed.",
+            "type": {
+                "arguments": {
+                    "event": "CellChangedEvent"
+                },
+                "returnType": "void"
+            }
+        },
+        "dataChanged": {
+            "description": "`rowData` has changed.",
+            "type": {
+                "arguments": {
+                    "event": "DataChangedEvent"
+                },
+                "returnType": "void"
+            }
+        },
+        "heightChanged": {
+            "description": "`rowHeight` has changed.",
+            "type": {
+                "arguments": {
+                    "event": "HeightChangedEvent"
+                },
+                "returnType": "void"
+            }
+        },
+        "rowIndexChanged": {
+            "description": "`rowIndex` has changed.",
+            "type": {
+                "arguments": {
+                    "event": "RowIndexChangedEvent"
+                },
+                "returnType": "void"
+            }
+        },
+        "topChanged": {
+            "description": "`rowTop` has changed.",
+            "type": {
+                "arguments": {
+                    "event": "TopChangedEvent"
+                },
+                "returnType": "void"
+            }
+        },
+        "expandedChanged": {
+            "description": "`expanded` has changed.",
+            "type": {
+                "arguments": {
+                    "event": "ExpandedChangedEvent"
+                },
+                "returnType": "void"
+            }
+        },
+        "allChildrenCountChanged": {
+            "description": "`allChildrenCount` has changed.",
+            "type": {
+                "arguments": {
+                    "event": "AllChildrenCountChangedEvent"
+                },
+                "returnType": "void"
+            }
+        },
+        "uiLevelChanged": {
+            "description": "`uiLevel` has changed.",
+            "type": {
+                "arguments": {
+                    "event": "UiLevelChangedEvent"
+                },
+                "returnType": "void"
+            }
+        },
+        "rowPinned": {
+            "description": "Row has been pinned to the top or bottom by the user",
+            "type": {
+                "arguments": {
+                    "event": "RowNodePinnedEvent"
+                },
+                "returnType": "void"
+            }
+        }
+    }
+}

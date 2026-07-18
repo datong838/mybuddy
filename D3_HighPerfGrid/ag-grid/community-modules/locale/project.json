@@ -1,0 +1,179 @@
+{
+  "name": "@ag-grid-community/locale",
+  "$schema": "../../node_modules/nx/schemas/project-schema.json",
+  "sourceRoot": "community-modules/@ag-grid-community/locale/src",
+  "projectType": "library",
+  "targets": {
+    "build": {
+      "executor": "nx:noop",
+      "dependsOn": ["build:types", "build:package", "build:umd"],
+      "inputs": [],
+      "outputs": [],
+      "configurations": {
+        "watch": {},
+        "production": {}
+      }
+    },
+    "build:types": {
+      "executor": "@nx/js:tsc",
+      "dependsOn": ["^build:types"],
+      "inputs": [
+        "{projectRoot}/package.json",
+        "{projectRoot}/src/**/*",
+        "{projectRoot}/tsconfig.*.json",
+        "tsDeclarations",
+        "sharedGlobals",
+        "defaultExcludes",
+        {
+          "externalDependencies": ["npm:typescript"]
+        }
+      ],
+      "outputs": ["{options.outputPath}"],
+      "options": {
+        "outputPath": "{projectRoot}/dist/types",
+        "main": "{projectRoot}/src/main.ts",
+        "tsConfig": "{projectRoot}/tsconfig.types.json",
+        "compiler": "tsc"
+      },
+      "configurations": {
+        "watch": {
+          "tsConfig": "community-modules/@ag-grid-community/locale/tsconfig.types.watch.json"
+        },
+        "production": {}
+      }
+    },
+    "build:test": {
+      "dependsOn": ["^build:types", "build:types"],
+      "inputs": [
+        "{projectRoot}/package.json",
+        "{projectRoot}/src/**/*",
+        "{projectRoot}/tsconfig.*.json",
+        "tsDeclarations",
+        "sharedGlobals",
+        "buildOutputExcludes",
+        {
+          "externalDependencies": ["npm:typescript"]
+        }
+      ],
+      "command": "npx tsc -p {projectRoot}/tsconfig.spec.json",
+      "configurations": {
+        "watch": {},
+        "production": {}
+      }
+    },
+    "build:package": {
+      "executor": "@nx/esbuild:esbuild",
+      "dependsOn": ["^build:package"],
+      "inputs": [
+        "{projectRoot}/package.json",
+        "{projectRoot}/src/**/*",
+        "{projectRoot}/tsconfig.*.json",
+        "tsDeclarations",
+        "sharedGlobals",
+        "defaultExcludes",
+        {
+          "externalDependencies": ["npm:typescript", "npm:esbuild"]
+        }
+      ],
+      "outputs": ["{options.outputPath}"],
+      "options": {
+        "outputPath": "{projectRoot}/dist/package",
+        "main": "{projectRoot}/src/main.ts",
+        "tsConfig": "{projectRoot}/tsconfig.lib.json",
+        "esbuildConfig": "esbuild.config.cjs",
+        "platform": "browser",
+        "target": "es6",
+        "format": ["cjs", "esm"],
+        "sourcemap": true
+      },
+      "configurations": {
+        "watch": {
+          "tsConfig": "{projectRoot}/tsconfig.watch.json"
+        },
+        "production": {
+          "sourcemap": false
+        }
+      }
+    },
+    "build:umd": {
+      "executor": "@nx/esbuild:esbuild",
+      "dependsOn": ["build:package"],
+      "inputs": ["jsOutputs"],
+      "outputs": ["{options.outputPath}"],
+      "options": {
+        "outputPath": "{projectRoot}/dist/umd",
+        "outputFileName": "@ag-grid-community/locale",
+        "main": "{projectRoot}/dist/package/main.cjs.js",
+        "tsConfig": "{projectRoot}/tsconfig.lib.json",
+        "esbuildConfig": "esbuild.config.cjs",
+        "platform": "browser",
+        "target": "es6",
+        "bundle": true,
+        "thirdParty": true,
+        "skipTypeCheck": true,
+        "external": [],
+        "format": ["cjs"],
+        "sourcemap": true
+      },
+      "configurations": {
+        "watch": {
+          "tsConfig": "{projectRoot}/tsconfig.watch.json"
+        },
+        "production": {
+          "sourcemap": false
+        }
+      }
+    },
+    "lint": {
+      "command": "eslint",
+      "options": {
+        "cwd": "{projectRoot}"
+      }
+    },
+    "testx": {
+      "command": "npx vitest run --config vitest.config.ts",
+      "options": {
+        "cwd": "{projectRoot}"
+      },
+      "dependsOn": ["build:test"]
+    },
+    "pack": {
+      "executor": "nx:run-commands",
+      "dependsOn": ["build"],
+      "inputs": ["allTransitiveOutputs"],
+      "outputs": ["{workspaceRoot}/dist/artifacts/{projectRoot}.tgz"],
+      "options": {
+        "cwd": "{projectRoot}",
+        "parallel": false,
+        "commands": [
+          "mkdir -p ../../dist/artifacts/{projectRoot}",
+          "yarn pack -f ../../dist/artifacts/{projectRoot}.tgz",
+          "rm -rf ../../dist/artifacts/{projectRoot}"
+        ]
+      }
+    },
+    "pack:extract": {
+      "executor": "nx:run-commands",
+      "dependsOn": ["pack"],
+      "inputs": ["allOutputs"],
+      "outputs": ["{workspaceRoot}/dist/artifacts/contents/{projectRoot}"],
+      "options": {
+        "command": "scripts/package/extract-contents.sh {projectRoot}"
+      }
+    },
+    "pack:verify": {
+      "executor": "nx:run-commands",
+      "dependsOn": ["pack:extract"],
+      "inputs": ["allOutputs"],
+      "options": {
+        "commands": ["node scripts/package/sanity-check-package.js dist/artifacts/contents/{projectRoot}/package"]
+      },
+      "configurations": {
+        "production": {},
+        "archive": {}
+      }
+    }
+  },
+  "implicitDependencies": [],
+  "tags": ["module", "community", "locale"]
+}

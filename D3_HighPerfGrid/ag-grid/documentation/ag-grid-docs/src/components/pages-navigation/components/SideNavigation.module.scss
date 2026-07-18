@@ -1,0 +1,233 @@
+@use 'design-system' as *;
+
+// Right side navigation (page level headings) - not to be confused with left DocsNav
+.sideNav {
+    $top-bar-height: 8px;
+
+    --left-margin: #{$spacing-size-16};
+
+    --link-color: var(--color-util-gray-500);
+    --active-color: var(--color-brand-500);
+    --active-border: var(--color-brand-500);
+    --hover-background: var(--color-util-brand-50);
+    --active-background: var(--color-util-brand-50);
+
+    display: none;
+    width: calc(var(--layout-width-3-12) - var(--left-margin));
+    margin-left: $spacing-size-8;
+    padding-top: $spacing-size-8 + 2px; // Tweak top docs page vertical alignment (+ 2px)
+    padding-bottom: $spacing-size-4;
+    padding-left: $spacing-size-2;
+    line-height: var(--text-lh-sm);
+
+    #{$selector-darkmode} & {
+        --link-color: var(--color-gray-400);
+        --active-color: var(--color-brand-300);
+        --active-border: var(--color-brand-300);
+        --hover-background: rgba(56, 146, 249, 0.06);
+        --active-background: rgba(56, 146, 249, 0.09);
+    }
+
+    @supports (position: sticky) {
+        padding-top: 0;
+        padding-bottom: 0;
+    }
+
+    @media screen and (min-width: $breakpoint-docs-nav-large) {
+        display: block;
+    }
+
+    > div {
+        @supports (position: sticky) {
+            display: flex;
+            flex-direction: column;
+            margin-right: calc(var(--layout-horizontal-margins) * -1); // Improve scrollbar position
+            padding-top: $spacing-size-8 + 2px; // Tweak top docs page vertical alignment (+ 2px)
+            padding-right: $spacing-size-8;
+            padding-bottom: $spacing-size-1;
+            position: sticky;
+            top: var(--layout-site-header-height);
+            max-height: calc(100vh - var(--layout-site-header-height));
+            overflow: hidden;
+            overflow-y: auto;
+        }
+    }
+}
+
+.sideNav ul {
+    --nav-line-color: var(--color-util-gray-300);
+
+    display: inline-flex;
+    position: relative;
+    flex-direction: column;
+    padding-left: 0;
+    padding-bottom: 0;
+    margin-top: 0;
+    margin-bottom: 0;
+    list-style: none;
+    z-index: -2;
+
+    #{$selector-darkmode} & {
+        --nav-line-color: var(--color-border-primary);
+    }
+}
+
+.sideNav li:where(:not(.level1)) {
+    --item-gap: 0.875em;
+
+    position: relative;
+    margin-bottom: 0;
+    padding-top: calc(var(--item-gap) / 2);
+    padding-right: $spacing-size-2;
+    padding-bottom: calc(var(--item-gap) / 2);
+    padding-left: $spacing-size-4;
+    transition: background-color $transition-default-timing;
+
+    // Visual 1px border for inactive items using pseudo-element
+    &::before {
+        content: '';
+        position: absolute;
+        left: 0;
+        top: 0;
+        bottom: 0;
+        width: 1px;
+        background-color: var(--color-util-brand-200);
+        transition: background-color $transition-default-timing;
+    }
+
+    // Dark mode: use primary border colour for inactive line
+    #{$selector-darkmode} &::before {
+        background-color: var(--color-border-primary);
+    }
+
+    &:has(:global(.active)) {
+        background-color: var(--active-background);
+    }
+
+    // Active items: show full 2px line using pseudo-element
+    &:has(:global(.active))::before {
+        width: 1px;
+        background-color: var(--active-border);
+    }
+}
+
+// If first item has active class apply active styles to second item
+.sideNav li:first-child:has(:global(.active)) + li {
+    background-color: var(--active-background);
+
+    &::before {
+        width: 1px;
+        background-color: var(--active-border);
+    }
+
+    a {
+        color: var(--active-color);
+    }
+}
+
+.sideNav a {
+    display: inline-block;
+    padding: 0;
+    color: var(--link-color);
+    transition: color $transition-default-timing;
+    font-weight: 500;
+    font-size: var(--text-fs-regular);
+
+    &:hover,
+    &:global(.active) {
+        color: var(--active-color);
+    }
+}
+
+.sideNav .level1 {
+    margin-top: 0;
+
+    a {
+        display: inline-flex;
+        align-items: center;
+        gap: $spacing-size-2;
+        padding-left: 0;
+        padding-bottom: 8px;
+        color: var(--color-text-secondary);
+        font-size: 19px;
+
+        // Use secondary foreground color when active
+        &:global(.active) {
+            color: var(--color-fg-secondary);
+        }
+
+        &:hover {
+            color: var(--color-text-secondary);
+        }
+    }
+}
+
+.backToTop {
+    margin-top: 0;
+    padding-top: 16px;
+    padding-bottom: calc(0.875em / 2);
+    padding-right: $spacing-size-2;
+    border-left: none;
+    align-self: flex-start;
+
+    a {
+        display: inline-flex;
+        align-items: center;
+        gap: $spacing-size-2;
+        padding-left: 0;
+        color: var(--color-text-secondary) !important;
+        font-size: 15px;
+        font-weight: 500;
+        text-decoration: none;
+        transition: color $transition-default-timing;
+
+        &:hover {
+            color: var(--color-fg-primary);
+
+            .backToTopIcon {
+                color: var(--color-fg-primary);
+                fill: var(--color-fg-primary);
+            }
+        }
+    }
+}
+
+.backToTopIcon {
+    flex-shrink: 0;
+    display: inline-flex;
+    align-items: center;
+    width: 20px;
+    height: 20px;
+    vertical-align: middle;
+    color: var(--color-util-gray-500);
+    fill: var(--color-util-gray-500);
+    transition:
+        color $transition-default-timing,
+        fill $transition-default-timing;
+}
+
+.sideNav .level3 {
+    --item-gap: calc(0.5em + #{$spacing-size-1});
+
+    font-weight: var(--text-regular);
+}
+
+.sideNav .level3,
+.sideNav .level4,
+.sideNav .level5,
+.sideNav .level6 {
+    padding-left: $spacing-size-8;
+}
+
+.sideNav .level4,
+.sideNav .level5,
+.sideNav .level6 {
+    --item-gap: 0.4375em;
+
+    font-size: var(--text-fs-base);
+    opacity: 0.8;
+}
+
+.hidden {
+    display: none;
+}

@@ -1,0 +1,163 @@
+import { _findTabbableParent, _getActiveDomElement, _isNothingFocused, _isVisible, _last } from 'ag-stack';
+
+import type { AgColumn, HeaderPosition, NamedBean, PopupEventParams } from 'ag-grid-community';
+import { BeanStub } from 'ag-grid-community';
+
+import type { AgCloseMenuEvent } from '../agStack/agMenuItemComponent';
+
+export interface MenuRestoreFocusParams {
+    column: AgColumn | undefined;
+    headerPosition: HeaderPosition | null;
+    columnIndex: number;
+    eventSource?: HTMLElement;
+}
+
+export class MenuUtils extends BeanStub implements NamedBean {
+    beanName = 'menuUtils' as const;
+
+    public restoreFocusOnClose(
+        restoreFocusParams: MenuRestoreFocusParams,
+        eComp: HTMLElement,
+        e?: Event,
+        restoreIfMouseEvent?: boolean
+    ): void {
+        const { eventSource } = restoreFocusParams;
+        const isKeyboardEvent = e instanceof KeyboardEvent;
+        if ((!restoreIfMouseEvent && !isKeyboardEvent) || !eventSource) {
+            return;
+        }
+
+        const activeEl = _getActiveDomElement(this.beans);
+        if (
+            // focus is outside of comp
+            !eComp.contains(activeEl) &&
+            // something else has focus
+            !_isNothingFocused(this.beans)
+        ) {
+            // don't return focus to the header
+            return;
+        }
+        this.focusEventSourceOrHeaderCell(restoreFocusParams);
+    }
+
+    public closePopupAndRestoreFocusOnSelect(
+        hidePopupFunc: (popupParams?: PopupEventParams) => void,
+        restoreFocusParams: MenuRestoreFocusParams,
+        event?: AgCloseMenuEvent
+    ): void {
+        let keyboardEvent: KeyboardEvent | undefined;
+
+        if (event?.keyboardEvent) {
+            keyboardEvent = event.keyboardEvent;
+        }
+
+        hidePopupFunc(keyboardEvent && { keyboardEvent });
+
+        const beans = this.beans;
+        const focusSvc = beans.focusSvc;
+        // this method only gets called when the menu was closed by selecting an option
+        // in this case we focus the cell that was previously focused, otherwise the header
+        const focusedCell = focusSvc.getFocusedCell();
+
+        if (_isNothingFocused(beans)) {
+            if (focusedCell) {
+                const { rowIndex, rowPinned, column } = focusedCell;
+                focusSvc.setFocusedCell({
+                    rowIndex,
+                    column,
+                    rowPinned,
+                    forceBrowserFocus: true,
+                    preventScrollOnBrowserFocus: true,
+                });
+            } else {
+                this.focusEventSourceOrHeaderCell(restoreFocusParams);
+            }
+        }
+    }
+
+    public onContextMenu(params: {
+        mouseEvent: MouseEvent | null | undefined;
+        touchEvent: TouchEvent | null | undefined;
+        showMenuCallback: (eventOrTouch: MouseEvent | Touch) => boolean;
+        source: 'api' | 'ui';
+    }): void {
+        const { mouseEvent, touchEvent, showMenuCallback, source } = params;
+        // to allow us to debug in chrome, we ignore the event if ctrl is pressed.
+        // not everyone wants this, so first 'if' below allows to turn this hack off.
+        if (!this.gos.get('allowContextMenuWithControlKey')) {
+            // then do the check
+            if (mouseEvent && (mouseEvent.ctrlKey || mouseEvent.metaKey)) {
+                return;
+            }
+        }
+
+        // need to do this regardless of context menu showing or not, so doing
+        // before the isSuppressContextMenu() check
+        if (mouseEvent) {
+            this.blockMiddleClickScrollsIfNeeded(mouseEvent);
+        }
+
+        if (source === 'ui' && this.gos.get('suppressContextMenu')) {
+            return;
+        }
+
+        const eventOrTouch: MouseEvent | Touch = mouseEvent ?? touchEvent!.touches[0];
+        if (showMenuCallback(eventOrTouch)) {
+            const event = mouseEvent ?? touchEvent;
+
+            if (event?.cancelable) {
+                event.preventDefault();
+            }
+        }
+    }
+
+    // make this async for react
+    private async focusEventSourceOrHeaderCell(restoreFocusParams: MenuRestoreFocusParams): Promise<void> {
+        const { column, columnIndex, headerPosition, eventSource } = restoreFocusParams;
+        const { visibleCols, headerNavigation, focusSvc } = this.beans;
+
+        // DO NOT REMOVE `await` from the statement below
+        // even though `getAllCols` is a synchronous method, we use `await` to make it async
+        const isColumnStillVisible = await visibleCols.allCols.some((col) => col === column);
+
+        if (!this.isAlive()) {
+            return;
+        }
+
+        if (eventSource && _isVisible(eventSource)) {
+            const focusableEl = _findTabbableParent(eventSource);
+            if (focusableEl) {
+                if (column?.isAlive() && isColumnStillVisible) {
+                    headerNavigation?.scrollToColumn(column);
+                }
+                focusableEl.focus();
+                return;
+            }
+        }
+        // if the focusEl is no longer in the DOM, we try to focus
+        // the header that is closest to the previous header position
+        else if (headerPosition && columnIndex !== -1) {
+            const allColumns = visibleCols.allCols;
+            const columnToFocus = allColumns[columnIndex] || _last(allColumns);
+
+            if (columnToFocus) {
+                focusSvc.focusHeaderPosition({
+                    headerPosition: {
+                        headerRowIndex: headerPosition.headerRowIndex,
+                        column: columnToFocus,
+                    },
+                });
+            }
+        }
+    }
+
+    private blockMiddleClickScrollsIfNeeded(mouseEvent: MouseEvent): void {
+        // if we don't do this, then middle click will never result in a 'click' event, as 'mousedown'
+        // will be consumed by the browser to mean 'scroll' (as you can scroll with the middle mouse
+        // button in the browser). so this property allows the user to receive middle button clicks if
+        // they want.
+        if (this.gos.get('suppressMiddleClickScrolls') && mouseEvent.which === 2) {
+            mouseEvent.preventDefault();
+        }
+    }
+}

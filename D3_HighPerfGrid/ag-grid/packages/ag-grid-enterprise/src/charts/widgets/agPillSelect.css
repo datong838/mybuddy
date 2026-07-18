@@ -1,0 +1,30 @@
+.ag-pill-select {
+    display: flex;
+    flex-direction: column;
+}
+
+/* stylelint-disable-next-line selector-max-specificity */
+.ag-pill-select .ag-column-drop-list {
+    padding: 0;
+}
+
+:where(.ag-pill-select) {
+    .ag-select {
+        padding-top: var(--ag-spacing);
+    }
+
+    .ag-picker-field-wrapper {
+        background-color: transparent;
+        border: 0;
+    }
+
+    .ag-picker-field-display {
+        cursor: pointer;
+        font-weight: 500;
+        color: var(--ag-chart-menu-label-color);
+    }
+
+    .ag-picker-field-icon {
+        color: var(--ag-chart-menu-label-color);
+    }
+}

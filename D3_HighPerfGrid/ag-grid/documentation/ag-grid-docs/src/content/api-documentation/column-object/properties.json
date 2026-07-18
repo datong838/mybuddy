@@ -1,0 +1,180 @@
+{
+    "_config_": {
+        "codeSrc": "column.AUTO.json",
+        "validate": true,
+        "undocumentedProperties": {
+            "getDefinition": "Alias of getColDef, the specific version is preferred",
+            "getUniqueId": "Alias of getColId",
+            "getId": "Alias of getColId",
+            "getRowSpan": "Same functionality as rowSpan"
+        }
+    },
+    "definitions": {
+        "meta": {
+            "displayName": "Definitions"
+        },
+        "getColId": {},
+        "getColDef": {},
+        "getDisplayName": {},
+        "getUserProvidedColDef": {},
+        "isColumn": {}
+    },
+    "editing": {
+        "meta": {
+            "displayName": "Editing"
+        },
+        "isCellEditable": {},
+        "isSuppressFillHandle": {}
+    },
+    "tooltip": {
+        "meta": {
+            "displayName": "Tooltip"
+        },
+        "isTooltipEnabled": {}
+    },
+    "filtering": {
+        "meta": {
+            "displayName": "Filtering"
+        },
+        "isFilterAllowed": {},
+        "isFilterActive": {}
+    },
+    "rowGrouping": {
+        "meta": {
+            "displayName": "Row Grouping"
+        },
+        "isAllowRowGroup": {},
+        "isRowGroupActive": {},
+        "isRowGroupDisplayed": {}
+    },
+    "rowAggregation": {
+        "meta": {
+            "displayName": "Row Aggregation"
+        },
+        "isAllowValue": {},
+        "isValueActive": {},
+        "getAggFunc": {},
+        "getShowValuesAs": {
+            "more": {
+                "name": "Show Values As",
+                "url": "./aggregation-show-values-as/"
+            }
+        },
+        "getShowValuesAsDef": {}
+    },
+    "pivoting": {
+        "meta": {
+            "displayName": "Row Pivoting"
+        },
+        "isAllowPivot": {},
+        "isPivotActive": {},
+        "isPrimary": {}
+    },
+    "columnGroups": {
+        "meta": {
+            "displayName": "Column Groups"
+        },
+        "getParent": {},
+        "getOriginalParent": {},
+        "getColumnGroupShow": {},
+        "getColumnGroupPaddingInfo": {},
+        "isEmptyGroup": {}
+    },
+    "display": {
+        "meta": {
+            "displayName": "Display"
+        },
+        "getLeft": {},
+        "isVisible": {}
+    },
+    "sizing": {
+        "meta": {
+            "displayName": "Sizing"
+        },
+        "getActualWidth": {},
+        "getMinWidth": {},
+        "getMaxWidth": {},
+        "getFlex": {},
+        "isResizable": {},
+        "isAutoHeight": {},
+        "isAutoHeaderHeight": {},
+        "getAutoHeaderHeight": {},
+        "isSpanHeaderHeight": {}
+    },
+    "rowDragging": {
+        "meta": {
+            "displayName": "Row Dragging"
+        },
+        "isRowDrag": {},
+        "isDndSource": {}
+    },
+    "menu": {
+        "meta": {
+            "displayName": "Menu"
+        },
+        "isMenuVisible": {}
+    },
+    "spanning": {
+        "meta": {
+            "displayName": "Spanning"
+        },
+        "getColSpan": {}
+    },
+    "selection": {
+        "meta": {
+            "displayName": "Selection"
+        },
+        "isCellCheckboxSelection": {}
+    },
+    "clipboard": {
+        "meta": {
+            "displayName": "Clipboard"
+        },
+        "isSuppressPaste": {}
+    },
+    "pinning": {
+        "meta": {
+            "displayName": "Pinning"
+        },
+        "getPinned": {},
+        "isPinned": {},
+        "isPinnedLeft": {},
+        "isPinnedRight": {},
+        "isFirstRightPinned": {},
+        "isLastLeftPinned": {}
+    },
+    "moving": {
+        "meta": {
+            "displayName": "Moving"
+        },
+        "isMoving": {}
+    },
+    "sorting": {
+        "meta": {
+            "displayName": "Sorting"
+        },
+        "getSort": {},
+        "getSortDef": {},
+        "isSortable": {},
+        "getSortIndex": {}
+    },
+    "events": {
+        "meta": {
+            "displayName": "Events"
+        },
+        "addEventListener": {},
+        "removeEventListener": {}
+    },
+    "keyboard": {
+        "meta": {
+            "displayName": "Keyboard"
+        },
+        "isSuppressNavigable": {}
+    },
+    "formulas": {
+        "meta": {
+            "displayName": "Formulas"
+        },
+        "isAllowFormula": {}
+    }
+}

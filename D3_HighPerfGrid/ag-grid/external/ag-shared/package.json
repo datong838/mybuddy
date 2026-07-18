@@ -1,0 +1,49 @@
+{
+  "name": "ag-shared",
+  "version": "0.0.1",
+  "description": "Advanced Charting / Charts supporting Javascript / Typescript / React / Angular / Vue",
+  "main": "./dist/package/src/main.js",
+  "types": "./dist/types/src/main.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/types/src/main.d.ts",
+      "import": "./dist/package/src/main.js",
+      "require": "./dist/package/src/main.js",
+      "default": "./dist/package/src/main.js"
+    },
+    "./plugin-utils": {
+      "types": "./dist/types/scripts/plugin-utils/index.d.ts",
+      "import": "./dist/package/scripts/plugin-utils/index.js",
+      "require": "./dist/package/scripts/plugin-utils/index.js",
+      "default": "./dist/package/scripts/plugin-utils/index.js"
+    },
+    "./processor": {
+      "types": "./dist/types/scripts/junit-processor/index.d.ts",
+      "import": "./dist/package/scripts/junit-processor/src/processor.js",
+      "require": "./dist/package/scripts/junit-processor/src/processor.js",
+      "default": "./dist/package/scripts/junit-processor/src/processor.js"
+    }
+  },
+  "scripts": {},
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/ag-grid/ag-shared.git"
+  },
+  "keywords": [],
+  "author": "AG Grid <info@ag-grid.com>",
+  "license": "MIT",
+  "dependencies": {},
+  "devDependencies": {
+    "typescript": "^5.8.3",
+    "glob": "^11.1.0",
+    "@nx/devkit": "^20.8.4",
+    "@types/yargs": "^17.0.35",
+    "@swc/helpers": "0.5.21",
+    "tinypool": "^2.1.0",
+    "process": "0.11.10",
+    "xml-js": "^1.6.11"
+  },
+  "publishConfig": {
+    "access": "private"
+  }
+}

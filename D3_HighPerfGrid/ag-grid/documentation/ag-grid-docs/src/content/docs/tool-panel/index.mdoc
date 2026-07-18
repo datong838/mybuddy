@@ -1,0 +1,38 @@
+---
+title: "Tool Panels"
+enterprise: true
+---
+
+This section covers Tool Panels, available via the grid's Side Bar, which allow for easy access to powerful grid operations such as grouping, pivoting, and filtering. Custom Tool Panels can also be provided to the grid.
+
+## Overview
+
+Tool Panels are panels that sit in the Side Bar to the right of the grid. The Side Bar allows access to the tool panels via buttons that work like tabs. The Side Bar and a Tool Panel are shown in the screenshot below.
+
+{% imageCaption imagePath="resources/sideBar.png" alt="Side Bar" centered=true constrained=true maxWidth="52rem" /%}
+
+## Provided Tool Panels
+
+The grid provides the following Tool Panels:
+
+- [Columns Tool Panel](./tool-panel-columns/) - to control aggregations, grouping and pivoting.
+- [Filters Tool Panel](./tool-panel-filters/) - to perform multiple column filters.
+- [New Filters Tool Panel](./tool-panel-filters-new/) - a redesigned version of the Filters Tool Panel that provides improved UX.
+
+## Custom Tool Panels
+
+In addition to the provided Tool Panels, it is also possible to provide custom Tool Panels.
+
+For more details refer to the section: [Custom Panel](./component-tool-panel/).
+
+## API
+
+The `gridApi` has the following methods that can be used to interact with the tool panel.
+
+{% apiDocumentation source="grid-api/api.json" section="accessories" names=["openToolPanel","closeToolPanel","getOpenedToolPanel","isToolPanelShowing","refreshToolPanel", "getToolPanelInstance"] /%}
+
+## Events
+
+The following events are emitted from the tool panel.
+
+{% apiDocumentation source="grid-events/events.json" section="accessories" /%}

@@ -1,0 +1,13 @@
+---
+import { PLAUSIBLE_INIT_SCRIPT } from '@utils/csp/inlineScripts';
+
+interface Props {
+    domain: string;
+}
+
+const { domain } = Astro.props as Props;
+---
+
+<script defer data-domain={domain} src="https://plausible.io/js/script.tagged-events.outbound-links.js"></script>
+{/* Authorised in script-src by SHA-256 hash (not 'unsafe-inline'); see @utils/csp/inlineScripts. */}
+<script is:inline set:html={PLAUSIBLE_INIT_SCRIPT} />

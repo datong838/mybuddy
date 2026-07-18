@@ -1,0 +1,24 @@
+<div class="test-header">
+    <div>
+        <button onclick="updateRowData(0)">0 Rows</button>
+        <button onclick="updateRowData(5)">5 Rows</button>
+        <button onclick="updateRowData(50)">50 Rows</button>
+    </div>
+    <div>
+        <button onclick="setDomLayoutAutoHeight()">Auto Height</button>
+        <button onclick="setDomLayoutNormal()">Fixed Height</button>
+    </div>
+    <div>
+        <input name="pinned-rows" type="checkbox" id="floating-rows" onclick="toggleFloatingRows()" />
+        <label for="pinned-rows"> Pinned Rows </label>
+    </div>
+    <div>Row Count = <span id="currentRowCount"></span></div>
+</div>
+
+<div id="myGrid"></div>
+
+<div style="border: 10px solid #eee; padding: 10px; margin-top: 20px">
+    <p style="text-align: center">
+        This text is under the grid and should move up and down as the height of the grid changes.
+    </p>
+</div>

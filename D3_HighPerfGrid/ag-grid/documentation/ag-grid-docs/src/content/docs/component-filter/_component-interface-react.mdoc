@@ -1,0 +1,17 @@
+{% if isFramework("react") %}
+
+```jsx
+export default ({ model, onModelChange, getValue }) => {
+    return (
+        <div>
+            <input
+                type="text"
+                value={model || ''}
+                onChange={({ target: { value }}) => onModelChange(value === '' ? null : value)}
+            />
+        </div>
+    );
+}
+```
+
+{% /if %}
