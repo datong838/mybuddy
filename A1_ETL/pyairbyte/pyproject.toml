@@ -1,0 +1,211 @@
+[project]
+name = "airbyte"
+description = "PyAirbyte"
+readme = "README.md"
+authors = [
+    { name = "Airbyte", email = "contact@airbyte.io" }
+]
+requires-python = ">=3.10,<3.13"
+dynamic = ["version"]
+dependencies = [
+    "airbyte-api>=0.53.0,<1.0",
+    "airbyte-cdk>=7.21.1,<8.0.0",
+    "airbyte-protocol-models-pdv2>=0.13.0,<1.0",
+    "cryptography>=44.0.0,<47.0.0,!=45.0.0,!=45.0.1",  # 45.0.0/45.0.1 broke load_pem_private_key()
+    "cyclopts>=4.0,<5.0",
+    # TODO: Restore broader version constraints after verifying compatibility
+    # "duckdb>=1.4.0,<2.0",
+    # "duckdb-engine>=0.17.0,<1.0",
+    "duckdb==1.4.3",  # Pinned to match uv.lock
+    "duckdb-engine==0.17.0",  # Pinned to match uv.lock
+    "google-auth>=2.27.0,<3.0",
+    "google-cloud-bigquery>=3.12.0,<4.0",
+    "google-cloud-bigquery-storage>=2.25.0,<3.0",
+    "google-cloud-secret-manager>=2.17.0,<3.0",
+    "jsonschema>=3.2.0,<5.0",
+    "orjson>=3.10,<4.0",
+    "overrides>=7.4.0,<8.0",
+    "pandas>=1.5.3,<3.0",
+    "psycopg[binary,pool]>=3.1.19,<4.0",
+    "psycopg2-binary>=2.9.9,<3.0",
+    "pyarrow>=16.1,<22.0",
+    "pydantic>=2.0,<3.0",
+    "pydantic-core",
+    "python-dotenv>=1.0.1,<2.0",
+    "python-ulid>=3.0.0,<4.0",
+    "pyyaml>=6.0.2,<7.0",
+    "requests!=3.32.0",  # 3.32.0 breaks docker tests
+    "rich>=13.7.0,<14.0",
+    "snowflake-connector-python>=3.12.2,<4.0",
+    "snowflake-sqlalchemy>=1.6.1,<2.0",
+    "structlog>=24.4.0,<25.0",
+    # TODO: Restore broader version constraints after verifying compatibility
+    # "sqlalchemy>=1.4.51,!=2.0.36,<3.0",
+    "sqlalchemy==2.0.43",  # Pinned to match uv.lock
+    "sqlalchemy-bigquery==1.12.0",
+    "typing-extensions",
+    "uuid7>=0.1.0,<1.0",
+    "fastmcp>=3.0,<4.0",
+    "fastmcp-extensions>=0.10.0,<1.0.0",
+    "starlette",
+    "uv>=0.5.0,<0.9.0",
+    "prefab-ui>=0.20.1,<0.21",
+]
+
+[dependency-groups]
+dev = [
+    "coverage>=7.5.1,<8.0",
+    "deptry>=0.21.1,<1.0",
+    "docker>=7.1.0,<8.0",
+    "faker>=21.0.0,<22.0",
+    "freezegun>=1.4.0,<2.0",
+    "pyrefly>=0.38.0,<0.39.0",
+    "pandas-stubs>=2.1.4.231218",
+    "pdoc>=16.0.0,<17.0",
+    "poethepoet>=0.26.1,<0.32.0",
+    "pytest>=8.2.0,<9.0",
+    "pytest-docker>=3.1.1,<4.0",
+    "pytest-mock>=3.14.0,<4.0",
+    "pytest-timeout>=2.3.1,<3.0",
+    "responses>=0.25.0,<1.0",
+    "ruff>=0.8.2,<0.9.0",
+    "sqlalchemy2-stubs>=0.0.2a38",
+    "tomli>=2.0,<3.0",
+    "types-jsonschema>=4.20.0.0",
+    "types-pyyaml>=6.0.12.12",
+    "types-requests==2.31.0.4",
+    "viztracer>=0.16.3,<1.1.0",
+    "pydantic-ai>=0.2.16",
+]
+
+[project.scripts]
+pyairbyte = "airbyte.cli.pyab:cli"
+pyab = "airbyte.cli.pyab:cli"
+airbyte-mcp = "airbyte.mcp.server:main"
+airbyte-mcp-http = "airbyte.mcp.http_main:main"
+source-smoke-test = "airbyte.cli.smoke_test_source.run:run"
+
+[build-system]
+requires = ["hatchling", "uv-dynamic-versioning"]
+build-backend = "hatchling.build"
+
+[tool.hatch.version]
+source = "uv-dynamic-versioning"
+
+[tool.uv-dynamic-versioning]
+vcs = "git"
+style = "pep440"
+fallback-version = "0.0.0"
+# Format to produce PEP 440 compliant versions like "x.y.za0" for dev builds
+# This produces versions with 3 parts when split by "." (e.g., "0.35.7a17")
+format = "{base}a{distance}"
+format-jinja = "{% if distance == 0 %}{{ base }}{% else %}{{ base }}a{{ distance }}{% endif %}"
+
+[tool.hatch.metadata]
+allow-direct-references = true
+
+[tool.hatch.build.targets.wheel]
+packages = ["airbyte"]
+
+[tool.pytest.ini_options]
+# Pytest configuration as follows:
+# - No test can take longer than 10 minutes (600 seconds)
+# - Markers must be declared explicitly
+# - Generate junit test results at a deterministic location
+addopts = "-rs --strict-markers --timeout=600 --junit-xml=build/test-results/test-results.xml"
+markers = [
+    "slow: marks tests as slow (deselect with '-m \"not slow\"')",
+    "super_slow: these super slow tests will not run in CI; they will only ever run on-demand",
+    "requires_creds: marks a test as requiring credentials (skip when secrets unavailable)",
+    "linting: marks a test as a linting test",
+    "flaky: marks a test as flaky",
+]
+filterwarnings = [ # syntax: "action:message_regex:category:module:line"
+    # Treat python warnings as errors in pytest
+    # "error",  # TODO: Revert. Currently disabled because `airbyte_cdk.sources.source.ExperimentalClassWarning` ignore is not working
+    # # Snowflake reregisters its functions, which is fine.
+    "ignore::sqlalchemy.exc.SAWarning",  # "GenericFunction is already registered and is going to be overridden.""
+    # Ignore these, specifically on Windows because of file cleanup and locking issues:
+    "ignore:unclosed file:ResourceWarning",
+    "ignore:Failed to decode:UserWarning",  # https://github.com/airbytehq/pyairbyte/issues/320
+    "ignore::pytest.PytestUnraisableExceptionWarning",
+    # Order matters here. This must be last because it will fail if we
+    # hit another warning during the import.
+    "ignore::airbyte_cdk.sources.source.ExperimentalClassWarning",
+    "ignore::airbyte.exceptions.AirbyteExperimentalFeatureWarning",
+    # CDK has these refs:
+    "ignore::pydantic.warnings.PydanticDeprecatedSince20",
+]
+
+# [tool.ruff]
+# Ruff moved to dedicated config file: `.ruff.toml`
+
+# [tool.pyrefly]
+# Pyrefly moved to dedicated config file: `pyrefly.toml`
+
+[tool.mypy]
+# Disable all mypy checks for this project since we use pyrefly instead
+ignore_errors = true
+
+[tool.pyright]
+pythonVersion = "3.10"
+venvPath = "./"       # Assuming .venv is at the root of your project
+venv = ".venv"
+
+[tool.poe.tasks]
+test = { shell = "pytest" }
+test-fast = { shell = "pytest --durations=5 --exitfirst -m 'not slow'" }
+test-unit-tests = { shell = "pytest tests/unit_tests/" }
+
+coverage = { shell = "coverage run -m pytest && coverage report" }
+coverage-report = { shell = "coverage report" }
+coverage-html = { shell = "coverage html -d htmlcov && open htmlcov/index.html" }
+coverage-reset = { shell = "coverage erase" }
+
+check = { shell = "ruff check . && pyrefly check && pytest --collect-only -qq" }
+
+docs-generate = {env = {PDOC_ALLOW_EXEC = "1"}, cmd = "python -m docs.generate run"}
+docs-preview = {shell = "poe docs-generate && open docs/generated/index.html"}
+
+fix = { shell = "ruff format . && ruff check --fix -s || ruff format ." }
+fix-unsafe = { shell = "ruff format . && ruff check --fix --unsafe-fixes . && ruff format ." }
+fix-and-check = { shell = "poe fix && poe check" }
+
+# MCP Server Tasks
+mcp-serve-local = { cmd = "airbyte-mcp", help = "Start the MCP server with STDIO transport" }
+mcp-serve-http = { cmd = "python -c \"from airbyte.mcp.server import app; app.run(transport='http', host='127.0.0.1', port=8000)\"", help = "Start the MCP server with HTTP transport" }
+mcp-serve-sse = { cmd = "python -c \"from airbyte.mcp.server import app; app.run(transport='sse', host='127.0.0.1', port=8000)\"", help = "Start the MCP server with SSE transport" }
+mcp-inspect = { cmd = "fastmcp inspect airbyte/mcp/server.py:app", help = "Inspect MCP tools and resources (supports --tools, --health, etc.)" }
+mcp-tool-test = { cmd = "python -m fastmcp_extensions.utils.test_tool --app airbyte.mcp.server:app", help = "Test MCP tools directly with JSON arguments: poe mcp-tool-test <tool_name> '<json_args>'" }
+mcp-docs-md = { cmd = "python scripts/generate_mcp_markdown.py", help = "Generate Markdown docs for the MCP server into docs/mcp-generated/ (Docusaurus- and pdoc-compatible)" }
+
+# Claude Code MCP Testing Tasks
+[tool.poe.tasks.test-my-tools]
+help = "Run Claude Code in headless mode with the test-my-tools MCP prompt"
+shell = """
+npx @anthropic-ai/claude-code --print "/mcp__airbyte-mcp__test-my-tools ${scope:+ $scope}" \
+    --mcp-config=.github/mcp-ci-tests.mcp.json \
+    --dangerously-skip-permissions \
+    --verbose --output-format=stream-json | \
+    jq -r '.message.content[]? | if .type == "text" then "💬 " + .text elif .type == "tool_use" then "🔧 " + .name + "(" + (.input | tojson) + ")" else empty end' 2>/dev/null
+"""
+args = [{ name = "scope", default = "", help = "Optional scope/context to focus testing (e.g., 'focus on areas of the code changed versus main')" }]
+
+[tool.deptry.per_rule_ignores]
+# This is a mapping of rules and package names to be ignored for that rule.
+DEP001 = [
+  "IPython"  # Optional dependency, used for detecting Notebook environments
+]
+DEP004 = [
+  "pdoc"  # Only used for generating documentation. Not a runtime dependency.
+]
+DEP002 = [
+  # Only used for SQLAlchemy engine. Not imported directly:
+  "duckdb",
+  "psycopg",
+  "psycopg2-binary",
+  "sqlalchemy-bigquery",
+  # Used as subprocess tool, not imported directly:
+  "uv",
+]
+DEP003 = []

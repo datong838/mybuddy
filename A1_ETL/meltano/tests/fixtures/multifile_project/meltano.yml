@@ -1,0 +1,54 @@
+# Top-level comment
+default_environment: test-meltano-environment
+database_uri: sqlite:///.meltano/meltano.db
+
+include_paths:
+- ./subconfig_[0-9].yml
+# Config files inside a subfolder
+- ./*/subconfig_[0-9].yml
+- ./*/**/subconfig_[0-9].yml
+
+schedules:
+# My schedules
+- name: test-meltano-yml
+  extractor: tap-meltano-yml
+  loader: target-meltano-yml
+  transform: skip
+  start_date: 2020-08-05T00:00:00Z
+  interval: '@daily' # Run daily
+
+jobs:  # My jobs
+# An EL job with mapping
+- name: my-job
+  tasks:
+  - >-
+    tap-meltano-yml
+    map-meltano-yml
+    target-meltano-yml
+
+environments:
+# My meltano environments
+- name: test-meltano-environment
+  env:
+    TEST: TEST-MELTANO
+
+plugins:
+  # Project plugins
+  extractors:
+  - name: tap-meltano-yml # Comment on array element
+    settings:
+    - name: token
+      description: >-
+        Token for the API.
+        This is a secret.
+      sensitive: true
+
+  mappers:
+  # My mappers
+  - name: map-meltano-yml
+    # These are some mappings
+    mappings:
+    - name: transform-meltano-yml
+
+  loaders:
+    - name: target-meltano-yml

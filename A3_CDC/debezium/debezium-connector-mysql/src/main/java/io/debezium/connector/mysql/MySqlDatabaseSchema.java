@@ -1,0 +1,85 @@
+/*
+ * Copyright Debezium Authors.
+ *
+ * Licensed under the Apache Software License version 2.0, available at http://www.apache.org/licenses/LICENSE-2.0
+ */
+package io.debezium.connector.mysql;
+
+import org.apache.kafka.connect.data.Schema;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+
+import io.debezium.annotation.NotThreadSafe;
+import io.debezium.config.CommonConnectorConfig;
+import io.debezium.connector.binlog.BinlogConnectorConfig;
+import io.debezium.connector.binlog.BinlogDatabaseSchema;
+import io.debezium.connector.binlog.charset.BinlogCharsetRegistry;
+import io.debezium.connector.common.CdcSourceTaskContext;
+import io.debezium.connector.mysql.antlr.MySqlAntlrDdlParser;
+import io.debezium.connector.mysql.jdbc.MySqlDefaultValueConverter;
+import io.debezium.connector.mysql.jdbc.MySqlValueConverters;
+import io.debezium.relational.CustomConverterRegistry;
+import io.debezium.relational.TableId;
+import io.debezium.relational.Tables;
+import io.debezium.relational.ddl.DdlParser;
+import io.debezium.schema.SchemaNameAdjuster;
+import io.debezium.spi.topic.TopicNamingStrategy;
+
+/**
+ * Component that records the schema history for databases hosted by a MySQL database server. The schema information includes
+ * the {@link Tables table definitions} and the Kafka Connect {@link #schemaFor(TableId) Schema}s for each table, where the
+ * {@link Schema} excludes any columns that have been {@link MySqlConnectorConfig#COLUMN_EXCLUDE_LIST specified} in the
+ * configuration.
+ *
+ * @author Randall Hauch
+ */
+@NotThreadSafe
+public class MySqlDatabaseSchema extends BinlogDatabaseSchema<MySqlPartition, MySqlOffsetContext, MySqlValueConverters, MySqlDefaultValueConverter> {
+
+    private final static Logger LOGGER = LoggerFactory.getLogger(MySqlDatabaseSchema.class);
+
+    /**
+     * Create a schema component given the supplied {@link MySqlConnectorConfig MySQL connector configuration}.
+     * The DDL statements passed to the schema are parsed and a logical model of the database schema is created.
+     *
+     */
+    public MySqlDatabaseSchema(MySqlConnectorConfig connectorConfig, MySqlValueConverters valueConverter, TopicNamingStrategy<TableId> topicNamingStrategy,
+                               SchemaNameAdjuster schemaNameAdjuster, boolean tableIdCaseInsensitive, CustomConverterRegistry converterRegistry,
+                               CdcSourceTaskContext<? extends CommonConnectorConfig> taskContext) {
+        super(connectorConfig,
+                valueConverter,
+                new MySqlDefaultValueConverter(valueConverter),
+                topicNamingStrategy,
+                schemaNameAdjuster,
+                tableIdCaseInsensitive, converterRegistry, taskContext);
+    }
+
+    @Override
+    protected DdlParser createDdlParser(BinlogConnectorConfig connectorConfig, MySqlValueConverters valueConverter) {
+        MySqlConnectorConfig mySqlConfig = (MySqlConnectorConfig) connectorConfig;
+        MySqlConnectorConfig.DdlParserType parserType = mySqlConfig.getDdlParserType();
+        LOGGER.info("Using MySql DdlParserType {}", parserType);
+        return parserType == MySqlConnectorConfig.DdlParserType.LEGACY
+                ? createLegacyPtParser(connectorConfig)
+                : createOracleParser(connectorConfig);
+    }
+
+    private DdlParser createOracleParser(BinlogConnectorConfig connectorConfig) {
+        return new MySqlAntlrDdlParser(
+                true,
+                false,
+                connectorConfig.isSchemaCommentsHistoryEnabled(),
+                getTableFilter(),
+                connectorConfig.getServiceRegistry().getService(BinlogCharsetRegistry.class));
+    }
+
+    private DdlParser createLegacyPtParser(BinlogConnectorConfig connectorConfig) {
+        return new io.debezium.connector.mysql.antlr.MySqlPtAntlrDdlParser(
+                true,
+                false,
+                connectorConfig.isSchemaCommentsHistoryEnabled(),
+                getTableFilter(),
+                connectorConfig.getServiceRegistry().getService(BinlogCharsetRegistry.class));
+    }
+
+}

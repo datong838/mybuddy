@@ -1,0 +1,935 @@
+# Copyright (c) 2024 Airbyte, Inc., all rights reserved.
+"""Cloud Connections."""
+
+from __future__ import annotations
+
+import logging
+from typing import TYPE_CHECKING, Any, Literal, overload
+
+from typing_extensions import deprecated
+
+from airbyte._util import api_util
+from airbyte.cloud._connection_catalog import (
+    _denormalize_catalog_to_api,
+    _is_protocol_catalog_format,
+    _normalize_catalog_to_protocol,
+)
+from airbyte.cloud._connection_state import (
+    ConnectionStateResponse,
+    _denormalize_protocol_state_to_api,
+    _get_stream_list,
+    _is_protocol_state_format,
+    _match_stream,
+    _normalize_state_to_protocol,
+)
+from airbyte.cloud.connectors import CloudDestination, CloudSource
+from airbyte.cloud.models import (
+    CloudConnectionInfo,
+    CloudJobInfo,
+    JobTypeEnum,
+    _ConnectionResponseLike,
+)
+from airbyte.cloud.sync_results import SyncResult
+from airbyte.exceptions import AirbyteWorkspaceMismatchError, PyAirbyteInputError
+
+
+logger = logging.getLogger(__name__)
+
+
+if TYPE_CHECKING:
+    from airbyte.cloud.workspaces import CloudWorkspace
+
+
+class CloudConnection:  # noqa: PLR0904  # Too many public methods
+    """A connection is an extract-load (EL) pairing of a source and destination in Airbyte Cloud.
+
+    You can use a connection object to run sync jobs, retrieve logs, and manage the connection.
+    """
+
+    def __init__(
+        self,
+        workspace: CloudWorkspace,
+        connection_id: str,
+        source: str | None = None,
+        destination: str | None = None,
+    ) -> None:
+        """It is not recommended to create a `CloudConnection` object directly.
+
+        Instead, use `CloudWorkspace.get_connection()` to create a connection object.
+        """
+        self.connection_id = connection_id
+        """The ID of the connection."""
+
+        self.workspace = workspace
+        """The workspace that the connection belongs to."""
+
+        self._source_id = source
+        """The ID of the source."""
+
+        self._destination_id = destination
+        """The ID of the destination."""
+
+        self._connection_info: CloudConnectionInfo | None = None
+        """The connection info object. (Cached.)"""
+
+        self._cloud_source_object: CloudSource | None = None
+        """The source object. (Cached.)"""
+
+        self._cloud_destination_object: CloudDestination | None = None
+        """The destination object. (Cached.)"""
+
+    def _fetch_connection_info(
+        self,
+        *,
+        force_refresh: bool = False,
+        verify: bool = True,
+    ) -> CloudConnectionInfo:
+        """Fetch and cache connection info from the API.
+
+        By default, this method will only fetch from the API if connection info is not
+        already cached. It also verifies that the connection belongs to the expected
+        workspace unless verification is explicitly disabled.
+
+        Args:
+            force_refresh: If True, always fetch from the API even if cached.
+                If False (default), only fetch if not already cached.
+            verify: If True (default), verify that the connection is valid (e.g., that
+                the workspace_id matches this object's workspace). Raises an error if
+                validation fails.
+
+        Returns:
+            Information about the connection from the API.
+
+        Raises:
+            AirbyteWorkspaceMismatchError: If verify is True and the connection's
+                workspace_id doesn't match the expected workspace.
+            AirbyteMissingResourceError: If the connection doesn't exist.
+        """
+        if not force_refresh and self._connection_info is not None:
+            # Use cached info, but still verify if requested
+            if verify:
+                self._verify_workspace_match(self._connection_info)
+            return self._connection_info
+
+        # Fetch from API
+        connection_info = api_util.get_connection(
+            workspace_id=self.workspace.workspace_id,
+            connection_id=self.connection_id,
+            api_root=self.workspace.api_root,
+            client_id=self.workspace.client_id,
+            client_secret=self.workspace.client_secret,
+            bearer_token=self.workspace.bearer_token,
+        )
+        result = CloudConnectionInfo.from_api_response(connection_info)
+
+        self._connection_info = result
+
+        # Verify if requested
+        if verify:
+            self._verify_workspace_match(result)
+
+        return result
+
+    def _verify_workspace_match(self, connection_info: CloudConnectionInfo) -> None:
+        """Verify that the connection belongs to the expected workspace.
+
+        Raises:
+            AirbyteWorkspaceMismatchError: If the workspace IDs don't match.
+        """
+        if connection_info.workspace_id != self.workspace.workspace_id:
+            raise AirbyteWorkspaceMismatchError(
+                resource_type="connection",
+                resource_id=self.connection_id,
+                workspace=self.workspace,
+                expected_workspace_id=self.workspace.workspace_id,
+                actual_workspace_id=connection_info.workspace_id,
+                message=(
+                    f"Connection '{self.connection_id}' belongs to workspace "
+                    f"'{connection_info.workspace_id}', not '{self.workspace.workspace_id}'."
+                ),
+            )
+
+    def check_is_valid(self) -> bool:
+        """Check if this connection exists and belongs to the expected workspace.
+
+        This method fetches connection info from the API (if not already cached) and
+        verifies that the connection's workspace_id matches the workspace associated
+        with this CloudConnection object.
+
+        Returns:
+            True if the connection exists and belongs to the expected workspace.
+
+        Raises:
+            AirbyteWorkspaceMismatchError: If the connection belongs to a different workspace.
+            AirbyteMissingResourceError: If the connection doesn't exist.
+        """
+        self._fetch_connection_info(force_refresh=False, verify=True)
+        return True
+
+    @classmethod
+    def _from_connection_response(
+        cls,
+        workspace: CloudWorkspace,
+        connection_response: _ConnectionResponseLike,
+    ) -> CloudConnection:
+        """Create a CloudConnection from an API connection response."""
+        connection_info = CloudConnectionInfo.from_api_response(connection_response)
+        result = cls(
+            workspace=workspace,
+            connection_id=connection_info.connection_id,
+            source=connection_info.source_id,
+            destination=connection_info.destination_id,
+        )
+        result._connection_info = connection_info  # noqa: SLF001 # Accessing Non-Public API
+        return result
+
+    # Properties
+
+    @property
+    def name(self) -> str | None:
+        """Get the display name of the connection, if available.
+
+        E.g. "My Postgres to Snowflake", not the connection ID.
+        """
+        if not self._connection_info:
+            self._connection_info = self._fetch_connection_info()
+
+        return self._connection_info.name
+
+    @property
+    def source_id(self) -> str:
+        """The ID of the source."""
+        if not self._source_id:
+            if not self._connection_info:
+                self._connection_info = self._fetch_connection_info()
+
+            self._source_id = self._connection_info.source_id
+
+        return self._source_id
+
+    @property
+    def source(self) -> CloudSource:
+        """Get the source object."""
+        if self._cloud_source_object:
+            return self._cloud_source_object
+
+        self._cloud_source_object = CloudSource(
+            workspace=self.workspace,
+            connector_id=self.source_id,
+        )
+        return self._cloud_source_object
+
+    @property
+    def destination_id(self) -> str:
+        """The ID of the destination."""
+        if not self._destination_id:
+            if not self._connection_info:
+                self._connection_info = self._fetch_connection_info()
+
+            self._destination_id = self._connection_info.destination_id
+
+        return self._destination_id
+
+    @property
+    def destination(self) -> CloudDestination:
+        """Get the destination object."""
+        if self._cloud_destination_object:
+            return self._cloud_destination_object
+
+        self._cloud_destination_object = CloudDestination(
+            workspace=self.workspace,
+            connector_id=self.destination_id,
+        )
+        return self._cloud_destination_object
+
+    @property
+    def stream_names(self) -> list[str]:
+        """The stream names."""
+        if not self._connection_info:
+            self._connection_info = self._fetch_connection_info()
+
+        return [stream.name for stream in self._connection_info.configurations.streams or []]
+
+    @property
+    def table_prefix(self) -> str:
+        """The table prefix."""
+        if not self._connection_info:
+            self._connection_info = self._fetch_connection_info()
+
+        return self._connection_info.prefix or ""
+
+    @property
+    def connection_url(self) -> str | None:
+        """The web URL to the connection."""
+        return f"{self.workspace.workspace_url}/connections/{self.connection_id}"
+
+    @property
+    def job_history_url(self) -> str | None:
+        """The URL to the job history for the connection."""
+        return f"{self.connection_url}/timeline"
+
+    # Run Sync
+
+    def run_sync(
+        self,
+        *,
+        wait: bool = True,
+        wait_timeout: int = 300,
+    ) -> SyncResult:
+        """Run a sync."""
+        connection_response = api_util.run_connection(
+            connection_id=self.connection_id,
+            api_root=self.workspace.api_root,
+            workspace_id=self.workspace.workspace_id,
+            client_id=self.workspace.client_id,
+            client_secret=self.workspace.client_secret,
+            bearer_token=self.workspace.bearer_token,
+        )
+        sync_result = SyncResult(
+            workspace=self.workspace,
+            connection=self,
+            job_id=connection_response.job_id,
+        )
+
+        if wait:
+            sync_result.wait_for_completion(
+                wait_timeout=wait_timeout,
+                raise_failure=True,
+                raise_timeout=True,
+            )
+
+        return sync_result
+
+    def __repr__(self) -> str:
+        """String representation of the connection."""
+        return (
+            f"CloudConnection(connection_id={self.connection_id}, source_id={self.source_id}, "
+            f"destination_id={self.destination_id}, connection_url={self.connection_url})"
+        )
+
+    # Logs
+
+    def get_previous_sync_logs(
+        self,
+        *,
+        limit: int = 20,
+        offset: int | None = None,
+        from_tail: bool = True,
+        job_type: str | JobTypeEnum | None = None,
+    ) -> list[SyncResult]:
+        """Get previous sync jobs for a connection with pagination support.
+
+        Returns SyncResult objects containing job metadata (job_id, status, bytes_synced,
+        rows_synced, start_time). Full log text can be fetched lazily via
+        `SyncResult.get_full_log_text()`.
+
+        Args:
+            limit: Maximum number of jobs to return. Defaults to 20.
+            offset: Number of jobs to skip from the beginning. Defaults to None (0).
+            from_tail: If True, returns jobs ordered newest-first (createdAt DESC).
+                If False, returns jobs ordered oldest-first (createdAt ASC).
+                Defaults to True.
+            job_type: Filter by job type (e.g., `sync`, `refresh`).
+                If not specified, defaults to sync and reset jobs only (API default behavior).
+
+        Returns:
+            A list of SyncResult objects representing the sync jobs.
+        """
+        order_by = (
+            api_util.JOB_ORDER_BY_CREATED_AT_DESC
+            if from_tail
+            else api_util.JOB_ORDER_BY_CREATED_AT_ASC
+        )
+        sync_logs = api_util.get_job_logs(
+            connection_id=self.connection_id,
+            api_root=self.workspace.api_root,
+            workspace_id=self.workspace.workspace_id,
+            limit=limit,
+            offset=offset,
+            order_by=order_by,
+            job_type=job_type,
+            client_id=self.workspace.client_id,
+            client_secret=self.workspace.client_secret,
+            bearer_token=self.workspace.bearer_token,
+        )
+        return [
+            SyncResult(
+                workspace=self.workspace,
+                connection=self,
+                job_id=sync_log.job_id,
+                _latest_job_info=CloudJobInfo.from_api_response(sync_log),
+            )
+            for sync_log in sync_logs
+        ]
+
+    def get_sync_result(
+        self,
+        job_id: int | None = None,
+    ) -> SyncResult | None:
+        """Get the sync result for the connection.
+
+        If `job_id` is not provided, the most recent sync job will be used.
+
+        Returns `None` if job_id is omitted and no previous jobs are found.
+        """
+        if job_id is None:
+            # Get the most recent sync job
+            results = self.get_previous_sync_logs(
+                limit=1,
+            )
+            if results:
+                return results[0]
+
+            return None
+
+        # Get the sync job by ID (lazy loaded)
+        return SyncResult(
+            workspace=self.workspace,
+            connection=self,
+            job_id=job_id,
+        )
+
+    # Artifacts
+
+    @deprecated("Use 'dump_raw_state()' instead.")
+    def get_state_artifacts(self) -> list[dict[str, Any]] | None:
+        """Deprecated. Use `dump_raw_state()` instead."""
+        state_response = api_util.get_connection_state(
+            connection_id=self.connection_id,
+            api_root=self.workspace.api_root,
+            client_id=self.workspace.client_id,
+            client_secret=self.workspace.client_secret,
+            bearer_token=self.workspace.bearer_token,
+            config_api_root=self.workspace.config_api_root,
+        )
+        if state_response.get("stateType") == "not_set":
+            return None
+        return state_response.get("streamState", [])
+
+    @overload
+    def dump_raw_state(self, *, normalize: Literal[True] = True) -> list[dict[str, Any]]: ...
+
+    @overload
+    def dump_raw_state(self, *, normalize: Literal[False]) -> dict[str, Any]: ...
+
+    def dump_raw_state(
+        self,
+        *,
+        normalize: bool = True,
+    ) -> dict[str, Any] | list[dict[str, Any]]:
+        """Dump the state for this connection.
+
+        By default, returns a list of Airbyte protocol `AirbyteStateMessage` dicts
+        with snake_case keys, suitable for passing to a connector's `--state` flag.
+
+        When `normalize` is `False`, returns the raw Config API dict (camelCase keys,
+        includes `stateType` and `connectionId`). This raw format can be passed
+        directly to `import_raw_state()` for backup/restore workflows.
+
+        Args:
+            normalize: If `True` (default), convert to Airbyte protocol format.
+                If `False`, return the raw Config API response.
+
+        Returns:
+            Normalized: list of protocol-format state message dicts (empty list if
+            no state). Raw: the full Config API state dict.
+        """
+        raw = api_util.get_connection_state(
+            connection_id=self.connection_id,
+            api_root=self.workspace.api_root,
+            client_id=self.workspace.client_id,
+            client_secret=self.workspace.client_secret,
+            bearer_token=self.workspace.bearer_token,
+            config_api_root=self.workspace.config_api_root,
+        )
+        if normalize:
+            return _normalize_state_to_protocol(raw)
+        return raw
+
+    def import_raw_state(
+        self,
+        connection_state: dict[str, Any] | list[dict[str, Any]],
+    ) -> dict[str, Any]:
+        """Import (restore) the full state for this connection.
+
+        > ⚠️ **WARNING:** Modifying the state directly is not recommended and
+        > could result in broken connections, and/or incorrect sync behavior.
+
+        Replaces the entire connection state with the provided state blob.
+        Uses the safe variant that prevents updates while a sync is running (HTTP 423).
+
+        This is the counterpart to `dump_raw_state()` for backup/restore workflows.
+        The `connectionId` in the blob is always overridden with this connection's
+        ID, making state blobs portable across connections.
+
+        Accepts either format:
+
+        - **Config API format** (dict with `stateType`): passed through directly.
+        - **Airbyte protocol format** (list of `AirbyteStateMessage` dicts): automatically
+          converted to Config API format before sending.
+
+        Args:
+            connection_state: Connection state in either Config API or Airbyte protocol format.
+
+        Returns:
+            The updated connection state as a dictionary.
+
+        Raises:
+            AirbyteConnectionSyncActiveError: If a sync is currently running on this
+                connection (HTTP 423). Wait for the sync to complete before retrying.
+        """
+        api_state: dict[str, Any]
+        if isinstance(connection_state, list):
+            if not _is_protocol_state_format(connection_state):
+                msg = (
+                    "Expected connection_state list to contain Airbyte protocol state "
+                    "message dicts (each with a top-level `type` of STREAM, GLOBAL, "
+                    "or LEGACY). Got a list that does not match protocol format."
+                )
+                raise ValueError(msg)
+            api_state = _denormalize_protocol_state_to_api(
+                protocol_messages=connection_state,
+                connection_id=self.connection_id,
+            )
+        elif isinstance(connection_state, dict):
+            if _is_protocol_state_format(connection_state):
+                api_state = _denormalize_protocol_state_to_api(
+                    protocol_messages=[connection_state],
+                    connection_id=self.connection_id,
+                )
+            else:
+                api_state = connection_state
+        else:
+            msg = f"Expected a dict or list, got {type(connection_state)}"
+            raise TypeError(msg)
+
+        return api_util.replace_connection_state(
+            connection_id=self.connection_id,
+            connection_state_dict=api_state,
+            api_root=self.workspace.api_root,
+            client_id=self.workspace.client_id,
+            client_secret=self.workspace.client_secret,
+            bearer_token=self.workspace.bearer_token,
+            config_api_root=self.workspace.config_api_root,
+        )
+
+    def get_stream_state(
+        self,
+        stream_name: str,
+        stream_namespace: str | None = None,
+    ) -> dict[str, Any] | None:
+        """Get the state blob for a single stream within this connection.
+
+        Returns just the stream's state dictionary (e.g., {"cursor": "2024-01-01"}),
+        not the full connection state envelope.
+
+        This is compatible with `stream`-type state and stream-level entries
+        within a `global`-type state. It is not compatible with `legacy` state.
+        To get or set the entire connection-level state artifact, use
+        `dump_raw_state` and `import_raw_state` instead.
+
+        Args:
+            stream_name: The name of the stream to get state for.
+            stream_namespace: The source-side stream namespace. This refers to the
+                namespace from the source (e.g., database schema), not any destination
+                namespace override set in connection advanced settings.
+
+        Returns:
+            The stream's state blob as a dictionary, or None if the stream is not found.
+        """
+        state_data = self.dump_raw_state(normalize=False)
+        result = ConnectionStateResponse(**state_data)
+
+        streams = _get_stream_list(result)
+        matching = [s for s in streams if _match_stream(s, stream_name, stream_namespace)]
+
+        if not matching:
+            available = [s.stream_descriptor.name for s in streams]
+            logger.warning(
+                "Stream '%s' not found in connection state for connection '%s'. "
+                "Available streams: %s",
+                stream_name,
+                self.connection_id,
+                available,
+            )
+            return None
+
+        return matching[0].stream_state
+
+    def set_stream_state(
+        self,
+        stream_name: str,
+        state_blob_dict: dict[str, Any],
+        stream_namespace: str | None = None,
+    ) -> None:
+        """Set the state for a single stream within this connection.
+
+        Fetches the current full state, replaces only the specified stream's state,
+        then sends the full updated state back to the API. If the stream does not
+        exist in the current state, it is appended.
+
+        This is compatible with `stream`-type state and stream-level entries
+        within a `global`-type state. It is not compatible with `legacy` state.
+        To get or set the entire connection-level state artifact, use
+        `dump_raw_state` and `import_raw_state` instead.
+
+        Uses the safe variant that prevents updates while a sync is running (HTTP 423).
+
+        Args:
+            stream_name: The name of the stream to update state for.
+            state_blob_dict: The state blob dict for this stream (e.g., {"cursor": "2024-01-01"}).
+            stream_namespace: The source-side stream namespace. This refers to the
+                namespace from the source (e.g., database schema), not any destination
+                namespace override set in connection advanced settings.
+
+        Raises:
+            PyAirbyteInputError: If the connection state type is not supported for
+                stream-level operations (not_set, legacy).
+            AirbyteConnectionSyncActiveError: If a sync is currently running on this
+                connection (HTTP 423). Wait for the sync to complete before retrying.
+        """
+        state_data = self.dump_raw_state(normalize=False)
+        current = ConnectionStateResponse(**state_data)
+
+        if current.state_type == "not_set":
+            raise PyAirbyteInputError(
+                message="Cannot set stream state: connection has no existing state.",
+                context={"connection_id": self.connection_id},
+            )
+
+        if current.state_type == "legacy":
+            raise PyAirbyteInputError(
+                message="Cannot set stream state on a legacy-type connection state.",
+                context={"connection_id": self.connection_id},
+            )
+
+        new_stream_entry = {
+            "streamDescriptor": {
+                "name": stream_name,
+                **(
+                    {
+                        "namespace": stream_namespace,
+                    }
+                    if stream_namespace
+                    else {}
+                ),
+            },
+            "streamState": state_blob_dict,
+        }
+
+        raw_streams: list[dict[str, Any]]
+        if current.state_type == "stream":
+            raw_streams = state_data.get("streamState", [])
+        elif current.state_type == "global":
+            raw_streams = state_data.get("globalState", {}).get("streamStates", [])
+        else:
+            raw_streams = []
+
+        streams = _get_stream_list(current)
+        found = False
+        updated_streams_raw: list[dict[str, Any]] = []
+        for raw_s, parsed_s in zip(raw_streams, streams, strict=False):
+            if _match_stream(parsed_s, stream_name, stream_namespace):
+                updated_streams_raw.append(new_stream_entry)
+                found = True
+            else:
+                updated_streams_raw.append(raw_s)
+
+        if not found:
+            updated_streams_raw.append(new_stream_entry)
+
+        full_state: dict[str, Any] = {
+            **state_data,
+        }
+
+        if current.state_type == "stream":
+            full_state["streamState"] = updated_streams_raw
+        elif current.state_type == "global":
+            original_global = state_data.get("globalState", {})
+            full_state["globalState"] = {
+                **original_global,
+                "streamStates": updated_streams_raw,
+            }
+
+        self.import_raw_state(full_state)
+
+    @deprecated("Use 'dump_raw_catalog()' instead.")
+    def get_catalog_artifact(self) -> dict[str, Any] | None:
+        """Get the configured catalog for this connection.
+
+        Returns the full configured catalog (syncCatalog) for this connection,
+        including stream schemas, sync modes, cursor fields, and primary keys.
+
+        Uses the Config API endpoint: POST /v1/web_backend/connections/get
+
+        Returns:
+            Dictionary containing the configured catalog, or `None` if not found.
+        """
+        return self.dump_raw_catalog()
+
+    def dump_raw_catalog(
+        self,
+        *,
+        normalize: bool = True,
+    ) -> dict[str, Any] | None:
+        """Dump the configured catalog for this connection.
+
+        By default, returns the catalog in Airbyte protocol format
+        (`ConfiguredAirbyteCatalog` with snake_case keys), suitable for passing
+        to a connector's `--catalog` flag.
+
+        When `normalize` is `False`, returns the raw `syncCatalog` dict from the
+        Config API (camelCase keys, nested `config` block). This raw format can be
+        passed directly to `import_raw_catalog()` for backup/restore workflows.
+
+        Args:
+            normalize: If `True` (default), convert to Airbyte protocol format.
+                If `False`, return the raw Config API catalog.
+
+        Returns:
+            The configured catalog dict, or `None` if not found.
+        """
+        connection_response = api_util.get_connection_catalog(
+            connection_id=self.connection_id,
+            api_root=self.workspace.api_root,
+            client_id=self.workspace.client_id,
+            client_secret=self.workspace.client_secret,
+            bearer_token=self.workspace.bearer_token,
+            config_api_root=self.workspace.config_api_root,
+        )
+        raw = connection_response.get("syncCatalog")
+        if raw is None:
+            return None
+        if normalize:
+            return _normalize_catalog_to_protocol(raw)
+        return raw
+
+    def import_raw_catalog(self, catalog: dict[str, Any]) -> None:
+        """Replace the configured catalog for this connection.
+
+        > ⚠️ **WARNING:** Modifying the catalog directly is not recommended and
+        > could result in broken connections, and/or incorrect sync behavior.
+
+        Accepts a configured catalog dict and replaces the connection's entire
+        catalog with it. All other connection settings remain unchanged.
+
+        Accepts either format:
+
+        - **Config API format** (`syncCatalog` with camelCase keys and nested `config`):
+          passed through directly.
+        - **Airbyte protocol format** (`ConfiguredAirbyteCatalog` with snake_case keys):
+          automatically converted to Config API format before sending.
+
+        Args:
+            catalog: The configured catalog dict in either format.
+        """
+        if _is_protocol_catalog_format(catalog):
+            catalog = _denormalize_catalog_to_api(catalog)
+
+        api_util.replace_connection_catalog(
+            connection_id=self.connection_id,
+            configured_catalog_dict=catalog,
+            api_root=self.workspace.api_root,
+            client_id=self.workspace.client_id,
+            client_secret=self.workspace.client_secret,
+            bearer_token=self.workspace.bearer_token,
+            config_api_root=self.workspace.config_api_root,
+        )
+
+    def rename(self, name: str) -> CloudConnection:
+        """Rename the connection.
+
+        Args:
+            name: New name for the connection
+
+        Returns:
+            Updated CloudConnection object with refreshed info
+        """
+        updated_response = api_util.patch_connection(
+            connection_id=self.connection_id,
+            api_root=self.workspace.api_root,
+            client_id=self.workspace.client_id,
+            client_secret=self.workspace.client_secret,
+            bearer_token=self.workspace.bearer_token,
+            name=name,
+        )
+        self._connection_info = CloudConnectionInfo.from_api_response(updated_response)
+        return self
+
+    def set_table_prefix(self, prefix: str) -> CloudConnection:
+        """Set the table prefix for the connection.
+
+        Args:
+            prefix: New table prefix to use when syncing to the destination
+
+        Returns:
+            Updated CloudConnection object with refreshed info
+        """
+        updated_response = api_util.patch_connection(
+            connection_id=self.connection_id,
+            api_root=self.workspace.api_root,
+            client_id=self.workspace.client_id,
+            client_secret=self.workspace.client_secret,
+            bearer_token=self.workspace.bearer_token,
+            prefix=prefix,
+        )
+        self._connection_info = CloudConnectionInfo.from_api_response(updated_response)
+        return self
+
+    def set_selected_streams(self, stream_names: list[str]) -> CloudConnection:
+        """Set the selected streams for the connection.
+
+        This is a destructive operation that can break existing connections if the
+        stream selection is changed incorrectly. Use with caution.
+
+        Args:
+            stream_names: List of stream names to sync
+
+        Returns:
+            Updated CloudConnection object with refreshed info
+        """
+        configurations = api_util.build_stream_configurations(stream_names)
+
+        updated_response = api_util.patch_connection(
+            connection_id=self.connection_id,
+            api_root=self.workspace.api_root,
+            client_id=self.workspace.client_id,
+            client_secret=self.workspace.client_secret,
+            bearer_token=self.workspace.bearer_token,
+            configurations=configurations,
+        )
+        self._connection_info = CloudConnectionInfo.from_api_response(updated_response)
+        return self
+
+    # Enable/Disable
+
+    @property
+    def enabled(self) -> bool:
+        """Get the current enabled status of the connection.
+
+        This property always fetches fresh data from the API to ensure accuracy,
+        as another process or user may have toggled the setting.
+
+        Returns:
+            True if the connection status is 'active', False otherwise.
+        """
+        connection_info = self._fetch_connection_info(force_refresh=True)
+        return connection_info.status == "active"
+
+    @enabled.setter
+    def enabled(self, value: bool) -> None:
+        """Set the enabled status of the connection.
+
+        Args:
+            value: True to enable (set status to 'active'), False to disable
+                (set status to 'inactive').
+        """
+        self.set_enabled(enabled=value)
+
+    def set_enabled(
+        self,
+        *,
+        enabled: bool,
+        ignore_noop: bool = True,
+    ) -> None:
+        """Set the enabled status of the connection.
+
+        Args:
+            enabled: True to enable (set status to 'active'), False to disable
+                (set status to 'inactive').
+            ignore_noop: If True (default), silently return if the connection is already
+                in the requested state. If False, raise ValueError when the requested
+                state matches the current state.
+
+        Raises:
+            ValueError: If ignore_noop is False and the connection is already in the
+                requested state.
+        """
+        # Always fetch fresh data to check current status
+        connection_info = self._fetch_connection_info(force_refresh=True)
+        current_status = connection_info.status
+        desired_status = "active" if enabled else "inactive"
+
+        if current_status == desired_status:
+            if ignore_noop:
+                return
+            raise ValueError(
+                f"Connection is already {'enabled' if enabled else 'disabled'}. "
+                f"Current status: {current_status}"
+            )
+
+        updated_response = api_util.patch_connection(
+            connection_id=self.connection_id,
+            api_root=self.workspace.api_root,
+            client_id=self.workspace.client_id,
+            client_secret=self.workspace.client_secret,
+            bearer_token=self.workspace.bearer_token,
+            status=desired_status,
+        )
+        self._connection_info = CloudConnectionInfo.from_api_response(updated_response)
+
+    # Scheduling
+
+    def set_schedule(
+        self,
+        cron_expression: str,
+    ) -> None:
+        """Set a cron schedule for the connection.
+
+        Args:
+            cron_expression: A cron expression defining when syncs should run.
+
+        Examples:
+                - "0 0 * * *" - Daily at midnight UTC
+                - "0 */6 * * *" - Every 6 hours
+                - "0 0 * * 0" - Weekly on Sunday at midnight UTC
+        """
+        updated_response = api_util.patch_connection(
+            connection_id=self.connection_id,
+            api_root=self.workspace.api_root,
+            client_id=self.workspace.client_id,
+            client_secret=self.workspace.client_secret,
+            bearer_token=self.workspace.bearer_token,
+            schedule=api_util.build_connection_schedule(
+                schedule_type="cron",
+                cron_expression=cron_expression,
+            ),
+        )
+        self._connection_info = CloudConnectionInfo.from_api_response(updated_response)
+
+    def set_manual_schedule(self) -> None:
+        """Set the connection to manual scheduling.
+
+        Disables automatic syncs. Syncs will only run when manually triggered.
+        """
+        updated_response = api_util.patch_connection(
+            connection_id=self.connection_id,
+            api_root=self.workspace.api_root,
+            client_id=self.workspace.client_id,
+            client_secret=self.workspace.client_secret,
+            bearer_token=self.workspace.bearer_token,
+            schedule=api_util.build_connection_schedule(schedule_type="manual"),
+        )
+        self._connection_info = CloudConnectionInfo.from_api_response(updated_response)
+
+    # Deletions
+
+    def permanently_delete(
+        self,
+        *,
+        cascade_delete_source: bool = False,
+        cascade_delete_destination: bool = False,
+    ) -> None:
+        """Delete the connection.
+
+        Args:
+            cascade_delete_source: Whether to also delete the source.
+            cascade_delete_destination: Whether to also delete the destination.
+        """
+        self.workspace.permanently_delete_connection(self)
+
+        if cascade_delete_source:
+            self.workspace.permanently_delete_source(self.source_id)
+
+        if cascade_delete_destination:
+            self.workspace.permanently_delete_destination(self.destination_id)

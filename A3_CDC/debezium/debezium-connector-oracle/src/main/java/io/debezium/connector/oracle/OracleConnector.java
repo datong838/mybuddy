@@ -1,0 +1,114 @@
+/*
+ * Copyright Debezium Authors.
+ *
+ * Licensed under the Apache Software License version 2.0, available at http://www.apache.org/licenses/LICENSE-2.0
+ */
+package io.debezium.connector.oracle;
+
+import java.time.Duration;
+import java.util.Collections;
+import java.util.HashMap;
+import java.util.List;
+import java.util.Map;
+import java.util.concurrent.TimeoutException;
+
+import org.apache.kafka.common.config.ConfigDef;
+import org.apache.kafka.common.config.ConfigValue;
+import org.apache.kafka.connect.connector.Task;
+import org.apache.kafka.connect.source.ExactlyOnceSupport;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+
+import io.debezium.config.Configuration;
+import io.debezium.config.Field;
+import io.debezium.connector.common.RelationalBaseSourceConnector;
+import io.debezium.connector.oracle.jdbc.OracleConnectionFactory;
+import io.debezium.connector.oracle.jdbc.OracleConnectionFactoryProvider;
+import io.debezium.metadata.ConfigDescriptor;
+import io.debezium.relational.RelationalDatabaseConnectorConfig;
+import io.debezium.util.Threads;
+
+public class OracleConnector extends RelationalBaseSourceConnector implements ConfigDescriptor {
+
+    private static final Logger LOGGER = LoggerFactory.getLogger(OracleConnector.class);
+
+    private Map<String, String> properties;
+
+    @Override
+    public String version() {
+        return Module.version();
+    }
+
+    @Override
+    public void start(Map<String, String> props) {
+        this.properties = Collections.unmodifiableMap(new HashMap<>(props));
+    }
+
+    @Override
+    public Class<? extends Task> taskClass() {
+        return OracleConnectorTask.class;
+    }
+
+    @Override
+    public List<Map<String, String>> taskConfigs(int maxTasks) {
+        if (maxTasks > 1) {
+            throw new IllegalArgumentException("Only a single connector task may be started");
+        }
+
+        return Collections.singletonList(properties);
+    }
+
+    @Override
+    public void stop() {
+    }
+
+    @Override
+    public ConfigDef config() {
+        return OracleConnectorConfig.configDef();
+    }
+
+    @Override
+    public Field.Set getConfigFields() {
+        return OracleConnectorConfig.ALL_FIELDS;
+    }
+
+    @Override
+    protected void validateConnection(Map<String, ConfigValue> configValues, Configuration config) {
+        final ConfigValue databaseValue = configValues.get(RelationalDatabaseConnectorConfig.DATABASE_NAME.name());
+        if (!databaseValue.errorMessages().isEmpty()) {
+            return;
+        }
+
+        final ConfigValue hostnameValue = configValues.get(RelationalDatabaseConnectorConfig.HOSTNAME.name());
+
+        OracleConnectorConfig connectorConfig = new OracleConnectorConfig(config);
+        Duration timeout = connectorConfig.getConnectionValidationTimeout();
+
+        final OracleConnectionFactory connectionFactory = OracleConnectionFactoryProvider.create(connectorConfig);
+
+        try {
+            Threads.runWithTimeout(OracleConnector.class, () -> {
+                connectionFactory.validateConnections((name, error) -> {
+                    LOGGER.error("Failed testing {} connection for {}", name, config.withMaskedPasswords(), error);
+                    hostnameValue.addErrorMessage("Unable to connect (" + name + "): " + error.getMessage());
+                });
+            }, null, timeout, connectorConfig.getLogicalName(), "connection-validation");
+        }
+        catch (TimeoutException e) {
+            hostnameValue.addErrorMessage("Connection validation timed out after " + timeout.toMillis() + " ms");
+        }
+        catch (Exception e) {
+            hostnameValue.addErrorMessage("Error during connection validation: " + e.getMessage());
+        }
+    }
+
+    @Override
+    protected Map<String, ConfigValue> validateAllFields(Configuration config) {
+        return config.validate(OracleConnectorConfig.ALL_FIELDS);
+    }
+
+    @Override
+    public ExactlyOnceSupport exactlyOnceSupport(Map<String, String> connectorConfig) {
+        return ExactlyOnceSupport.SUPPORTED;
+    }
+}

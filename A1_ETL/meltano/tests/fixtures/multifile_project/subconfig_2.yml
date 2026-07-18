@@ -1,0 +1,22 @@
+plugins:
+  # Subconfig 2 Plugins
+  extractors:
+  - name: tap-subconfig-2-yml
+
+  loaders:
+  - name: target-subconfig-2-yml  # Subconfig 2 Loader
+
+schedules:
+# Subconfig 2 Schedules
+- name: test-subconfig-2-yml
+  extractor: tap-subconfig-2-yml
+  loader: target-subconfig-2-yml
+  transform: skip
+  start_date: 2020-08-04T00:00:00Z
+  interval: '@daily' # Run daily
+
+environments:
+# Subconfig 2 Environments
+- name: test-subconfig-2-yml
+  env:
+    TEST: TEST-SUBCONFIG-2-YML

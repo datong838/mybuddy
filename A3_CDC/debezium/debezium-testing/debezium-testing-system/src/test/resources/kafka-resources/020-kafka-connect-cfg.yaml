@@ -1,0 +1,25 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: connect-cfg
+data:
+  metrics: |
+    lowercaseOutputName: true
+  log4j.properties: |+
+    rootLogger.level = info
+    rootLogger.appenderRefs = stdout
+    rootLogger.appenderRef.stdout.ref = STDOUT
+    
+    logger.reflections.name = org.reflections
+    logger.reflections.level = error
+    
+    logger.debezium.name = io.debezium
+    logger.debezium.level = ${sys:strimzi.kc.log.level.dbz}
+    
+    appender.stdout.type = Console
+    appender.stdout.name = STDOUT
+    appender.stdout.target = SYSTEM_OUT
+    
+    appender.stdout.layout.type = PatternLayout
+    appender.stdout.layout.pattern = %d{ISO8601} %-5p %X{dbz.connectorType}|%X{dbz.connectorName}|%X{dbz.connectorContext} %m [%c]%n
+

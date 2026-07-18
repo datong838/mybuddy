@@ -1,0 +1,122 @@
+/*
+ * Copyright Debezium Authors.
+ *
+ * Licensed under the Apache Software License version 2.0, available at http://www.apache.org/licenses/LICENSE-2.0
+ */
+package io.debezium.connector.postgresql;
+
+import static org.assertj.core.api.Assertions.assertThat;
+
+import org.apache.kafka.connect.data.Schema;
+import org.apache.kafka.connect.data.SchemaBuilder;
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Test;
+
+import io.debezium.config.CommonConnectorConfig;
+import io.debezium.config.Configuration;
+import io.debezium.connector.postgresql.connection.Lsn;
+import io.debezium.data.VerifyRecord;
+import io.debezium.doc.FixFor;
+import io.debezium.relational.TableId;
+import io.debezium.schema.SchemaFactory;
+import io.debezium.time.Conversions;
+
+/**
+ * @author Jiri Pechanec
+ *
+ */
+public class SourceInfoTest {
+
+    private SourceInfo source;
+
+    @BeforeEach
+    void beforeEach() {
+        source = new SourceInfo(new PostgresConnectorConfig(
+                Configuration.create()
+                        .with(CommonConnectorConfig.TOPIC_PREFIX, "serverX")
+                        .with(PostgresConnectorConfig.DATABASE_NAME, "serverX")
+                        .build()));
+        source.update(Conversions.toInstantFromMicros(123_456_789L), new TableId("catalogNameX", "schemaNameX", "tableNameX"));
+    }
+
+    @Test
+    void versionIsPresent() {
+        assertThat(source.struct().getString(SourceInfo.DEBEZIUM_VERSION_KEY)).isEqualTo(Module.version());
+    }
+
+    @Test
+    void connectorIsPresent() {
+        assertThat(source.struct().getString(SourceInfo.DEBEZIUM_CONNECTOR_KEY)).isEqualTo(Module.name());
+    }
+
+    @Test
+    @FixFor("DBZ-934")
+    public void canHandleNullValues() {
+        source.update(null, null, null, null, null, null);
+    }
+
+    @Test
+    void shouldHaveTimestamp() {
+        assertThat(source.struct().getInt64("ts_ms")).isEqualTo(123_456L);
+    }
+
+    @Test
+    void schemaIsCorrect() {
+        final Schema schema = SchemaBuilder.struct()
+                .name("io.debezium.connector.postgresql.Source")
+                .version(SchemaFactory.SOURCE_INFO_DEFAULT_SCHEMA_VERSION)
+                .field("version", Schema.STRING_SCHEMA)
+                .field("connector", Schema.STRING_SCHEMA)
+                .field("name", Schema.STRING_SCHEMA)
+                .field("ts_ms", Schema.INT64_SCHEMA)
+                .field("snapshot", SchemaFactory.get().snapshotRecordSchema())
+                .field("db", Schema.STRING_SCHEMA)
+                .field("sequence", Schema.OPTIONAL_STRING_SCHEMA)
+                .field("ts_us", Schema.OPTIONAL_INT64_SCHEMA)
+                .field("ts_ns", Schema.OPTIONAL_INT64_SCHEMA)
+                .field("schema", Schema.STRING_SCHEMA)
+                .field("table", Schema.STRING_SCHEMA)
+                .field("txId", Schema.OPTIONAL_INT64_SCHEMA)
+                .field("lsn", Schema.OPTIONAL_INT64_SCHEMA)
+                .field("xmin", Schema.OPTIONAL_INT64_SCHEMA)
+                .field("origin", Schema.OPTIONAL_STRING_SCHEMA)
+                .field("origin_lsn", Schema.OPTIONAL_INT64_SCHEMA)
+                .build();
+
+        VerifyRecord.assertConnectSchemasAreEqual(null, source.struct().schema(), schema);
+    }
+
+    @Test
+    void originInfoIsNullByDefault() {
+        assertThat(source.originName()).isNull();
+        assertThat(source.originLsn()).isNull();
+        // Verify struct doesn't contain origin fields when not set
+        assertThat(source.struct().schema().field(SourceInfo.ORIGIN_KEY)).isNotNull();
+        assertThat(source.struct().schema().field(SourceInfo.ORIGIN_LSN_KEY)).isNotNull();
+    }
+
+    @Test
+    void originInfoCanBeSetAndCleared() {
+        // Set origin info
+        source.updateOrigin("dc1_postgres", Lsn.valueOf(26523000L));
+
+        assertThat(source.originName()).isEqualTo("dc1_postgres");
+        assertThat(source.originLsn()).isEqualTo(Lsn.valueOf(26523000L));
+        assertThat(source.struct().getString(SourceInfo.ORIGIN_KEY)).isEqualTo("dc1_postgres");
+        assertThat(source.struct().getInt64(SourceInfo.ORIGIN_LSN_KEY)).isEqualTo(26523000L);
+
+        // Clear origin info (simulating new transaction)
+        source.clearOrigin();
+
+        assertThat(source.originName()).isNull();
+        assertThat(source.originLsn()).isNull();
+    }
+
+    @Test
+    void originInfoIncludedInToString() {
+        source.updateOrigin("replica_server", Lsn.valueOf(12345L));
+        String str = source.toString();
+        assertThat(str).contains("origin=replica_server");
+        assertThat(str).contains("originLsn=12345");
+    }
+}

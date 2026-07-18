@@ -1,0 +1,89 @@
+ci:
+  autofix_commit_msg: |
+    chore: auto fixes from pre-commit.ci hooks
+
+    for more information, see https://pre-commit.ci
+  autofix_prs: true
+  autoupdate_commit_msg: "chore: pre-commit autoupdate"
+  autoupdate_schedule: monthly
+  skip:
+    - uv-audit
+
+repos:
+  - repo: https://github.com/pre-commit/pre-commit-hooks
+    rev: v6.0.0
+    hooks:
+      - id: trailing-whitespace
+        exclude: ^src/meltano/core/cli_messages\.py$
+      - id: end-of-file-fixer
+        exclude: ^.*/plugins/.*/.*\.lock$
+      - id: check-yaml
+      - id: check-json
+      - id: pretty-format-json
+        args: ["--autofix", "--indent=2", "--no-sort-keys"]
+      - id: check-added-large-files
+        exclude: ^uv\.lock$
+      - id: check-merge-conflict
+      - id: check-toml
+      - id: debug-statements
+      - id: no-commit-to-branch
+
+  - repo: https://github.com/python-jsonschema/check-jsonschema
+    rev: 0.37.4
+    hooks:
+      - id: check-metaschema
+        name: validate JSON schemas against meta schemas
+        files: ^src/meltano/schemas?/.*\.json$
+      - id: check-jsonschema
+        name: validate 'meltano.yml' with jsonschema
+        files: .*/meltano.yml$
+        args: ["--schemafile", "src/meltano/schemas/meltano.schema.json"]
+      - id: check-compose-spec
+      - id: check-dependabot
+      - id: check-github-actions
+      - id: check-github-issue-config
+      - id: check-github-issue-forms
+      - id: check-github-discussion
+      - id: check-github-workflows
+
+  - repo: https://github.com/shellcheck-py/shellcheck-py
+    rev: v0.11.0.1
+    hooks:
+      - id: shellcheck
+        name: shellcheck
+        exclude: ^integration/mdsh$
+
+  - repo: https://github.com/pre-commit/mirrors-eslint
+    rev: v10.6.0 # Keep this in sync with the eslint "additional_dependency" below!
+    hooks:
+      - id: eslint
+        files: \.[jt]sx?$
+        args: ['--fix', '--config=docs/eslint.config.js']
+        additional_dependencies:
+          - "eslint@10.6.0" # Keep this in sync with the rev above!
+
+          - "eslint-config-prettier@10.1.8"
+          - "eslint-plugin-prettier@5.5.6"
+          - "eslint-plugin-react@7.37.5"
+          - "eslint-plugin-vue@10.9.2"
+          - "prettier@3.9.4"
+          - "globals@17.7.0"
+
+  - repo: https://github.com/astral-sh/ruff-pre-commit
+    rev: v0.15.20
+    hooks:
+    - id: ruff-check
+      args: [--fix, --exit-non-zero-on-fix, --show-fixes]
+    - id: ruff-format
+
+  - repo: https://github.com/astral-sh/uv-pre-commit
+    rev: 0.11.26
+    hooks:
+      - id: uv-lock
+      - id: uv-sync
+      - id: uv-audit
+
+  - repo: https://github.com/crate-ci/typos
+    rev: v1.48.0
+    hooks:
+      - id: typos

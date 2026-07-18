@@ -1,0 +1,656 @@
+/*
+ * Copyright Debezium Authors.
+ *
+ * Licensed under the Apache Software License version 2.0, available at http://www.apache.org/licenses/LICENSE-2.0
+ */
+
+package io.debezium.connector.postgresql.connection;
+
+import static org.assertj.core.api.Assertions.assertThat;
+import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNull;
+import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.junit.jupiter.api.Assertions.fail;
+
+import java.sql.SQLException;
+import java.time.Duration;
+import java.util.ArrayList;
+import java.util.List;
+import java.util.Objects;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.Future;
+import java.util.concurrent.Semaphore;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicReference;
+import java.util.function.Consumer;
+
+import org.awaitility.Awaitility;
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Disabled;
+import org.junit.jupiter.api.Test;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+
+import io.debezium.DebeziumException;
+import io.debezium.connector.postgresql.PostgresConnectorConfig;
+import io.debezium.connector.postgresql.TestHelper;
+import io.debezium.connector.postgresql.TypeRegistry;
+import io.debezium.connector.postgresql.junit.SkipWhenDecoderPluginNameIs;
+import io.debezium.connector.postgresql.junit.SkipWhenDecoderPluginNameIsNot;
+import io.debezium.doc.FixFor;
+import io.debezium.jdbc.JdbcConnection.ResultSetMapper;
+import io.debezium.junit.logging.LogInterceptor;
+import io.debezium.util.Clock;
+import io.debezium.util.Metronome;
+
+import ch.qos.logback.classic.Level;
+
+/**
+ * Integration test for {@link ReplicationConnection}
+ *
+ * @author Horia Chiorean (hchiorea@redhat.com)
+ */
+public class ReplicationConnectionIT {
+
+    private static final Logger logger = LoggerFactory.getLogger(ReplicationConnectionIT.class);
+
+    @BeforeEach
+    void before() throws Exception {
+        TestHelper.dropAllSchemas();
+        String statement = "CREATE SCHEMA IF NOT EXISTS public;" +
+                "CREATE TABLE table_with_pk (a SERIAL, b VARCHAR(30), c TIMESTAMP NOT NULL, PRIMARY KEY(a, c));" +
+                "CREATE TABLE table_without_pk (a SERIAL, b NUMERIC(5,2), c TEXT);";
+        TestHelper.execute(statement);
+    }
+
+    @Test
+    void shouldCreateAndDropReplicationSlots() throws Exception {
+        // create a replication connection which should be dropped once it's closed
+        try (ReplicationConnection connection = TestHelper.createForReplication("test1", true)) {
+            ReplicationStream stream = connection.startStreaming(new WalPositionLocator());
+            assertNull(stream.lastReceivedLsn());
+            stream.close();
+        }
+        // create a replication connection which should be dropped once it's closed
+        try (ReplicationConnection connection = TestHelper.createForReplication("test2", true)) {
+            ReplicationStream stream = connection.startStreaming(new WalPositionLocator());
+            assertNull(stream.lastReceivedLsn());
+            stream.close();
+        }
+    }
+
+    @Test
+    void shouldNotAllowMultipleReplicationSlotsOnTheSameDBSlotAndPlugin() throws Exception {
+        assertThrows(DebeziumException.class, () -> {
+            // create a replication connection which should be dropped once it's closed
+            try (ReplicationConnection conn1 = TestHelper.createForReplication("test1", true)) {
+                conn1.startStreaming(new WalPositionLocator());
+                try (ReplicationConnection conn2 = TestHelper.createForReplication("test1", false)) {
+                    conn2.startStreaming(new WalPositionLocator());
+                    fail("Should not be able to create 2 replication connections on the same db, plugin and slot");
+                }
+                catch (Exception e) {
+                    assertTrue(e.getCause().getMessage().contains("ERROR: replication slot \"test1\" is active"));
+                    throw e;
+                }
+            }
+        });
+    }
+
+    @Test
+    @FixFor("DBZ-4517")
+    void shouldNotAllowRetryWhenConfigured() throws Exception {
+        assertThrows(DebeziumException.class, () -> {
+            TestHelper.create().dropReplicationSlot("test1");
+            LogInterceptor interceptor = new LogInterceptor(PostgresReplicationConnection.class);
+            // create a replication connection which should be dropped once it's closed
+            try (ReplicationConnection conn1 = TestHelper.createForReplication("test1", true)) {
+                conn1.startStreaming(new WalPositionLocator());
+                try (ReplicationConnection conn2 = TestHelper.createForReplication("test1", false,
+                        new PostgresConnectorConfig(TestHelper.defaultConfig()
+                                .with(PostgresConnectorConfig.MAX_RETRIES, 0)
+                                .build()))) {
+                    conn2.startStreaming(new WalPositionLocator());
+                    fail("Should not be able to create 2 replication connections on the same db, plugin and slot");
+                }
+                catch (Exception e) {
+                    assertFalse(interceptor.containsWarnMessage("and retrying, attempt number"));
+                    assertTrue(e.getCause().getMessage().contains("ERROR: replication slot \"test1\" is active"));
+                    throw e;
+                }
+            }
+        });
+    }
+
+    @Test
+    @FixFor("debezium/dbz#1683")
+    void shouldNotLogTooManyUnknownTypeResolutionsOnStartup() throws Exception {
+        TestHelper.create().dropReplicationSlot("test1");
+        LogInterceptor interceptor = new LogInterceptor(TypeRegistry.class);
+        interceptor.setLoggerLevel(TypeRegistry.class, Level.TRACE);
+
+        try (ReplicationConnection conn1 = TestHelper.createForReplication("test1", true)) {
+            conn1.startStreaming(new WalPositionLocator());
+            List<String> matched = interceptor.getLogEntriesThatContainsMessage("Type OID")
+                    .stream().filter(msg -> msg.contains("not cached, attempting to lookup from database")).toList();
+
+            // At v18, PostgreSQL defines roughly 300 array types by default.
+            // Resolving most of them via individual database lookups would be a performance concern.
+            // Since DBZ-1683 caused such behavior, we set the threshold to 300.
+            assertThat(matched.size())
+                    .isLessThan(300);
+        }
+    }
+
+    @Test
+    void shouldNotRetryIfSlotCreationFailsWithoutTimeoutError() throws Exception {
+        assertThrows(SQLException.class, () -> {
+            LogInterceptor interceptor = new LogInterceptor(PostgresReplicationConnection.class);
+            try (ReplicationConnection conn1 = TestHelper.createForReplication("testslot1", true)) {
+                conn1.createReplicationSlot();
+                // try to create the replication slot with same name again
+                try (ReplicationConnection conn2 = TestHelper.createForReplication("testslot1", true)) {
+                    conn2.createReplicationSlot();
+                    fail("Should not be able to create 2 replication slots on same db and plugin");
+                }
+                catch (Exception e) {
+                    assertFalse(interceptor.containsWarnMessage("and retrying, attempt number"));
+                    assertTrue(e.getMessage().contains("ERROR: replication slot \"testslot1\" already exists"));
+                    throw e;
+                }
+            }
+        });
+    }
+
+    @Test
+    void shouldRetryAndFailIfSlotCreationFailsWithTimeoutErrorOnLimitedRetries() throws Exception {
+        assertThrows(DebeziumException.class, () -> {
+            LogInterceptor interceptor = new LogInterceptor(PostgresReplicationConnection.class);
+            // open a transaction and don't commit it, so the slot creation will fail with timeout error
+            String statement = "DROP TABLE IF EXISTS table_with_pk;" +
+                    "CREATE TABLE table_with_pk (a SERIAL, b VARCHAR(30), c TIMESTAMP NOT NULL, PRIMARY KEY(a, c));" +
+                    "INSERT INTO table_with_pk (b, c) VALUES('val1', now()); ";
+            PostgresConnection connection = TestHelper.executeWithoutCommit(statement);
+            try (ReplicationConnection conn1 = TestHelper.createForReplication("testslot2", true,
+                    new PostgresConnectorConfig(TestHelper.defaultConfig()
+                            .with(PostgresConnectorConfig.MAX_RETRIES, 1)
+                            .with(PostgresConnectorConfig.RETRY_DELAY_MS, 10)
+                            .with(PostgresConnectorConfig.CREATE_SLOT_COMMAND_TIMEOUT, 2)
+                            .build()))) {
+                conn1.createReplicationSlot();
+            }
+            catch (Exception e) {
+                assertTrue(interceptor.containsWarnMessage("and retrying, attempt number"));
+                assertTrue(((SQLException) e.getCause()).getSQLState().equals("57014"));
+                assertTrue(e.getMessage().contains("query to create replication slot timed out"));
+                throw e;
+            }
+            finally {
+                connection.commit();
+            }
+        });
+    }
+
+    @Test
+    void shouldSucceedIfSlotCreationSucceedsAfterTimeoutErrors() throws Exception {
+        LogInterceptor interceptor = new LogInterceptor(PostgresReplicationConnection.class);
+        // open a transaction and don't commit it, so the slot creation will fail with timeout
+        String statement = "DROP TABLE IF EXISTS table_with_pk;" +
+                "CREATE TABLE table_with_pk (a SERIAL, b VARCHAR(30), c TIMESTAMP NOT NULL, PRIMARY KEY(a, c));" +
+                "INSERT INTO table_with_pk (b, c) VALUES('val1', now()); ";
+        PostgresConnection connection = TestHelper.executeWithoutCommit(statement);
+        try (ReplicationConnection conn1 = TestHelper.createForReplication("testslot3", true,
+                new PostgresConnectorConfig(TestHelper.defaultConfig()
+                        .with(PostgresConnectorConfig.MAX_RETRIES, 1)
+                        .with(PostgresConnectorConfig.RETRY_DELAY_MS, 10)
+                        .with(PostgresConnectorConfig.CREATE_SLOT_COMMAND_TIMEOUT, 2)
+                        .build()))) {
+            conn1.createReplicationSlot();
+        }
+        catch (Exception e) {
+            assertTrue(interceptor.containsWarnMessage("and retrying, attempt number"));
+            assertTrue(((SQLException) e.getCause()).getSQLState().equals("57014"));
+            assertTrue(e.getMessage().contains("query to create replication slot timed out"));
+        }
+        finally {
+            connection.commit();
+        }
+        // slot creation should be successful as there are no open transactions now
+        try (ReplicationConnection conn2 = TestHelper.createForReplication("testslot3", true,
+                new PostgresConnectorConfig(TestHelper.defaultConfig()
+                        .with(PostgresConnectorConfig.MAX_RETRIES, 1)
+                        .with(PostgresConnectorConfig.RETRY_DELAY_MS, 10)
+                        .with(PostgresConnectorConfig.CREATE_SLOT_COMMAND_TIMEOUT, 2)
+                        .build()))) {
+            conn2.createReplicationSlot();
+        }
+        catch (Exception e) {
+            fail("Should be able to create replication slot after no active transactions are present.");
+        }
+    }
+
+    @Test
+    void shouldCloseConnectionOnInvalidSlotName() throws Exception {
+        final int closeRetries = 60;
+        final int waitPeriod = 2_000;
+        final String slotQuery = "select count(*) from pg_stat_replication where state = 'startup'";
+        final ResultSetMapper<Integer> slotQueryMapper = rs -> {
+            rs.next();
+            return rs.getInt(1);
+        };
+        final int slotsBefore;
+
+        try (PostgresConnection connection = TestHelper.create()) {
+            slotsBefore = connection.queryAndMap(slotQuery, slotQueryMapper);
+        }
+
+        try (ReplicationConnection conn1 = TestHelper.createForReplication("test1-", true)) {
+            conn1.startStreaming(new WalPositionLocator());
+            fail("Invalid slot name should fail");
+        }
+        catch (Exception e) {
+            try (PostgresConnection connection = TestHelper.create()) {
+                final int slotsAfter = connection.queryAndMap(slotQuery, slotQueryMapper);
+                for (int retry = 1; retry <= closeRetries; retry++) {
+                    if (slotsAfter <= slotsBefore) {
+                        break;
+                    }
+                    if (retry == closeRetries) {
+                        fail("Connection should not be active");
+                    }
+                    Thread.sleep(waitPeriod);
+                }
+            }
+        }
+    }
+
+    // This test is disabled is it fails on CI with
+    // ERROR: cannot update table "table_without_pk" because it does not have a replica identity and publishes updates
+    // This cannot be replicated locally and does not show if the test is run as a single which points to
+    // a timing issue.
+    @Test
+    @SkipWhenDecoderPluginNameIs(value = SkipWhenDecoderPluginNameIs.DecoderPluginName.PGOUTPUT, reason = "An update on a table with no primary key throws PSQLException as tables must have a PK")
+    @Disabled
+    public void shouldReceiveAndDecodeIndividualChanges() throws Exception {
+        // create a replication connection which should be dropped once it's closed
+        try (ReplicationConnection connection = TestHelper.createForReplication("test", true)) {
+            ReplicationStream stream = connection.startStreaming(new WalPositionLocator()); // this creates the replication slot
+            int expectedMessages = insertLargeTestData();
+            expectedMessagesFromStream(stream, expectedMessages);
+        }
+    }
+
+    @Test
+    void shouldReceiveSameChangesIfNotFlushed() throws Exception {
+        TestHelper.create().dropReplicationSlot("test");
+        // don't drop the replication slot once this is finished
+        String slotName = "test";
+        int receivedMessagesCount = startInsertStop(slotName, null);
+
+        // create a new replication connection with the same slot and check that without the LSN having been flushed,
+        // we'll get back the same message again from before
+        try (ReplicationConnection connection = TestHelper.createForReplication(slotName, true)) {
+            ReplicationStream stream = connection.startStreaming(new WalPositionLocator()); // this should receive the same message as before since we haven't flushed
+            expectedMessagesFromStream(stream, receivedMessagesCount);
+        }
+    }
+
+    @Test
+    void shouldNotReceiveSameChangesIfFlushed() throws Exception {
+        TestHelper.create().dropReplicationSlot("test");
+        // don't drop the replication slot once this is finished
+        String slotName = "test";
+        startInsertStop(slotName, this::flushLsn);
+
+        // create a new replication connection with the same slot and check that we don't get back the same changes that we've
+        // flushed
+        try (ReplicationConnection connection = TestHelper.createForReplication(slotName, true)) {
+            ReplicationStream stream = connection.startStreaming(new WalPositionLocator());
+            // even when flushing the last received location, the server will send back the last record after reconnecting, not sure why that is...
+            expectedMessagesFromStream(stream, 0);
+        }
+    }
+
+    @Test
+    void shouldReceiveMissedChangesWhileDown() throws Exception {
+        TestHelper.create().dropReplicationSlot("test");
+        String slotName = "test";
+        startInsertStop(slotName, this::flushLsn);
+
+        // run some more SQL while the slot is stopped
+        // this deletes 2 entries so each of them will have a message
+        TestHelper.execute("DELETE FROM table_with_pk WHERE a < 3;");
+        int additionalMessages = 2;
+
+        // create a new replication connection with the same slot and check that we get the additional messages
+        try (ReplicationConnection connection = TestHelper.createForReplication(slotName, true)) {
+            ReplicationStream stream = connection.startStreaming(new WalPositionLocator());
+            expectedMessagesFromStream(stream, additionalMessages);
+        }
+    }
+
+    @Test
+    @FixFor("debezium/dbz#1489")
+    void shouldNotMoveFlushLsnBackwardsWhenFlushingOlderLsn() throws Exception {
+        TestHelper.create().dropReplicationSlot("test");
+
+        try (PostgresConnection connection = TestHelper.create();
+                ReplicationConnection replConnection = TestHelper.createForReplication("test", true)) {
+
+            ReplicationStream stream = replConnection.startStreaming(new WalPositionLocator());
+
+            TestHelper.execute("INSERT INTO table_with_pk (b, c) VALUES('Test1', now()), ('Test2', now());");
+
+            final List<Lsn> receivedLsns = new ArrayList<>();
+            Awaitility.await()
+                    .atMost(TestHelper.waitTimeForRecords() * 2L, TimeUnit.SECONDS)
+                    .pollInterval(Duration.ofMillis(100))
+                    .until(() -> {
+                        stream.readPending(msg -> {
+                            Lsn lsn = stream.lastReceivedLsn();
+                            if (lsn != null && (receivedLsns.isEmpty() || !receivedLsns.get(receivedLsns.size() - 1).equals(lsn))) {
+                                receivedLsns.add(lsn);
+                            }
+                        });
+                        return receivedLsns.size() >= 2;
+                    });
+
+            final Lsn olderLsn = receivedLsns.get(0);
+            final Lsn newerLsn = receivedLsns.get(receivedLsns.size() - 1);
+            assertThat(newerLsn).isGreaterThan(olderLsn);
+
+            stream.flushLsn(newerLsn);
+            final Lsn flushAfterNewer = Awaitility.await()
+                    .atMost(TestHelper.waitTimeForRecords(), TimeUnit.SECONDS)
+                    .pollInterval(Duration.ofMillis(100))
+                    .until(() -> getFlushLsnFromStatReplication(connection), Objects::nonNull);
+            assertThat(flushAfterNewer).isGreaterThanOrEqualTo(newerLsn);
+
+            stream.flushLsn(olderLsn);
+
+            final Lsn flushAfterOlder = Awaitility.await()
+                    .atMost(TestHelper.waitTimeForRecords(), TimeUnit.SECONDS)
+                    .pollInterval(Duration.ofMillis(100))
+                    .until(() -> getFlushLsnFromStatReplication(connection), lsn -> lsn != null);
+
+            if (flushAfterOlder.compareTo(newerLsn) < 0) {
+                fail(String.format("debezium/dbz#1489: flush_lsn moved BACKWARDS from %s to %s (-%d bytes)",
+                        newerLsn, flushAfterOlder, newerLsn.asLong() - flushAfterOlder.asLong()));
+            }
+
+            assertThat(flushAfterOlder).isGreaterThanOrEqualTo(newerLsn);
+            stream.close();
+        }
+    }
+
+    @Test
+    void shouldResumeFromLastReceivedLSN() throws Exception {
+        TestHelper.create().dropReplicationSlot("test");
+        String slotName = "test";
+        AtomicReference<Lsn> lastReceivedLsn = new AtomicReference<>();
+        startInsertStop(slotName, stream -> lastReceivedLsn.compareAndSet(null, stream.lastReceivedLsn()));
+        assertTrue(lastReceivedLsn.get().isValid());
+
+        // resume replication from the last received LSN and don't expect anything else
+        try (ReplicationConnection connection = TestHelper.createForReplication(slotName, true)) {
+            ReplicationStream stream = connection.startStreaming(lastReceivedLsn.get(), new WalPositionLocator());
+            expectedMessagesFromStream(stream, 0);
+        }
+    }
+
+    @Test
+    void shouldTolerateInvalidLSNValues() throws Exception {
+        TestHelper.create().dropReplicationSlot("test");
+        String slotName = "test";
+        startInsertStop(slotName, null);
+
+        // resume replication from the last received LSN and don't expect anything else
+        try (ReplicationConnection connection = TestHelper.createForReplication(slotName, true)) {
+            ReplicationStream stream = connection.startStreaming(Lsn.valueOf(Long.MAX_VALUE), new WalPositionLocator());
+            expectedMessagesFromStream(stream, 0);
+            // this deletes 2 entries so each of them will have a message
+            TestHelper.execute("DELETE FROM table_with_pk WHERE a < 3;");
+            // don't expect any messages because we've started stream from a very big (i.e. the end) position
+            expectedMessagesFromStream(stream, 0);
+        }
+    }
+
+    @Test
+    void shouldReceiveOneMessagePerDMLOnTransactionCommit() throws Exception {
+        TestHelper.create().dropReplicationSlot("test");
+        try (ReplicationConnection connection = TestHelper.createForReplication("test", true)) {
+            ReplicationStream stream = connection.startStreaming(new WalPositionLocator());
+            String statement = "DROP TABLE IF EXISTS table_with_pk;" +
+                    "DROP TABLE IF EXISTS table_without_pk;" +
+                    "CREATE TABLE table_with_pk (a SERIAL, b VARCHAR(30), c TIMESTAMP NOT NULL, PRIMARY KEY(a, c));" +
+                    "CREATE TABLE table_without_pk (a SERIAL, b NUMERIC(5,2), c TEXT);" +
+                    "INSERT INTO table_with_pk (b, c) VALUES('val1', now()); " +
+                    "INSERT INTO table_with_pk (b, c) VALUES('val2', now()); ";
+            TestHelper.execute(statement);
+            expectedMessagesFromStream(stream, 2);
+        }
+    }
+
+    @Test
+    void shouldNotReceiveMessagesOnTransactionRollback() throws Exception {
+        try (ReplicationConnection connection = TestHelper.createForReplication("test", true)) {
+            ReplicationStream stream = connection.startStreaming(new WalPositionLocator());
+            String statement = "DROP TABLE IF EXISTS table_with_pk;" +
+                    "CREATE TABLE table_with_pk (a SERIAL, b VARCHAR(30), c TIMESTAMP NOT NULL, PRIMARY KEY(a, c));" +
+                    "INSERT INTO table_with_pk (b, c) VALUES('val1', now()); " +
+                    "ROLLBACK;";
+            TestHelper.execute(statement);
+            expectedMessagesFromStream(stream, 0);
+        }
+    }
+
+    @Test
+    void shouldGeneratesEventsForMultipleSchemas() throws Exception {
+        TestHelper.create().dropReplicationSlot("test");
+        try (ReplicationConnection connection = TestHelper.createForReplication("test", true)) {
+            ReplicationStream stream = connection.startStreaming(new WalPositionLocator());
+            String statements = "CREATE SCHEMA schema1;" +
+                    "CREATE SCHEMA schema2;" +
+                    "DROP TABLE IF EXISTS schema1.table;" +
+                    "DROP TABLE IF EXISTS schema2.table;" +
+                    "CREATE TABLE schema1.table (a SERIAL, b VARCHAR(30), c TIMESTAMP NOT NULL, PRIMARY KEY(a, c));" +
+                    "CREATE TABLE schema2.table (a SERIAL, b VARCHAR(30), c TIMESTAMP NOT NULL, PRIMARY KEY(a, c));" +
+                    "INSERT INTO schema1.table (b, c) VALUES('Value for schema1', now());" +
+                    "INSERT INTO schema2.table (b, c) VALUES('Value for schema2', now());";
+            TestHelper.execute(statements);
+            expectedMessagesFromStream(stream, 2);
+        }
+    }
+
+    @Test
+    @SkipWhenDecoderPluginNameIsNot(value = SkipWhenDecoderPluginNameIsNot.DecoderPluginName.PGOUTPUT, reason = "A pgoutput specific test streaming changes, stopping connector, making downtime changes, and verifying restart picks up changes")
+    public void testHowRelationMessagesAreReceived() throws Exception {
+        TestHelper.create().dropReplicationSlot("test");
+
+        try (ReplicationConnection connection = TestHelper.createForReplication("test", false)) {
+            connection.initConnection();
+
+            final String statements = "CREATE TABLE t0 (pk SERIAL, val INTEGER, PRIMARY KEY (pk));" +
+                    "ALTER TABLE t0 REPLICA IDENTITY FULL;" +
+                    "INSERT INTO t0 VALUES (1,1);" +
+                    "INSERT INTO t0 VALUES (2,1);" +
+                    "INSERT INTO t0 VALUES (3,1);" +
+                    "INSERT INTO t0 VALUES (4,1);" +
+                    "INSERT INTO t0 VALUES (5,1);" +
+                    "ALTER TABLE t0 ALTER COLUMN val TYPE BIGINT;" +
+                    "ALTER TABLE t0 ADD COLUMN val2 INTEGER;" +
+                    "INSERT INTO t0 VALUES (6,1,1);" +
+                    "DROP TABLE t0;" +
+                    "CREATE TABLE t0 (pk SERIAL, val3 BIGINT, PRIMARY KEY (pk));" +
+                    "ALTER TABLE t0 REPLICA IDENTITY FULL;" +
+                    "INSERT INTO t0 VALUES (7,2);" +
+                    "INSERT INTO t0 VALUES (8,2);";
+            TestHelper.execute(statements);
+
+            try (ReplicationStream stream = connection.startStreaming(new WalPositionLocator())) {
+                expectedMessagesFromStream(stream, 8);
+                flushLsn(stream);
+            }
+        }
+
+        TestHelper.execute(
+                "INSERT INTO t0 VALUES (9,2);" +
+                        "INSERT INTO t0 VALUES (10,2);" +
+                        "DROP TABLE t0;" +
+                        "CREATE TABLE t0 (pk SERIAL, val3 INT, PRIMARY KEY (pk));" +
+                        "ALTER TABLE t0 REPLICA IDENTITY FULL;" +
+                        "INSERT INTO t0 VALUES (11,1);");
+
+        try (ReplicationConnection connection = TestHelper.createForReplication("test", true)) {
+            try (ReplicationStream stream = connection.startStreaming(new WalPositionLocator())) {
+                expectedMessagesFromStream(stream, 3);
+            }
+        }
+    }
+
+    @Test
+    @FixFor("DBZ-14")
+    public void shouldHandleKeepAliveThreadInterruption() throws Exception {
+        LogInterceptor logInterceptor = new LogInterceptor(PostgresReplicationConnection.class);
+        try (ReplicationConnection connection = TestHelper.createForReplication("test_keepalive", true)) {
+            ReplicationStream stream = connection.startStreaming(new WalPositionLocator());
+            ExecutorService keepAliveService = Executors.newSingleThreadExecutor();
+            stream.startKeepAlive(keepAliveService);
+
+            // Wait for the thread to enter the blocking pause state (after first status update)
+            // The keep-alive thread sends a status update then sleeps, so we need to give it time
+            // to start and enter the sleep/pause state before interrupting
+            Thread.sleep(200);
+
+            stream.stopKeepAlive();
+
+            Awaitility.await()
+                    .atMost(10, TimeUnit.SECONDS)
+                    .untilAsserted(() -> assertThat(logInterceptor.containsMessage("Keep-alive thread interrupted, shutting down")).isTrue());
+
+            stream.close();
+        }
+    }
+
+    private void flushLsn(ReplicationStream stream) {
+        try {
+            stream.flushLsn(stream.lastReceivedLsn());
+        }
+        catch (SQLException e) {
+            throw new RuntimeException(e);
+        }
+    }
+
+    private int startInsertStop(String slotName, Consumer<ReplicationStream> streamProcessor) throws Exception {
+        // start a replication connection, insert some data and stop without dropping the slot....
+        int expectedMessageCount;
+        try (ReplicationConnection connection = TestHelper.createForReplication(slotName, false)) {
+            try {
+                ReplicationStream stream = connection.startStreaming(new WalPositionLocator()); // this creates the replication slot
+                expectedMessageCount = insertSmallTestData();
+                expectedMessagesFromStream(stream, expectedMessageCount);
+                if (streamProcessor != null) {
+                    streamProcessor.accept(stream);
+                }
+            }
+            catch (Throwable t) {
+                // make sure we always drop the slot if something fails - note the connection was created with the drop on close
+                // set to false
+                try (PostgresConnection conn = TestHelper.create()) {
+                    conn.dropReplicationSlot(slotName);
+                }
+                throw t;
+            }
+        }
+        // wait a bit to make sure the replication connection has been stopped
+        Thread.sleep(100);
+        return expectedMessageCount;
+    }
+
+    private List<ReplicationMessage> expectedMessagesFromStream(ReplicationStream stream,
+                                                                int expectedMessages)
+            throws Exception {
+        List<ReplicationMessage> actualMessages = new ArrayList<>();
+
+        ExecutorService executorService = Executors.newSingleThreadExecutor();
+        Semaphore latch = new Semaphore(0);
+        Metronome metronome = Metronome.sleeper(Duration.ofMillis(50), Clock.SYSTEM);
+        Future<?> result = executorService.submit(() -> {
+            while (!Thread.interrupted()) {
+                for (;;) {
+                    List<ReplicationMessage> message = new ArrayList<>();
+                    stream.read(x -> {
+                        // DBZ-2435 Explicitly remove transaction messages
+                        // This helps situations where Pgoutput emits empty begin/commit blocks that can lead to
+                        // inconsistent behavior with tests checking for replication stream state.
+                        if (!x.isTransactionalMessage()) {
+                            message.add(x);
+                        }
+                    });
+                    if (message.isEmpty()) {
+                        break;
+                    }
+                    actualMessages.addAll(message);
+                    latch.release(message.size());
+                }
+                metronome.pause();
+            }
+            return null;
+        });
+
+        try {
+            if (!latch.tryAcquire(expectedMessages, TestHelper.waitTimeForRecords() * 5, TimeUnit.SECONDS)) {
+                result.cancel(true);
+                fail("expected " + expectedMessages + " messages, but read only " + actualMessages.size());
+            }
+        }
+        finally {
+            executorService.shutdownNow();
+        }
+        return actualMessages;
+    }
+
+    private int insertSmallTestData() throws Exception {
+        String statement = "INSERT INTO table_with_pk (b, c) VALUES('Backup and Restore', now());" +
+                "INSERT INTO table_with_pk (b, c) VALUES('Tuning', now());";
+        TestHelper.execute(statement);
+        // we expect 2 messages from the above
+        return 2;
+    }
+
+    private int insertLargeTestData() throws Exception {
+        String statement = "INSERT INTO table_with_pk (b, c) VALUES('Backup and Restore', now());" +
+                "INSERT INTO table_with_pk (b, c) VALUES('Tuning', now());" +
+                "DELETE FROM table_with_pk WHERE a < 3;" + // deletes 2 records
+                "INSERT INTO table_without_pk (b,c) VALUES (1, 'Foo');" +
+                "UPDATE table_without_pk SET c = 'Bar' WHERE c = 'Foo';" +
+                "ALTER TABLE table_without_pk REPLICA IDENTITY FULL;" +
+                "UPDATE table_without_pk SET c = 'Baz' WHERE c = 'Bar';" +
+                "DELETE FROM table_without_pk WHERE c = 'Baz';";
+
+        // Postgres WILL NOT fire any tuple changes (UPDATES or DELETES) for tables which don't have a PK by default EXCEPT
+        // if that table has a REPLICA IDENTITY of FULL or INDEX.
+        // See http://michael.otacoo.com/postgresql-2/postgres-9-4-feature-highlight-replica-identity-logical-replication/
+        // ...so we expect 8 messages for the above DML
+        TestHelper.execute(statement);
+        return 8;
+    }
+
+    private Lsn getFlushLsnFromStatReplication(PostgresConnection connection) throws SQLException {
+        final String lsnStr = connection.prepareQueryAndMap(
+                "SELECT flush_lsn FROM pg_stat_replication LIMIT 1",
+                statement -> {
+                    // No parameters needed
+                },
+                rs -> {
+                    if (rs.next()) {
+                        return rs.getString("flush_lsn");
+                    }
+                    return null;
+                });
+        connection.rollback();
+        return lsnStr != null ? Lsn.valueOf(lsnStr) : null;
+    }
+}

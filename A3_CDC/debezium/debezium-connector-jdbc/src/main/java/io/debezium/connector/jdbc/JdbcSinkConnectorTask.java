@@ -1,0 +1,392 @@
+/*
+ * Copyright Debezium Authors.
+ *
+ * Licensed under the Apache Software License version 2.0, available at http://www.apache.org/licenses/LICENSE-2.0
+ */
+package io.debezium.connector.jdbc;
+
+import static io.debezium.config.ConfigurationNames.TASK_ID_PROPERTY_NAME;
+import static io.debezium.openlineage.dataset.DatasetMetadata.STREAM_DATASET_TYPE;
+import static io.debezium.openlineage.dataset.DatasetMetadata.DataStore.KAFKA;
+import static io.debezium.openlineage.dataset.DatasetMetadata.DatasetKind.INPUT;
+
+import java.lang.reflect.InvocationTargetException;
+import java.lang.reflect.Method;
+import java.util.Collection;
+import java.util.HashMap;
+import java.util.HashSet;
+import java.util.List;
+import java.util.Map;
+import java.util.Set;
+import java.util.concurrent.atomic.AtomicReference;
+import java.util.concurrent.locks.ReentrantLock;
+import java.util.stream.Collectors;
+
+import org.apache.kafka.clients.consumer.ConsumerRecord;
+import org.apache.kafka.clients.consumer.OffsetAndMetadata;
+import org.apache.kafka.common.TopicPartition;
+import org.apache.kafka.connect.errors.ConnectException;
+import org.apache.kafka.connect.runtime.InternalSinkRecord;
+import org.apache.kafka.connect.sink.SinkRecord;
+import org.apache.kafka.connect.sink.SinkTask;
+import org.hibernate.SessionFactory;
+import org.hibernate.StatelessSession;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+
+import io.debezium.DebeziumException;
+import io.debezium.annotation.VisibleForTesting;
+import io.debezium.config.Configuration;
+import io.debezium.config.ConfigurationNames;
+import io.debezium.connector.common.DebeziumTaskState;
+import io.debezium.connector.common.UUIDUtils;
+import io.debezium.connector.jdbc.dialect.DatabaseDialect;
+import io.debezium.connector.jdbc.dialect.DatabaseDialectResolver;
+import io.debezium.connector.jdbc.metrics.JdbcSinkConnectorMetrics;
+import io.debezium.openlineage.ConnectorContext;
+import io.debezium.openlineage.DebeziumOpenLineageEmitter;
+import io.debezium.openlineage.dataset.DatasetDataExtractor;
+import io.debezium.openlineage.dataset.DatasetMetadata;
+import io.debezium.sink.spi.SinkProgressListener;
+import io.debezium.util.Stopwatch;
+import io.debezium.util.Strings;
+
+/**
+ * The main task executing streaming from sink connector.
+ * Responsible for lifecycle management of the streaming code.
+ *
+ * @author Hossein Torabi
+ */
+public class JdbcSinkConnectorTask extends SinkTask {
+
+    private static final Logger LOGGER = LoggerFactory.getLogger(JdbcSinkConnectorTask.class);
+
+    private static final Class[] EMPTY_CLASS_ARRAY = new Class[0];
+    private static final DatasetDataExtractor DATASET_DATA_EXTRACTOR = new DatasetDataExtractor();
+
+    private SessionFactory sessionFactory;
+    private ConnectorContext connectorContext;
+
+    private enum State {
+        RUNNING,
+        STOPPED
+    }
+
+    private final AtomicReference<State> state = new AtomicReference<>(State.STOPPED);
+    private final ReentrantLock stateLock = new ReentrantLock();
+
+    private JdbcChangeEventSink changeEventSink;
+    private JdbcSinkConnectorMetrics metrics;
+    private final Set<TopicPartition> assignedPartitions = new HashSet<>();
+    private final Map<TopicPartition, OffsetAndMetadata> offsets = new HashMap<>();
+    private Throwable previousPutException;
+
+    /**
+     * There is a change in {@link InternalSinkRecord} API between Connect 3.7 and 3.8.
+     * The code now uses 3.8 and use reflection to call old API if new one is not available.
+     */
+    private boolean usePre380OriginalRecordAccess = false;
+    private Method pre380OriginalRecordMethod = null;
+
+    public JdbcSinkConnectorTask() {
+        try {
+            pre380OriginalRecordMethod = InternalSinkRecord.class.getMethod("originalRecord", EMPTY_CLASS_ARRAY);
+            usePre380OriginalRecordAccess = true;
+
+            LOGGER.info("Old InternalSinkRecord class found, will use reflection for calls");
+        }
+        catch (NoSuchMethodException | SecurityException e) {
+            LOGGER.info("New InternalSinkRecord class found");
+        }
+    }
+
+    @Override
+    public String version() {
+        return Module.version();
+    }
+
+    @Override
+    public void start(Map<String, String> props) {
+        stateLock.lock();
+
+        try {
+            final JdbcSinkConnectorConfig config = new JdbcSinkConnectorConfig(props);
+            String connectorName = Strings.defaultIfBlank(props.get(ConfigurationNames.CONNECTOR_NAME_PROPERTY), config.getConnectorName());
+            String taskId = props.getOrDefault(TASK_ID_PROPERTY_NAME, "0");
+            connectorContext = new ConnectorContext(connectorName, Module.name(), taskId, Module.version(), UUIDUtils.generateNewUUID(),
+                    getMaskedConfigurationMap(props));
+
+            if (!state.compareAndSet(State.STOPPED, State.RUNNING)) {
+                LOGGER.info("Connector has already been started");
+                return;
+            }
+
+            DebeziumOpenLineageEmitter.emit(connectorContext, DebeziumTaskState.INITIAL);
+
+            // be sure to reset this state
+            previousPutException = null;
+
+            config.validate();
+
+            sessionFactory = config.getHibernateConfiguration().buildSessionFactory();
+            StatelessSession session = sessionFactory.openStatelessSession();
+            DatabaseDialect dialect = DatabaseDialectResolver.resolve(config, sessionFactory);
+            QueryBinderResolver queryBinderResolver = new QueryBinderResolver();
+
+            metrics = new JdbcSinkConnectorMetrics(connectorName, taskId);
+            metrics.register();
+            metrics.connected(true);
+
+            // Instantiate the appropriate RecordWriter based on dialect and configuration
+            RecordWriter recordWriter = createRecordWriter(session, queryBinderResolver, config, dialect, metrics);
+
+            changeEventSink = new JdbcChangeEventSink(config, session, dialect, recordWriter, connectorContext, metrics);
+            DebeziumOpenLineageEmitter.emit(connectorContext, DebeziumTaskState.RUNNING);
+        }
+        finally {
+            stateLock.unlock();
+        }
+    }
+
+    @Override
+    public void put(Collection<SinkRecord> records) {
+        Stopwatch putStopWatch = Stopwatch.reusable();
+        Stopwatch executeStopWatch = Stopwatch.reusable();
+        Stopwatch markProcessedStopWatch = Stopwatch.reusable();
+        putStopWatch.start();
+        if (previousPutException != null) {
+            LOGGER.error("JDBC sink connector failure", previousPutException);
+
+            DebeziumOpenLineageEmitter.emit(connectorContext, DebeziumTaskState.RESTARTING, previousPutException);
+
+            throw new ConnectException("JDBC sink connector failure", previousPutException);
+        }
+
+        LOGGER.debug("Received {} changes.", records.size());
+
+        records.forEach(record -> DebeziumOpenLineageEmitter.emit(connectorContext, DebeziumTaskState.RUNNING,
+                List.of(new DatasetMetadata(record.topic(), INPUT, STREAM_DATASET_TYPE, KAFKA, DATASET_DATA_EXTRACTOR.extract(record)))));
+
+        try {
+            executeStopWatch.start();
+            changeEventSink.execute(records);
+            executeStopWatch.stop();
+            markProcessedStopWatch.start();
+            records.forEach(this::markProcessed);
+            markProcessedStopWatch.stop();
+        }
+        catch (Throwable throwable) {
+
+            // Capture failure
+            LOGGER.error("Failed to process record: {}", throwable.getMessage(), throwable);
+            previousPutException = throwable;
+
+            // Stash all records
+            records.forEach(this::markNotProcessed);
+        }
+
+        putStopWatch.stop();
+        LOGGER.trace("[PERF] Total put execution time {}", putStopWatch.durations());
+        LOGGER.trace("[PERF] Sink execute execution time {}", executeStopWatch.durations());
+        LOGGER.trace("[PERF] Mark processed execution time {}", markProcessedStopWatch.durations());
+    }
+
+    /**
+     * Creates the appropriate RecordWriter based on dialect and configuration.
+     * If PostgreSQL UNNEST optimization is enabled, returns UnnestRecordWriter;
+     * otherwise returns StandardRecordWriter.
+     */
+    private RecordWriter createRecordWriter(StatelessSession session, QueryBinderResolver queryBinderResolver,
+                                            JdbcSinkConnectorConfig config, DatabaseDialect databaseDialect, SinkProgressListener progressListener) {
+        // Use UNNEST writer when explicitly enabled (opt-in)
+        // This allows any PostgreSQL-compatible dialect to use UNNEST without code changes
+        if (config.isPostgresUnnestInsertEnabled()) {
+            LOGGER.info("Using UnnestRecordWriter for UNNEST optimization");
+            return new UnnestRecordWriter(session, queryBinderResolver, config, databaseDialect, progressListener);
+        }
+
+        LOGGER.info("Using DefaultRecordWriter for standard JDBC batching");
+        return new DefaultRecordWriter(session, queryBinderResolver, config, databaseDialect, progressListener);
+    }
+
+    @Override
+    public void open(Collection<TopicPartition> partitions) {
+        for (TopicPartition partition : partitions) {
+            LOGGER.trace("Requested open TopicPartition request for '{}'", partition);
+            assignedPartitions.add(partition);
+
+            // Flush should have been called if this was previously assigned.
+            // In this case, we will let the first message for the partition or the current offsets
+            // from Kafka Connect dictate what the offset for this partition will be during flush.
+            offsets.remove(partition);
+        }
+    }
+
+    @Override
+    public void close(Collection<TopicPartition> partitions) {
+        for (TopicPartition partition : partitions) {
+            LOGGER.trace("Requested close TopicPartition request for '{}'", partition);
+            assignedPartitions.remove(partition);
+            offsets.remove(partition);
+        }
+    }
+
+    @Override
+    public Map<TopicPartition, OffsetAndMetadata> preCommit(Map<TopicPartition, OffsetAndMetadata> currentOffsets) {
+        // Check whether the sink task currently has any flushed offset data for the partition.
+        // If the sink has offset details, those will be used; otherwise use the ones provided by connect.
+        final Map<TopicPartition, OffsetAndMetadata> flushedOffsets = assignedPartitions.stream()
+                .collect(Collectors.toMap(
+                        partition -> partition,
+                        partition -> offsets.getOrDefault(partition, currentOffsets.get(partition))));
+
+        // Flush offsets
+        LOGGER.debug("Flushing offsets: {}", flushedOffsets);
+        flush(flushedOffsets);
+        return flushedOffsets;
+    }
+
+    @Override
+    public void stop() {
+        stateLock.lock();
+        try {
+            if (metrics != null) {
+                metrics.connected(false);
+                metrics.unregister();
+            }
+            if (changeEventSink != null) {
+                changeEventSink.close();
+                try {
+                    DebeziumOpenLineageEmitter.emit(connectorContext, DebeziumTaskState.STOPPED);
+                    if (sessionFactory != null && sessionFactory.isOpen()) {
+                        LOGGER.info("Closing the session factory");
+                        sessionFactory.close();
+                    }
+                    else {
+                        LOGGER.info("Session factory already closed");
+                    }
+                }
+                catch (Exception e) {
+                    LOGGER.error("Failed to gracefully close resources.", e);
+                }
+            }
+        }
+        finally {
+            if (previousPutException != null) {
+                previousPutException = null;
+            }
+            if (changeEventSink != null) {
+                changeEventSink = null;
+            }
+            metrics = null;
+            stateLock.unlock();
+            DebeziumOpenLineageEmitter.cleanup(connectorContext);
+        }
+    }
+
+    @VisibleForTesting
+    public Throwable getLastProcessingException() {
+        return previousPutException;
+    }
+
+    private Map<String, String> getMaskedConfigurationMap(Map<String, String> props) {
+        return Configuration.from(props).withMaskedPasswords().asMap();
+    }
+
+    /**
+     * Marks a sink record as processed.
+     *
+     * @param record sink record, should not be {@code null}
+     */
+    private void markProcessed(SinkRecord record) {
+        final String topicName = getOriginalTopicName(record);
+        if (Strings.isNullOrBlank(topicName)) {
+            return;
+        }
+
+        LOGGER.trace("Marking processed record for topic {}", topicName);
+
+        final long kafkaOffset = getOriginalKafkaOffset(record);
+        final TopicPartition topicPartition = new TopicPartition(topicName, getOriginalKafkaPartition(record));
+        final OffsetAndMetadata offsetAndMetadata = new OffsetAndMetadata(kafkaOffset + 1L);
+
+        final OffsetAndMetadata existing = offsets.put(topicPartition, offsetAndMetadata);
+        if (existing == null) {
+            LOGGER.trace("Advanced topic {} to offset {}.", topicName, kafkaOffset);
+        }
+        else {
+            LOGGER.trace("Updated topic {} from offset {} to {}.", topicName, existing.offset(), kafkaOffset);
+        }
+    }
+
+    /**
+     * Marks a single record as not processed.
+     *
+     * @param record sink record, should not be {@code null}
+     */
+    private void markNotProcessed(SinkRecord record) {
+        // Sink connectors operate on batches and a batch could technically include a stream of records
+        // where the same topic/partition tuple exists in the batch at various points, before and after
+        // other topic/partition tuples. When marking a record as not processed, we are only interested
+        // in doing this if this tuple is not already in the map as a previous entry could have been
+        // added because an earlier record was either processed or marked as not processed since any
+        // remaining entries in the batch call this method on failures.
+        final String topicName = getOriginalTopicName(record);
+        final Integer kafkaPartition = getOriginalKafkaPartition(record);
+        final long kafkaOffset = getOriginalKafkaOffset(record);
+
+        final TopicPartition topicPartition = new TopicPartition(topicName, kafkaPartition);
+        if (!offsets.containsKey(topicPartition)) {
+            LOGGER.debug("Rewinding topic {} offset to {}.", topicName, kafkaOffset);
+            final OffsetAndMetadata offsetAndMetadata = new OffsetAndMetadata(kafkaOffset);
+            offsets.put(topicPartition, offsetAndMetadata);
+        }
+    }
+
+    private String getOriginalTopicName(SinkRecord record) {
+        // DBZ-6491
+        // This is a current workaround to resolve the original topic name from the broker as
+        // the value in the SinkRecord#topic may have been mutated with SMTs and would no
+        // longer represent the logical topic name on the broker.
+        //
+        // I intend to see whether the Kafka team could expose this original value on the
+        // SinkRecord contract for scenarios such as this to avoid the need to depend on
+        // connect-runtime. If so, we can drop that dependency, but since this is only a
+        // Kafka Connect implementation at this point, it's a fair workaround.
+        //
+        if (record instanceof InternalSinkRecord) {
+            if (usePre380OriginalRecordAccess) {
+                try {
+                    return ((ConsumerRecord<byte[], byte[]>) pre380OriginalRecordMethod.invoke(record, EMPTY_CLASS_ARRAY)).topic();
+                }
+                catch (IllegalAccessException | IllegalArgumentException | InvocationTargetException e) {
+                    throw new DebeziumException("Failed to access original record data", e);
+                }
+            }
+            return ((InternalSinkRecord) record).context().original().topic();
+        }
+        return null;
+    }
+
+    private Integer getOriginalKafkaPartition(SinkRecord record) {
+        try {
+            // Added in Kafka 3.6 and should be used as it will contain the details pre-transformations
+            return record.originalKafkaPartition();
+        }
+        catch (NoSuchMethodError e) {
+            // Fallback to old method for Kafka 3.5 or earlier
+            return record.kafkaPartition();
+        }
+    }
+
+    private long getOriginalKafkaOffset(SinkRecord record) {
+        try {
+            // Added in Kafka 3.6 and should be used as it will contain the details pre-transformations
+            return record.originalKafkaOffset();
+        }
+        catch (NoSuchMethodError e) {
+            // Fallback to old method for Kafka 3.5 or earlier
+            return record.kafkaOffset();
+        }
+    }
+}

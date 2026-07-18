@@ -1,0 +1,89 @@
+name: Bug Report
+description: File a bug report
+title: "bug: <title>"
+labels:
+  - kind/Bug
+  - flow::triage
+  - valuestream/Meltano
+type: Fix
+assignees:
+  - edgarrmondragon
+
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for taking the time to fill out this bug report!
+  - type: input
+    id: meltano_version
+    attributes:
+      label: Meltano Version
+      description: Version of Meltano you are using
+      placeholder: "4.2.1"
+    validations:
+      required: false
+  - type: dropdown
+    id: python_version
+    attributes:
+      label: Python Version
+      description: Version of Python you are using
+      options:
+        - "3.13"
+        - "3.12"
+        - "3.11"
+        - "3.10"
+        - "3.9 or earlier (unsupported)"
+        - "NA"
+    validations:
+      required: false
+  - type: dropdown
+    id: scope
+    attributes:
+      label: Bug scope
+      description: Functionality this bug affects
+      options:
+        - CLI (options, error messages, logging, etc.)
+        - State management (`meltano state`, state backends, etc.)
+        - Configuration (settings parsing, validation, etc.)
+        - Documentation
+        - Other
+    validations:
+      required: true
+  - type: input
+    id: os
+    attributes:
+      label: Operating System
+      description: What operating system you are using
+      placeholder: "Linux - Ubuntu 20.04"
+    validations:
+      required: false
+  - type: textarea
+    id: what-happened
+    attributes:
+      label: Description
+      description: Describe what you were trying to get done
+      placeholder: Tell us what happened, what went wrong, and what you expected to happen
+    validations:
+      required: true
+  - type: textarea
+    id: meltano-yml
+    attributes:
+      label: Code
+      description: Paste the contents of your `meltano.yml` file, omitting any sensitive information
+      render: yaml
+      placeholder: |
+        venv:
+          backend: ...
+        plugins:
+          extractors:
+          - name: tap-my-extractor
+            variant: my-variant
+            pip_url: ...
+    validations:
+      required: false
+  - type: input
+    id: slack_or_linen
+    attributes:
+      label: Link to Slack/Linen
+      description: Provide a link to the Slack or Linen conversation, if applicable
+      placeholder: "https://..."

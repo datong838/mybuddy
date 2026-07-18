@@ -1,0 +1,1432 @@
+#
+# Copyright (c) 2025 Airbyte, Inc., all rights reserved.
+#
+
+import json
+from functools import partial
+from typing import Any, Iterable, Mapping, Optional
+from unittest.mock import MagicMock, Mock, patch
+
+import pytest
+import requests
+
+from airbyte_cdk.models import (
+    AirbyteLogMessage,
+    AirbyteMessage,
+    Level,
+    SyncMode,
+    Type,
+)
+from airbyte_cdk.sources.declarative.auth.declarative_authenticator import NoAuth
+from airbyte_cdk.sources.declarative.decoders import JsonDecoder
+from airbyte_cdk.sources.declarative.extractors import DpathExtractor, HttpSelector, RecordSelector
+from airbyte_cdk.sources.declarative.partition_routers import SinglePartitionRouter
+from airbyte_cdk.sources.declarative.requesters.paginators import DefaultPaginator, Paginator
+from airbyte_cdk.sources.declarative.requesters.paginators.strategies import (
+    CursorPaginationStrategy,
+    PageIncrement,
+)
+from airbyte_cdk.sources.declarative.requesters.query_properties import (
+    PropertyChunking,
+    QueryProperties,
+)
+from airbyte_cdk.sources.declarative.requesters.query_properties.property_chunking import (
+    GroupByKey,
+    PropertyLimitType,
+)
+from airbyte_cdk.sources.declarative.requesters.request_option import RequestOptionType
+from airbyte_cdk.sources.declarative.requesters.requester import HttpMethod, Requester
+from airbyte_cdk.sources.declarative.retrievers.pagination_tracker import PaginationTracker
+from airbyte_cdk.sources.declarative.retrievers.simple_retriever import SimpleRetriever
+from airbyte_cdk.sources.streams.http.pagination_reset_exception import (
+    PaginationResetRequiredException,
+)
+from airbyte_cdk.sources.types import Record, StreamSlice
+from airbyte_cdk.sources.utils.transform import TransformConfig, TypeTransformer
+
+A_RECORD_SCHEMA = {}
+A_SLICE_STATE = {"slice_state": "slice state value"}
+A_STREAM_NAME = "stream_name"
+A_STREAM_SLICE = StreamSlice(cursor_slice={"stream slice": "slice value"}, partition={})
+A_STREAM_STATE = {"stream state": "state value"}
+
+primary_key = "pk"
+records = [{"id": 1}, {"id": 2}]
+request_response_logs = [
+    AirbyteLogMessage(level=Level.INFO, message="request:{}"),
+    AirbyteLogMessage(level=Level.INFO, message="response{}"),
+]
+config = {}
+
+
+@patch.object(SimpleRetriever, "_read_pages", return_value=iter([]))
+def test_simple_retriever_full(mock_http_stream):
+    requester = MagicMock()
+    request_params = {"param": "value"}
+    requester.get_request_params.return_value = request_params
+
+    requester.get_request_params.__name__ = "get_request_params"
+    requester.get_request_headers.__name__ = "get_request_headers"
+    requester.get_request_body_data.__name__ = "get_request_body_data"
+    requester.get_request_body_json.__name__ = "get_request_body_json"
+
+    paginator = MagicMock()
+    paginator.get_initial_token.return_value = None
+    next_page_token = {"cursor": "cursor_value"}
+    paginator.path.return_value = None
+    paginator.next_page_token.return_value = next_page_token
+    paginator.get_request_headers.return_value = {}
+
+    paginator.get_request_params.__name__ = "get_request_params"
+    paginator.get_request_headers.__name__ = "get_request_headers"
+    paginator.get_request_body_data.__name__ = "get_request_body_data"
+    paginator.get_request_body_json.__name__ = "get_request_body_json"
+
+    record_selector = MagicMock()
+    record_selector.select_records.return_value = records
+
+    response = requests.Response()
+    response.status_code = 200
+
+    last_page_size = 2
+    last_record = Record(data={"id": "1a"}, stream_name="stream_name")
+    last_page_token_value = 0
+
+    underlying_state = {"date": "2021-01-01"}
+
+    requester.get_authenticator.return_value = NoAuth({})
+    url_base = "https://airbyte.io"
+    requester.get_url_base.return_value = url_base
+    path = "/v1"
+    requester.get_path.return_value = path
+    http_method = HttpMethod.GET
+    requester.get_method.return_value = http_method
+    should_retry = True
+    requester.interpret_response_status.return_value = should_retry
+    request_body_json = {"body": "json"}
+    requester.request_body_json.return_value = request_body_json
+
+    request_body_data = {"body": "data"}
+    requester.get_request_body_data.return_value = request_body_data
+    request_body_json = {"body": "json"}
+    requester.get_request_body_json.return_value = request_body_json
+    request_kwargs = {"kwarg": "value"}
+    requester.request_kwargs.return_value = request_kwargs
+
+    retriever = SimpleRetriever(
+        name="stream_name",
+        primary_key=primary_key,
+        requester=requester,
+        paginator=paginator,
+        record_selector=record_selector,
+        stream_slicer=SinglePartitionRouter(parameters={}),
+        parameters={},
+        config={},
+    )
+
+    assert retriever.primary_key == primary_key
+    assert (
+        retriever._next_page_token(response, last_page_size, last_record, last_page_token_value)
+        == next_page_token
+    )
+    assert retriever._request_params(None, None) == {}
+
+
+@patch.object(SimpleRetriever, "_read_pages", return_value=iter([*request_response_logs, *records]))
+def test_simple_retriever_with_request_response_logs(mock_http_stream):
+    requester = MagicMock()
+    paginator = MagicMock()
+    record_selector = MagicMock()
+
+    retriever = SimpleRetriever(
+        name="stream_name",
+        primary_key=primary_key,
+        requester=requester,
+        paginator=paginator,
+        record_selector=record_selector,
+        stream_slicer=SinglePartitionRouter(parameters={}),
+        parameters={},
+        config={},
+    )
+
+    actual_messages = [r for r in retriever.read_records(SyncMode.full_refresh)]
+
+    assert isinstance(actual_messages[0], AirbyteLogMessage)
+    assert isinstance(actual_messages[1], AirbyteLogMessage)
+    assert actual_messages[2] == records[0]
+    assert actual_messages[3] == records[1]
+
+
+@pytest.mark.parametrize(
+    "test_name, paginator_mapping, request_options_provider_mapping, expected_mapping",
+    [
+        ("test_empty_headers", {}, {}, {}),
+        (
+            "test_header_from_pagination_and_slicer",
+            {"offset": 1000},
+            {"key": "value"},
+            {"key": "value", "offset": 1000},
+        ),
+        ("test_header_from_stream_slicer", {}, {"slice": "slice_value"}, {"slice": "slice_value"}),
+        ("test_duplicate_header_slicer_paginator", {"k": "v"}, {"k": "slice_value"}, None),
+    ],
+)
+def test_get_request_options_from_pagination(
+    test_name, paginator_mapping, request_options_provider_mapping, expected_mapping
+):
+    # This test does not test request headers because they must be strings
+    paginator = MagicMock()
+    paginator.get_request_params.return_value = paginator_mapping
+    paginator.get_request_body_data.return_value = paginator_mapping
+    paginator.get_request_body_json.return_value = paginator_mapping
+
+    paginator.get_request_params.__name__ = "get_request_params"
+    paginator.get_request_body_data.__name__ = "get_request_body_data"
+    paginator.get_request_body_json.__name__ = "get_request_body_json"
+
+    request_options_provider = MagicMock()
+    request_options_provider.get_request_params.return_value = request_options_provider_mapping
+    request_options_provider.get_request_body_data.return_value = request_options_provider_mapping
+    request_options_provider.get_request_body_json.return_value = request_options_provider_mapping
+
+    request_options_provider.get_request_params.__name__ = "get_request_params"
+    request_options_provider.get_request_body_data.__name__ = "get_request_body_data"
+    request_options_provider.get_request_body_json.__name__ = "get_request_body_json"
+
+    record_selector = MagicMock()
+    retriever = SimpleRetriever(
+        name="stream_name",
+        primary_key=primary_key,
+        requester=MagicMock(),
+        record_selector=record_selector,
+        paginator=paginator,
+        request_option_provider=request_options_provider,
+        parameters={},
+        config={},
+    )
+
+    request_option_type_to_method = {
+        RequestOptionType.request_parameter: retriever._request_params,
+        RequestOptionType.body_data: retriever._request_body_data,
+        RequestOptionType.body_json: retriever._request_body_json,
+    }
+
+    for _, method in request_option_type_to_method.items():
+        if expected_mapping is not None:
+            actual_mapping = method(None, None)
+            assert actual_mapping == expected_mapping
+        else:
+            try:
+                method(None, None)
+                assert False
+            except ValueError:
+                pass
+
+
+@pytest.mark.parametrize(
+    "test_name, paginator_mapping, expected_mapping",
+    [
+        ("test_only_base_headers", {}, {"key": "value"}),
+        ("test_header_from_pagination", {"offset": 1000}, {"key": "value", "offset": "1000"}),
+        ("test_duplicate_header", {"key": 1000}, None),
+    ],
+)
+def test_get_request_headers(test_name, paginator_mapping, expected_mapping):
+    # This test is separate from the other request options because request headers must be strings
+    paginator = MagicMock()
+    paginator.get_request_headers.return_value = paginator_mapping
+    paginator.get_request_headers.__name__ = "get_request_headers"
+    requester = MagicMock(use_cache=False)
+
+    request_option_provider = MagicMock()
+    request_option_provider.get_request_headers.return_value = {"key": "value"}
+    request_option_provider.get_request_headers.__name__ = "get_request_headers"
+
+    record_selector = MagicMock()
+    retriever = SimpleRetriever(
+        name="stream_name",
+        primary_key=primary_key,
+        requester=requester,
+        record_selector=record_selector,
+        request_option_provider=request_option_provider,
+        paginator=paginator,
+        parameters={},
+        config={},
+    )
+
+    request_option_type_to_method = {
+        RequestOptionType.header: retriever._request_headers,
+    }
+
+    for _, method in request_option_type_to_method.items():
+        if expected_mapping:
+            actual_mapping = method(None, None)
+            assert actual_mapping == expected_mapping
+        else:
+            try:
+                method(None, None)
+                assert False
+            except ValueError:
+                pass
+
+
+@pytest.mark.parametrize(
+    "test_name, paginator_mapping, ignore_stream_slicer_parameters_on_paginated_requests, next_page_token, expected_mapping",
+    [
+        (
+            "test_do_not_ignore_stream_slicer_params_if_ignore_is_true_but_no_next_page_token",
+            {"key_from_pagination": "1000"},
+            True,
+            None,
+            {"key_from_pagination": "1000"},
+        ),
+        (
+            "test_do_not_ignore_stream_slicer_params_if_ignore_is_false_and_no_next_page_token",
+            {"key_from_pagination": "1000"},
+            False,
+            None,
+            {"key_from_pagination": "1000", "key_from_slicer": "value"},
+        ),
+        (
+            "test_ignore_stream_slicer_params_on_paginated_request",
+            {"key_from_pagination": "1000"},
+            True,
+            {"page": 2},
+            {"key_from_pagination": "1000"},
+        ),
+        (
+            "test_do_not_ignore_stream_slicer_params_on_paginated_request",
+            {"key_from_pagination": "1000"},
+            False,
+            {"page": 2},
+            {"key_from_pagination": "1000", "key_from_slicer": "value"},
+        ),
+    ],
+)
+def test_ignore_request_option_provider_parameters_on_paginated_requests(
+    test_name,
+    paginator_mapping,
+    ignore_stream_slicer_parameters_on_paginated_requests,
+    next_page_token,
+    expected_mapping,
+):
+    # This test is separate from the other request options because request headers must be strings
+    paginator = MagicMock()
+    paginator.get_request_headers.return_value = paginator_mapping
+    paginator.get_request_headers.__name__ = "get_request_headers"
+    requester = MagicMock(use_cache=False)
+
+    request_option_provider = MagicMock()
+    request_option_provider.get_request_headers.return_value = {"key_from_slicer": "value"}
+    request_option_provider.get_request_headers.__name__ = "get_request_headers"
+
+    record_selector = MagicMock()
+    retriever = SimpleRetriever(
+        name="stream_name",
+        primary_key=primary_key,
+        requester=requester,
+        record_selector=record_selector,
+        request_option_provider=request_option_provider,
+        paginator=paginator,
+        ignore_stream_slicer_parameters_on_paginated_requests=ignore_stream_slicer_parameters_on_paginated_requests,
+        parameters={},
+        config={},
+    )
+
+    request_option_type_to_method = {
+        RequestOptionType.header: retriever._request_headers,
+    }
+
+    for _, method in request_option_type_to_method.items():
+        actual_mapping = method(None, next_page_token={"next_page_token": "1000"})
+        assert actual_mapping == expected_mapping
+
+
+@pytest.mark.parametrize(
+    "test_name, request_options_provider_body_data, paginator_body_data, expected_body_data",
+    [
+        ("test_only_slicer_mapping", {"key": "value"}, {}, {"key": "value"}),
+        ("test_only_slicer_string", "key=value", {}, "key=value"),
+        (
+            "test_slicer_mapping_and_paginator_no_duplicate",
+            {"key": "value"},
+            {"offset": 1000},
+            {"key": "value", "offset": 1000},
+        ),
+        ("test_slicer_mapping_and_paginator_with_duplicate", {"key": "value"}, {"key": 1000}, None),
+        ("test_slicer_string_and_paginator", "key=value", {"offset": 1000}, None),
+    ],
+)
+def test_request_body_data(
+    test_name, request_options_provider_body_data, paginator_body_data, expected_body_data
+):
+    paginator = MagicMock()
+    paginator.get_request_body_data.return_value = paginator_body_data
+    paginator.get_request_body_data.__name__ = "get_request_body_data"
+    requester = MagicMock(use_cache=False)
+
+    request_option_provider = MagicMock()
+    request_option_provider.get_request_body_data.return_value = request_options_provider_body_data
+
+    record_selector = MagicMock()
+    retriever = SimpleRetriever(
+        name="stream_name",
+        primary_key=primary_key,
+        requester=requester,
+        record_selector=record_selector,
+        paginator=paginator,
+        request_option_provider=request_option_provider,
+        parameters={},
+        config={},
+    )
+
+    if expected_body_data:
+        actual_body_data = retriever._request_body_data(None, None)
+        assert actual_body_data == expected_body_data
+    else:
+        try:
+            retriever._request_body_data(None, None)
+            assert False
+        except ValueError:
+            pass
+
+
+@pytest.mark.parametrize(
+    "test_name, requester_path, paginator_path, expected_path",
+    [
+        ("test_path_from_requester", "/v1/path", None, None),
+        ("test_path_from_paginator", "/v1/path/", "/v2/paginator", "/v2/paginator"),
+    ],
+)
+def test_path(test_name, requester_path, paginator_path, expected_path):
+    paginator = MagicMock()
+    paginator.path.return_value = paginator_path
+    requester = MagicMock(use_cache=False)
+
+    requester.get_path.return_value = requester_path
+
+    record_selector = MagicMock()
+    retriever = SimpleRetriever(
+        name="stream_name",
+        primary_key=primary_key,
+        requester=requester,
+        record_selector=record_selector,
+        paginator=paginator,
+        parameters={},
+        config={},
+    )
+
+    actual_path = retriever._paginator_path(next_page_token=None)
+    assert actual_path == expected_path
+
+
+def test_given_stream_data_is_not_record_when_read_records_then_update_slice_with_optional_record():
+    stream_data = [
+        AirbyteMessage(
+            type=Type.LOG, log=AirbyteLogMessage(level=Level.INFO, message="a log message")
+        )
+    ]
+    record_selector = MagicMock()
+    record_selector.select_records.return_value = []
+
+    retriever = SimpleRetriever(
+        name="stream_name",
+        primary_key=primary_key,
+        requester=MagicMock(),
+        paginator=Mock(),
+        record_selector=record_selector,
+        stream_slicer=SinglePartitionRouter(parameters={}),
+        parameters={},
+        config={},
+    )
+    stream_slice = StreamSlice(cursor_slice={}, partition={"repository": "airbyte"})
+
+    def retriever_read_pages(_, __):
+        return retriever._parse_records(
+            response=MagicMock(), stream_slice=stream_slice, records_schema={}
+        )
+
+    with patch.object(
+        SimpleRetriever,
+        "_read_pages",
+        return_value=iter(stream_data),
+        side_effect=retriever_read_pages,
+    ):
+        list(retriever.read_records(stream_slice=stream_slice, records_schema={}))
+
+
+def test_given_initial_token_is_zero_when_read_records_then_pass_initial_token():
+    record_selector = MagicMock()
+    record_selector.select_records.return_value = []
+    paginator = MagicMock()
+    paginator.get_initial_token.return_value = 0
+    paginator.next_page_token.return_value = None
+
+    retriever = SimpleRetriever(
+        name="stream_name",
+        primary_key=primary_key,
+        requester=MagicMock(),
+        paginator=paginator,
+        record_selector=record_selector,
+        stream_slicer=SinglePartitionRouter(parameters={}),
+        parameters={},
+        config={},
+    )
+    stream_slice = StreamSlice(cursor_slice={}, partition={})
+
+    response = requests.Response()
+    response.status_code = 200
+    response._content = "{}".encode()
+
+    with patch.object(
+        SimpleRetriever,
+        "_fetch_next_page",
+        return_value=response,
+    ) as fetch_next_page_mock:
+        list(retriever.read_records(stream_slice=stream_slice, records_schema={}))
+        fetch_next_page_mock.assert_called_once_with(stream_slice, {"next_page_token": 0})
+
+
+def _generate_slices(number_of_slices):
+    return [{"date": f"2022-01-0{day + 1}"} for day in range(number_of_slices)]
+
+
+@patch.object(SimpleRetriever, "_read_pages", return_value=iter([]))
+def test_given_state_selector_when_read_records_use_stream_state(http_stream_read_pages, mocker):
+    requester = MagicMock()
+    paginator = MagicMock()
+    record_selector = MagicMock()
+
+    retriever = SimpleRetriever(
+        name="stream_name",
+        primary_key=primary_key,
+        requester=requester,
+        paginator=paginator,
+        record_selector=record_selector,
+        stream_slicer=SinglePartitionRouter(parameters={}),
+        parameters={},
+        config={},
+    )
+
+    list(retriever.read_records(stream_slice=A_STREAM_SLICE, records_schema={}))
+
+    http_stream_read_pages.assert_called_once_with(mocker.ANY, A_STREAM_SLICE)
+
+
+def test_retriever_last_page_size_for_page_increment():
+    requester = MagicMock()
+    requester.send_request.return_value = MagicMock()
+
+    paginator = DefaultPaginator(
+        config={},
+        pagination_strategy=PageIncrement(config={}, page_size=5, parameters={}),
+        url_base="https://airbyte.io",
+        parameters={},
+    )
+
+    retriever = SimpleRetriever(
+        name="employees",
+        primary_key=primary_key,
+        requester=requester,
+        paginator=paginator,
+        record_selector=MagicMock(),
+        stream_slicer=SinglePartitionRouter(parameters={}),
+        parameters={},
+        config={},
+    )
+
+    expected_records = [
+        Record(data={"id": "1a", "name": "Cross Product Sales"}, stream_name="departments"),
+        Record(data={"id": "2b", "name": "Foreign Exchange"}, stream_name="departments"),
+        Record(data={"id": "3c", "name": "Wealth Management"}, stream_name="departments"),
+        Record(data={"id": "4d", "name": "Investment Banking Division"}, stream_name="departments"),
+    ]
+
+    def mock_parse_records(response: Optional[requests.Response]) -> Iterable[Record]:
+        yield from expected_records
+
+    actual_records = list(
+        retriever._read_pages(
+            records_generator_fn=mock_parse_records,
+            stream_slice=StreamSlice(cursor_slice={}, partition={}),
+        )
+    )
+    assert actual_records == expected_records
+
+
+def test_retriever_last_record_for_page_increment():
+    requester = MagicMock()
+    requester.send_request.return_value = MagicMock()
+
+    paginator = DefaultPaginator(
+        config={},
+        pagination_strategy=CursorPaginationStrategy(
+            cursor_value="{{ last_record['id'] }}",
+            stop_condition="{{ last_record['last_record'] }}",
+            config={},
+            parameters={},
+        ),
+        url_base="https://airbyte.io",
+        parameters={},
+    )
+
+    retriever = SimpleRetriever(
+        name="employees",
+        primary_key=primary_key,
+        requester=requester,
+        paginator=paginator,
+        record_selector=MagicMock(),
+        stream_slicer=SinglePartitionRouter(parameters={}),
+        parameters={},
+        config={},
+    )
+
+    expected_records = [
+        Record(data={"id": "a", "name": "Cross Product Sales"}, stream_name="departments"),
+        Record(data={"id": "b", "name": "Foreign Exchange"}, stream_name="departments"),
+        Record(data={"id": "c", "name": "Wealth Management"}, stream_name="departments"),
+        Record(
+            data={"id": "d", "name": "Investment Banking Division", "last_record": True},
+            stream_name="departments",
+        ),
+    ]
+
+    def mock_parse_records(response: Optional[requests.Response]) -> Iterable[Record]:
+        yield from expected_records
+
+    actual_records = list(
+        retriever._read_pages(
+            records_generator_fn=mock_parse_records,
+            stream_slice=StreamSlice(cursor_slice={}, partition={}),
+        )
+    )
+    assert actual_records == expected_records
+
+
+def test_retriever_is_stateless():
+    """
+    Special test case to verify that retrieving the pages for a given slice does not affect an internal
+    state of the component. Specifically, because this test don't call any type of reset so invoking the
+    _read_pages() method twice will fail if there is an internal state (and is therefore not stateless)
+    because the page count will not be reset.
+    """
+
+    page_response_1 = requests.Response()
+    page_response_1.status_code = 200
+    page_response_1._content = json.dumps(
+        {
+            "employees": [
+                {"id": "0", "first_name": "eric", "last_name": "tao"},
+                {"id": "1", "first_name": "rishi", "last_name": "ramdani"},
+                {"id": "2", "first_name": "harper", "last_name": "stern"},
+                {"id": "3", "first_name": "robert", "last_name": "spearing"},
+                {"id": "4", "first_name": "yasmin", "last_name": "kara-hanani"},
+            ]
+        }
+    ).encode("utf-8")
+
+    page_response_2 = requests.Response()
+    page_response_2.status_code = 200
+    page_response_2._content = json.dumps(
+        {
+            "employees": [
+                {"id": "5", "first_name": "daria", "last_name": "greenock"},
+                {"id": "6", "first_name": "venetia", "last_name": "berens"},
+                {"id": "7", "first_name": "kenny", "last_name": "killbane"},
+            ]
+        }
+    ).encode("utf-8")
+
+    def mock_send_request(
+        next_page_token: Optional[Mapping[str, Any]] = None, **kwargs
+    ) -> Optional[requests.Response]:
+        page_number = next_page_token.get("next_page_token") if next_page_token else None
+        if page_number is None:
+            return page_response_1
+        elif page_number == 1:
+            return page_response_2
+        else:
+            raise ValueError(f"Requested an invalid page number {page_number}")
+
+    requester = MagicMock()
+    requester.send_request.side_effect = mock_send_request
+
+    decoder = JsonDecoder(parameters={})
+    extractor = DpathExtractor(
+        field_path=["employees"], decoder=decoder, config=config, parameters={}
+    )
+    record_selector = RecordSelector(
+        name="employees",
+        extractor=extractor,
+        record_filter=None,
+        transformations=[],
+        config=config,
+        parameters={},
+        schema_normalization=TypeTransformer(TransformConfig.DefaultSchemaNormalization),
+    )
+
+    paginator = DefaultPaginator(
+        config={},
+        pagination_strategy=PageIncrement(config={}, page_size=5, parameters={}),
+        url_base="https://airbyte.io",
+        parameters={},
+    )
+
+    retriever = SimpleRetriever(
+        name="employees",
+        primary_key=primary_key,
+        requester=requester,
+        paginator=paginator,
+        record_selector=record_selector,
+        stream_slicer=SinglePartitionRouter(parameters={}),
+        parameters={},
+        config={},
+    )
+
+    _slice = StreamSlice(cursor_slice={}, partition={})
+
+    record_generator = partial(
+        retriever._parse_records,
+        stream_slice=_slice,
+        records_schema={},
+    )
+
+    # We call _read_pages() because the existing read_records() used to modify and reset state whereas
+    # _read_pages() did not invoke any methods to reset state
+    actual_records = list(
+        retriever._read_pages(records_generator_fn=record_generator, stream_slice=_slice)
+    )
+    assert len(actual_records) == 8
+    assert actual_records[0] == Record(
+        data={"id": "0", "first_name": "eric", "last_name": "tao"}, stream_name="employees"
+    )
+    assert actual_records[7] == Record(
+        data={"id": "7", "first_name": "kenny", "last_name": "killbane"}, stream_name="employees"
+    )
+
+    actual_records = list(
+        retriever._read_pages(records_generator_fn=record_generator, stream_slice=_slice)
+    )
+    assert len(actual_records) == 8
+    assert actual_records[2] == Record(
+        data={"id": "2", "first_name": "harper", "last_name": "stern"}, stream_name="employees"
+    )
+    assert actual_records[5] == Record(
+        data={"id": "5", "first_name": "daria", "last_name": "greenock"}, stream_name="employees"
+    )
+
+
+def test_simple_retriever_with_additional_query_properties():
+    stream_name = "stream_name"
+    expected_records = [
+        Record(
+            {
+                "id": "a",
+                "first_name": "gentarou",
+                "last_name": "hongou",
+                "nonary": "second",
+                "bracelet": "1",
+                "dict_field": {
+                    "key1": "value1",
+                    "key2": "value2",
+                    "affiliation": {
+                        "company": "cradle",
+                        "industry": "pharmaceutical",
+                    },
+                },
+            },
+            associated_slice=None,
+            stream_name=stream_name,
+        ),
+        Record(
+            {
+                "id": "b",
+                "first_name": "clover",
+                "last_name": "field",
+                "nonary": "ambidex",
+                "bracelet": "green",
+            },
+            associated_slice=None,
+            stream_name=stream_name,
+        ),
+        Record(
+            {
+                "id": "c",
+                "first_name": "akane",
+                "last_name": "kurashiki",
+                "nonary": "second",
+                "bracelet": "6",
+                "allies": ["aoi_kurashiki"],
+            },
+            associated_slice=None,
+            stream_name=stream_name,
+        ),
+        Record(
+            {
+                "id": "d",
+                "first_name": "sigma",
+                "last_name": "klim",
+                "nonary": "ambidex",
+                "bracelet": "red",
+            },
+            associated_slice=None,
+            stream_name=stream_name,
+        ),
+        Record(
+            {
+                "id": "e",
+                "first_name": "light",
+                "last_name": "field",
+                "nonary": "second",
+                "bracelet": "2",
+            },
+            associated_slice=None,
+            stream_name=stream_name,
+        ),
+    ]
+
+    stream_slice = StreamSlice(cursor_slice={}, partition={})
+
+    response = requests.Response()
+    response.status_code = 200
+    response._content = json.dumps({"data": [record.data for record in expected_records]}).encode(
+        "utf-8"
+    )
+
+    requester = MagicMock()
+    requester.send_request.side_effect = [
+        response,
+        response,
+    ]
+
+    record_selector = MagicMock()
+    record_selector.select_records.side_effect = [
+        [
+            Record(
+                data={
+                    "id": "a",
+                    "first_name": "gentarou",
+                    "last_name": "hongou",
+                    "dict_field": {"key1": "value1", "affiliation": {"company": "cradle"}},
+                },
+                associated_slice=None,
+                stream_name=stream_name,
+            ),
+            Record(
+                data={"id": "b", "first_name": "clover", "last_name": "field"},
+                associated_slice=None,
+                stream_name=stream_name,
+            ),
+            Record(
+                data={
+                    "id": "c",
+                    "first_name": "akane",
+                    "last_name": "kurashiki",
+                    "allies": ["aoi_kurashiki"],
+                },
+                associated_slice=None,
+                stream_name=stream_name,
+            ),
+            Record(
+                data={"id": "d", "first_name": "sigma", "last_name": "klim"},
+                associated_slice=None,
+                stream_name=stream_name,
+            ),
+            Record(
+                data={"id": "e", "first_name": "light", "last_name": "field"},
+                associated_slice=None,
+                stream_name=stream_name,
+            ),
+        ],
+        [
+            Record(
+                data={"id": "e", "nonary": "second", "bracelet": "2"},
+                associated_slice=None,
+                stream_name=stream_name,
+            ),
+            Record(
+                data={"id": "d", "nonary": "ambidex", "bracelet": "red"},
+                associated_slice=None,
+                stream_name=stream_name,
+            ),
+            Record(
+                data={"id": "c", "nonary": "second", "bracelet": "6"},
+                associated_slice=None,
+                stream_name=stream_name,
+            ),
+            Record(
+                data={"id": "b", "nonary": "ambidex", "bracelet": "green"},
+                associated_slice=None,
+                stream_name=stream_name,
+            ),
+            Record(
+                data={
+                    "id": "a",
+                    "nonary": "second",
+                    "bracelet": "1",
+                    "dict_field": {"key2": "value2", "affiliation": {"industry": "pharmaceutical"}},
+                },
+                associated_slice=None,
+                stream_name=stream_name,
+            ),
+        ],
+    ]
+
+    query_properties = QueryProperties(
+        property_list=["first_name", "last_name", "nonary", "bracelet"],
+        always_include_properties=[],
+        property_chunking=PropertyChunking(
+            property_limit_type=PropertyLimitType.property_count,
+            property_limit=2,
+            record_merge_strategy=GroupByKey(key="id", config=config, parameters={}),
+            config=config,
+            parameters={},
+        ),
+        property_selector=None,
+        config=config,
+        parameters={},
+    )
+
+    retriever = SimpleRetriever(
+        name=stream_name,
+        primary_key=primary_key,
+        requester=requester,
+        record_selector=record_selector,
+        additional_query_properties=query_properties,
+        parameters={},
+        config={},
+    )
+
+    actual_records = [
+        r for r in retriever.read_records(records_schema={}, stream_slice=stream_slice)
+    ]
+
+    assert len(actual_records) == 5
+    assert actual_records == expected_records
+
+
+def test_simple_retriever_with_additional_query_properties_but_without_property_chunking():
+    stream_name = "stream_name"
+    expected_records = [
+        Record(
+            data={"id": "a", "field": "value_first_page"},
+            associated_slice=None,
+            stream_name=stream_name,
+        ),
+        Record(
+            data={"id": "b", "field": "value_second_page"},
+            associated_slice=None,
+            stream_name=stream_name,
+        ),
+    ]
+
+    stream_slice = StreamSlice(cursor_slice={}, partition={})
+
+    response = requests.Response()
+    response.status_code = 200
+    response._content = json.dumps({"data": [{"whatever": 1}]}).encode("utf-8")
+
+    requester = MagicMock()
+    requester.send_request.side_effect = [
+        response,
+        response,
+    ]
+
+    record_selector = MagicMock()
+    record_selector.select_records.side_effect = [
+        [
+            Record(
+                data={"id": "a", "field": "value_first_page"},
+                associated_slice=None,
+                stream_name=stream_name,
+            ),
+        ],
+        [
+            Record(
+                data={"id": "b", "field": "value_second_page"},
+                associated_slice=None,
+                stream_name=stream_name,
+            ),
+        ],
+    ]
+
+    query_properties = QueryProperties(
+        property_list=["first_name", "last_name", "nonary", "bracelet"],
+        always_include_properties=[],
+        property_chunking=None,
+        property_selector=None,
+        config=config,
+        parameters={},
+    )
+
+    paginator = _mock_paginator()
+    paginator.next_page_token.side_effect = [{"next_page_token": 1}, None]
+
+    retriever = SimpleRetriever(
+        name=stream_name,
+        primary_key=primary_key,
+        requester=requester,
+        record_selector=record_selector,
+        additional_query_properties=query_properties,
+        paginator=paginator,
+        parameters={},
+        config={},
+    )
+
+    actual_records = [
+        r for r in retriever.read_records(records_schema={}, stream_slice=stream_slice)
+    ]
+
+    assert len(actual_records) == 2
+    assert actual_records == expected_records
+    assert requester.send_request.call_args_list[0].kwargs["stream_slice"].extra_fields
+
+
+def test_simple_retriever_with_additional_query_properties_single_chunk():
+    stream_name = "stream_name"
+    expected_records = [
+        Record(
+            {
+                "id": "a",
+                "first_name": "gentarou",
+                "last_name": "hongou",
+                "nonary": "second",
+                "bracelet": "1",
+            },
+            associated_slice=None,
+            stream_name=stream_name,
+        ),
+        Record(
+            {
+                "id": "b",
+                "first_name": "clover",
+                "last_name": "field",
+                "nonary": "ambidex",
+                "bracelet": "green",
+            },
+            associated_slice=None,
+            stream_name=stream_name,
+        ),
+        Record(
+            {
+                "id": "c",
+                "first_name": "akane",
+                "last_name": "kurashiki",
+                "nonary": "second",
+                "bracelet": "6",
+            },
+            associated_slice=None,
+            stream_name=stream_name,
+        ),
+        Record(
+            {
+                "id": "d",
+                "first_name": "sigma",
+                "last_name": "klim",
+                "nonary": "ambidex",
+                "bracelet": "red",
+            },
+            associated_slice=None,
+            stream_name=stream_name,
+        ),
+        Record(
+            {
+                "id": "e",
+                "first_name": "light",
+                "last_name": "field",
+                "nonary": "second",
+                "bracelet": "2",
+            },
+            associated_slice=None,
+            stream_name=stream_name,
+        ),
+        Record(
+            {"id": "f", "first_name": "carlos", "nonary": "decision", "bracelet": "c"},
+            associated_slice=None,
+            stream_name=stream_name,
+        ),
+    ]
+
+    stream_slice = StreamSlice(cursor_slice={}, partition={})
+
+    response = requests.Response()
+    response.status_code = 200
+    response._content = json.dumps({"data": [record.data for record in expected_records]}).encode(
+        "utf-8"
+    )
+
+    requester = MagicMock()
+    requester.send_request.side_effect = [
+        response,
+        response,
+    ]
+
+    record_selector = MagicMock()
+    record_selector.select_records.side_effect = [
+        [
+            Record(
+                data={
+                    "id": "a",
+                    "first_name": "gentarou",
+                    "last_name": "hongou",
+                    "nonary": "second",
+                    "bracelet": "1",
+                },
+                associated_slice=None,
+                stream_name=stream_name,
+            ),
+            Record(
+                data={
+                    "id": "b",
+                    "first_name": "clover",
+                    "last_name": "field",
+                    "nonary": "ambidex",
+                    "bracelet": "green",
+                },
+                associated_slice=None,
+                stream_name=stream_name,
+            ),
+            Record(
+                data={
+                    "id": "c",
+                    "first_name": "akane",
+                    "last_name": "kurashiki",
+                    "nonary": "second",
+                    "bracelet": "6",
+                },
+                associated_slice=None,
+                stream_name=stream_name,
+            ),
+            Record(
+                data={
+                    "id": "d",
+                    "first_name": "sigma",
+                    "last_name": "klim",
+                    "nonary": "ambidex",
+                    "bracelet": "red",
+                },
+                associated_slice=None,
+                stream_name=stream_name,
+            ),
+            Record(
+                data={
+                    "id": "e",
+                    "first_name": "light",
+                    "last_name": "field",
+                    "nonary": "second",
+                    "bracelet": "2",
+                },
+                associated_slice=None,
+                stream_name=stream_name,
+            ),
+            Record(
+                data={"id": "f", "first_name": "carlos", "nonary": "decision", "bracelet": "c"},
+                associated_slice=None,
+                stream_name=stream_name,
+            ),
+        ]
+    ]
+
+    query_properties = QueryProperties(
+        property_list=["first_name", "last_name", "nonary", "bracelet"],
+        always_include_properties=[],
+        property_chunking=PropertyChunking(
+            property_limit_type=PropertyLimitType.property_count,
+            property_limit=10,
+            record_merge_strategy=GroupByKey(key="id", config=config, parameters={}),
+            config=config,
+            parameters={},
+        ),
+        property_selector=None,
+        config=config,
+        parameters={},
+    )
+
+    retriever = SimpleRetriever(
+        name=stream_name,
+        primary_key=primary_key,
+        requester=requester,
+        record_selector=record_selector,
+        additional_query_properties=query_properties,
+        parameters={},
+        config={},
+    )
+
+    actual_records = [
+        r for r in retriever.read_records(records_schema={}, stream_slice=stream_slice)
+    ]
+
+    assert len(actual_records) == 6
+    assert actual_records == expected_records
+
+
+def test_simple_retriever_still_emit_records_if_no_merge_key():
+    stream_name = "stream_name"
+    expected_records = [
+        Record(
+            data={"id": "a", "first_name": "gentarou", "last_name": "hongou"},
+            associated_slice=None,
+            stream_name=stream_name,
+        ),
+        Record(
+            data={"id": "b", "first_name": "clover", "last_name": "field"},
+            associated_slice=None,
+            stream_name=stream_name,
+        ),
+        Record(
+            data={"id": "c", "first_name": "akane", "last_name": "kurashiki"},
+            associated_slice=None,
+            stream_name=stream_name,
+        ),
+        Record(
+            data={"id": "d", "first_name": "sigma", "last_name": "klim"},
+            associated_slice=None,
+            stream_name=stream_name,
+        ),
+        Record(
+            data={"id": "e", "first_name": "light", "last_name": "field"},
+            associated_slice=None,
+            stream_name=stream_name,
+        ),
+        Record(
+            data={"id": "e", "nonary": "second", "bracelet": "2"},
+            associated_slice=None,
+            stream_name=stream_name,
+        ),
+        Record(
+            data={"id": "d", "nonary": "ambidex", "bracelet": "red"},
+            associated_slice=None,
+            stream_name=stream_name,
+        ),
+        Record(
+            data={"id": "c", "nonary": "second", "bracelet": "6"},
+            associated_slice=None,
+            stream_name=stream_name,
+        ),
+        Record(
+            data={"id": "b", "nonary": "ambidex", "bracelet": "green"},
+            associated_slice=None,
+            stream_name=stream_name,
+        ),
+        Record(
+            data={"id": "a", "nonary": "second", "bracelet": "1"},
+            associated_slice=None,
+            stream_name=stream_name,
+        ),
+    ]
+
+    stream_slice = StreamSlice(cursor_slice={}, partition={})
+
+    response = requests.Response()
+    response.status_code = 200
+    response._content = json.dumps({"data": [record.data for record in expected_records]}).encode(
+        "utf-8"
+    )
+
+    requester = MagicMock()
+    requester.send_request.side_effect = [
+        response,
+        response,
+    ]
+
+    record_selector = MagicMock()
+    record_selector.select_records.side_effect = [
+        [
+            Record(
+                data={"id": "a", "first_name": "gentarou", "last_name": "hongou"},
+                associated_slice=None,
+                stream_name=stream_name,
+            ),
+            Record(
+                data={"id": "b", "first_name": "clover", "last_name": "field"},
+                associated_slice=None,
+                stream_name=stream_name,
+            ),
+            Record(
+                data={"id": "c", "first_name": "akane", "last_name": "kurashiki"},
+                associated_slice=None,
+                stream_name=stream_name,
+            ),
+            Record(
+                data={"id": "d", "first_name": "sigma", "last_name": "klim"},
+                associated_slice=None,
+                stream_name=stream_name,
+            ),
+            Record(
+                data={"id": "e", "first_name": "light", "last_name": "field"},
+                associated_slice=None,
+                stream_name=stream_name,
+            ),
+        ],
+        [
+            Record(
+                data={"id": "e", "nonary": "second", "bracelet": "2"},
+                associated_slice=None,
+                stream_name=stream_name,
+            ),
+            Record(
+                data={"id": "d", "nonary": "ambidex", "bracelet": "red"},
+                associated_slice=None,
+                stream_name=stream_name,
+            ),
+            Record(
+                data={"id": "c", "nonary": "second", "bracelet": "6"},
+                associated_slice=None,
+                stream_name=stream_name,
+            ),
+            Record(
+                data={"id": "b", "nonary": "ambidex", "bracelet": "green"},
+                associated_slice=None,
+                stream_name=stream_name,
+            ),
+            Record(
+                data={"id": "a", "nonary": "second", "bracelet": "1"},
+                associated_slice=None,
+                stream_name=stream_name,
+            ),
+        ],
+    ]
+
+    query_properties = QueryProperties(
+        property_list=["first_name", "last_name", "nonary", "bracelet"],
+        always_include_properties=[],
+        property_chunking=PropertyChunking(
+            property_limit_type=PropertyLimitType.property_count,
+            property_limit=2,
+            record_merge_strategy=GroupByKey(key="not_real", config=config, parameters={}),
+            config=config,
+            parameters={},
+        ),
+        property_selector=None,
+        config=config,
+        parameters={},
+    )
+
+    retriever = SimpleRetriever(
+        name=stream_name,
+        primary_key=primary_key,
+        requester=requester,
+        record_selector=record_selector,
+        additional_query_properties=query_properties,
+        parameters={},
+        config={},
+    )
+
+    actual_records = [
+        r for r in retriever.read_records(records_schema={}, stream_slice=stream_slice)
+    ]
+
+    assert len(actual_records) == 10
+    assert actual_records == expected_records
+
+
+def test_given_requester_raise_pagination_reset_exception_when_read_records_than_reduce_slice_range_and_retry_with_new_slice():
+    requester = Mock(spec=Requester)
+    requester.send_request.side_effect = [
+        [{"id": 1}],
+        PaginationResetRequiredException(),
+        [{"id": 2}],
+    ]
+    record_selector = Mock(spec=HttpSelector)
+    record_selector.select_records.side_effect = [
+        [{"id": 1}],
+        [{"id": 2}],
+    ]
+    pagination_tracker = Mock(spec=PaginationTracker)
+    pagination_tracker.has_reached_limit.return_value = False
+    paginator = _mock_paginator()
+    paginator.get_initial_token.return_value = 1
+    paginator.next_page_token.side_effect = [
+        {"next_page_token": 2},
+        None,
+    ]
+    retriever = SimpleRetriever(
+        name=A_STREAM_NAME,
+        primary_key=primary_key,
+        requester=requester,
+        record_selector=record_selector,
+        paginator=paginator,
+        pagination_tracker_factory=lambda: pagination_tracker,
+        parameters={},
+        config={},
+    )
+
+    x = list(retriever.read_records(A_RECORD_SCHEMA, A_STREAM_SLICE))
+
+    assert len(x) == 2
+    assert pagination_tracker.reduce_slice_range_if_possible.call_count == 1
+    assert requester.send_request.call_count == 3
+    assert requester.send_request.call_args_list[1].kwargs["stream_slice"] == A_STREAM_SLICE
+    assert requester.send_request.call_args_list[1].kwargs["next_page_token"] == {
+        "next_page_token": 2
+    }
+    assert (
+        requester.send_request.call_args_list[2].kwargs["stream_slice"]
+        == pagination_tracker.reduce_slice_range_if_possible.return_value
+    )
+    assert requester.send_request.call_args_list[2].kwargs["next_page_token"] == {
+        "next_page_token": 1
+    }
+
+
+def test_given_reach_pagination_limit_after_two_pages_when_read_records_than_reduce_slice_range_and_retry_with_new_slice():
+    requester = Mock(spec=Requester)
+    requester.send_request.side_effect = [
+        [{"id": 1}],
+        [{"id": 2}],
+        [{"id": 3}],
+    ]
+    record_selector = Mock(spec=HttpSelector)
+    record_selector.select_records.side_effect = [
+        [{"id": 1}],
+        [{"id": 2}],
+        [{"id": 3}],
+    ]
+    pagination_tracker = Mock(spec=PaginationTracker)
+    pagination_tracker.has_reached_limit.side_effect = [
+        False,
+        True,
+        False,
+    ]
+    paginator = _mock_paginator()
+    paginator.get_initial_token.return_value = 1
+    paginator.next_page_token.side_effect = [
+        {"next_page_token": 2},
+        None,
+    ]
+    retriever = SimpleRetriever(
+        name=A_STREAM_NAME,
+        primary_key=primary_key,
+        requester=requester,
+        record_selector=record_selector,
+        paginator=paginator,
+        pagination_tracker_factory=lambda: pagination_tracker,
+        parameters={},
+        config={},
+    )
+
+    x = list(retriever.read_records(A_RECORD_SCHEMA, A_STREAM_SLICE))
+
+    assert len(x) == 3
+    assert pagination_tracker.reduce_slice_range_if_possible.call_count == 1
+    assert requester.send_request.call_count == 3
+    assert requester.send_request.call_args_list[1].kwargs["stream_slice"] == A_STREAM_SLICE
+    assert requester.send_request.call_args_list[1].kwargs["next_page_token"] == {
+        "next_page_token": 2
+    }
+    assert (
+        requester.send_request.call_args_list[2].kwargs["stream_slice"]
+        == pagination_tracker.reduce_slice_range_if_possible.return_value
+    )
+    assert requester.send_request.call_args_list[2].kwargs["next_page_token"] == {
+        "next_page_token": 1
+    }
+
+
+def _mock_paginator():
+    paginator = Mock(spec=Paginator)
+    paginator.get_request_params.__name__ = "get_request_params"
+    paginator.get_request_headers.__name__ = "get_request_headers"
+    paginator.get_request_body_data.__name__ = "get_request_body_data"
+    paginator.get_request_body_json.__name__ = "get_request_body_json"
+    return paginator

@@ -1,0 +1,29 @@
+# https://docs.github.com/en/repositories/managing-your-repositorys-settings-and-features/customizing-your-repository/about-code-owners
+
+# Ending a path in a `/` will specify the code owners for every file
+
+# nested in that directory, on any level
+
+# Default owners
+
+* @edgarrmondragon
+
+# CI
+.github/actions/ @meltano/engineering
+.github/workflows/ @meltano/engineering
+
+# Docs (General)
+/docs/ @meltano/engineering @meltano/marketing
+/README.md @meltano/engineering @meltano/marketing
+
+# Docs (Contributing)
+/CONTRIBUTING.md @meltano/engineering
+
+# Integration tests
+/docs/example-library/ @meltano/product @meltano/engineering
+
+# Release Ops (see the `[tool.commitizen]` table in pyproject.toml for a list of bumped files)
+/CHANGELOG.md @meltano/engineering
+/docs/package.json @meltano/engineering
+/pyproject.toml @meltano/engineering
+/src/meltano/__init__.py @meltano/engineering

@@ -1,0 +1,11 @@
+{
+  "label": "Meltano Open",
+  "position": 2,
+  "customProps": {
+    "icon": "data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCAyNTYgMjU2IiBmaWxsPSJjdXJyZW50Q29sb3IiPjxwYXRoIGQ9Ik0yMTYsMzJWMTkyYTgsOCwwLDAsMS04LDhINzJhMTYsMTYsMCwwLDAtMTYsMTZIMTkyYTgsOCwwLDAsMSwwLDE2SDQ4YTgsOCwwLDAsMS04LThWNTZBMzIsMzIsMCwwLDEsNzIsMjRIMjA4QTgsOCwwLDAsMSwyMTYsMzJaIi8+PC9zdmc+"
+  },
+  "link": {
+    "type": "generated-index",
+    "title": "Meltano Open"
+  }
+}

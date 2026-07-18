@@ -1,0 +1,44 @@
+/*
+ * Copyright Debezium Authors.
+ *
+ * Licensed under the Apache Software License version 2.0, available at http://www.apache.org/licenses/LICENSE-2.0
+ */
+package io.debezium.connector.binlog;
+
+import java.sql.SQLException;
+import java.util.concurrent.ExecutorService;
+
+import org.apache.kafka.connect.source.SourceConnector;
+
+import io.debezium.connector.binlog.util.BinlogTestConnection;
+
+/**
+ * @author Chris Cranford
+ */
+public interface BinlogConnectorTest<C extends SourceConnector> {
+    String getConnectorName();
+
+    Class<C> getConnectorClass();
+
+    BinlogTestConnection getTestDatabaseConnection(String databaseName);
+
+    BinlogTestConnection getTestDatabaseConnection(String databaseName, int queryTimeout);
+
+    BinlogTestConnection getTestReplicaDatabaseConnection(String databaseName);
+
+    boolean isMariaDb();
+
+    default void executeStatements(String databaseName, String... statements) {
+        throw new UnsupportedOperationException("not support operation for the datasource");
+    }
+
+    default ExecutorService executeScheduledStatement(int times,
+                                                      long period,
+                                                      int delay,
+                                                      String databaseName,
+                                                      String statement)
+            throws SQLException {
+        throw new UnsupportedOperationException("not support operation for the datasource");
+    }
+
+}

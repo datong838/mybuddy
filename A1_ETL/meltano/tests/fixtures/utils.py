@@ -1,0 +1,48 @@
+"""Shared Pytest fixture utilities."""
+
+from __future__ import annotations
+
+import logging
+import os
+import typing as t
+from contextlib import contextmanager
+from pathlib import Path
+
+from meltano.core.project import Project
+from meltano.core.project_init_service import ProjectInitService
+
+if t.TYPE_CHECKING:
+    import sys
+
+    if sys.version_info >= (3, 13):
+        from collections.abc import Generator
+    else:
+        from typing_extensions import Generator
+
+
+@contextmanager
+def cd(path: Path) -> Generator[Path]:
+    prev_dir = Path.cwd()
+    os.chdir(path)
+    try:
+        yield path
+    finally:
+        os.chdir(prev_dir)
+
+
+@contextmanager
+def tmp_project(name: str, source: Path, compatible_copy_tree) -> Generator[Project]:
+    project_init_service = ProjectInitService(name)
+    blank_project = project_init_service.init()
+    logging.debug(f"Created new project at {blank_project.root}")  # noqa: G004
+    blank_project.meltanofile.unlink()
+    compatible_copy_tree(source, blank_project.root)
+    Project._default = None
+    project = Project(blank_project.root)
+    with cd(project.root):
+        try:
+            project.refresh()
+            yield project
+        finally:
+            Project.deactivate()
+            logging.debug(f"Cleaned project at {project.root}")  # noqa: G004

@@ -1,0 +1,280 @@
+[build-system]
+requires = ["poetry-core>=1.0.0,<2.0", "poetry-dynamic-versioning>=1.0.0,<2.0.0"]
+build-backend = "poetry_dynamic_versioning.backend"
+
+
+[tool.poetry]
+name = "airbyte-cdk"
+description = "A framework for writing Airbyte Connectors."
+authors = ["Airbyte <contact@airbyte.io>"]
+license = "MIT"
+readme = "README.md"
+homepage = "https://airbyte.com"
+repository = "https://github.com/airbytehq/airbyte-python-cdk"
+documentation = "https://docs.airbyte.io/"
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Intended Audience :: Developers",
+    "Topic :: Scientific/Engineering",
+    "Topic :: Software Development :: Libraries :: Python Modules",
+    "License :: OSI Approved :: MIT License",
+    "Programming Language :: Python :: 3.10",
+]
+keywords = ["airbyte", "connector-development-kit", "cdk"]
+
+# Python CDK uses dynamic versioning: https://github.com/mtkennerly/poetry-dynamic-versioning
+version = "0.0.0"  # Version will be calculated dynamically.
+
+[tool.poetry-dynamic-versioning]
+enable = true
+
+[tool.poetry.dependencies]
+python = ">=3.10,<3.14"
+airbyte-protocol-models-dataclasses = "^0.17.1"
+
+backoff = "*"
+boltons = "^25.0.0"
+cachetools = "*"
+click = "^8.1.8"
+dpath = "^2.1.6"
+dunamai = "^1.22.0"
+genson = "1.3.0"
+google-cloud-secret-manager = "^2.17.0"
+isodate = "~0.6.1"
+Jinja2 = "~3.1.2"
+jsonref = "^1"
+jsonschema = ">=4.17.3,<5.0"
+packaging = "*"  # Transitive dependency used directly in code
+referencing = ">=0.36.2"
+pandas = "2.2.3"
+pydantic = "^2.7"
+pyrate-limiter = "~3.1.0"
+python-dateutil = "^2.9.0"
+python-ulid = "^3.0.0"
+PyYAML = "^6.0.1"
+rapidfuzz = "^3.10.1" # TODO: Remove if unused
+requests = "*"
+requests_cache = "*"
+rich = "*"  # Use whichever version meets other constraints
+rich-click = "^1.8.8"
+typing-extensions = "*"  # Transitive dependency used directly in code
+wcmatch = "10.0"
+# Extras depedencies
+avro = { version = ">=1.11.2,<1.13.0", optional = true }  # TODO: Move into dev dependencies if only used in tests
+cohere = { version = ">=4.21,<6.0.0", optional = true }
+fastavro = { version = ">=1.11.0,<2.0.0", optional = true }
+langchain_community = { version = "^0.4", optional = true }
+langchain_core = { version = "^1.2.5", optional = true }
+langchain_text_splitters = { version = "^1.0.0", optional = true }
+markdown = { version = "*", optional = true }  # TODO: Remove if unused
+openai = { version = "0.27.9", extras = ["embeddings"], optional = true }  # Used indirectly by langchain library
+pdf2image = { version = "1.16.3", optional = true }
+"pdfminer.six" = { version = "20221105", optional = true }  # Used indirectly by unstructured library
+pyarrow = { version = "^19.0.0", optional = true }
+pytesseract = { version = "0.3.10", optional = true }  # Used indirectly by unstructured library
+python-calamine = { version = "0.2.3", optional = true }  # TODO: Remove if unused
+openpyxl = { version = "^3.1.0", optional = true }
+python-snappy = { version = "0.7.3", optional = true }  # TODO: remove if unused
+tiktoken = { version = "0.8.0", optional = true }
+nltk = { version = "3.9.1", optional = true }
+unstructured = { version = "0.10.27", extras = ["docx", "pptx"], optional = true }
+"unstructured.pytesseract" = { version = ">=0.3.12", optional = true }
+pyjwt = "^2.8.0"
+cryptography = ">=44.0.0,!=45.0.0,!=45.0.1"  # 45.0.0-45.0.1 had regressions (pyca/cryptography#12958); upper cap removed so >=48.0.1 (ASN.1 OOB read fix) can be installed
+pytz = ">=2024.2"
+pytest = {version = "^7", optional = true }
+orjson = "^3.10.7"
+ijson = "^3.3.0"  # Streaming JSON parser used by `JsonItemsParser` to handle very large response bodies without OOMing.
+serpyco-rs = "^1.10.2"
+sqlalchemy = {version = "^2.0,!=2.0.36", optional = true }
+fastapi = { version = ">=0.116.1", optional = true }
+uvicorn = { version = ">=0.35.0", optional = true}
+ddtrace = { version = "^3", optional = true }
+xmltodict = ">=0.13,<0.15"
+anyascii = "^0.3.2"
+whenever = ">=0.7.3,<0.9.0"
+setuptools = "^80.9.0"  # Some connectors depend on this as an undeclared transitive dependency (e.g. source-shopify)
+unidecode = "^1.3.8"  # IMPORTANT: DO NOT USE. Added to support source-google-sheets migration. This dep is deprecated in favour of `anyascii` and is slated for removal.
+dateparser = "^1.2.2"
+
+[tool.poetry.group.dev.dependencies]
+freezegun = "*"
+mypy = "*"
+asyncio = "3.4.3"
+ruff = "^0.11.5"
+pdoc = "^15.0.0"
+poethepoet = "^0.24.2"
+pyproject-flake8 = "^6.1.0"
+pytest = "*"  # Version will be set by the 'dev' extra
+pytest-memray = "^1.6.0"
+pympler = "*"
+pytest-cov = "*"
+pytest-httpserver = "*"
+pytest-mock = "*"
+requests-mock = "*"
+httpx = "*"  # Required for FastAPI TestClient
+# Stubs packages for mypy typing
+types-requests = "^2.32.0.20241016"
+types-python-dateutil = "^2.9.0.20241003"
+types-pyyaml = "^6.0.12.20240917"
+types-cachetools = "^5.5.0.20240820"
+deptry = "^0.23.0"
+dagger-io = "0.19.0"
+
+[tool.poetry.extras]
+file-based = ["avro", "fastavro", "pyarrow", "unstructured", "pdf2image", "pdfminer.six", "unstructured.pytesseract", "pytesseract", "markdown", "python-calamine", "openpyxl", "python-snappy"]
+vector-db-based = ["langchain_community", "langchain_core", "langchain_text_splitters", "openai", "cohere", "tiktoken"]
+sql = ["sqlalchemy"]
+dev = ["pytest"]
+manifest-server = ["fastapi", "uvicorn", "ddtrace"]
+
+[tool.poetry.scripts]
+
+airbyte-cdk = "airbyte_cdk.cli.airbyte_cdk:cli"
+source-declarative-manifest = "airbyte_cdk.cli.source_declarative_manifest:run"
+manifest-server = "airbyte_cdk.manifest_server.cli.run:run"
+
+# Ruff configuration moved to ruff.toml
+
+[tool.poe.tasks]
+# Installation
+install = { shell = "poetry install --all-extras", help = "Install all dependencies." }
+lock = { shell = "poetry lock", help = "Lock all dependencies." }
+
+# Pre-commit tasks
+pre-commit = {cmd = "poetry run pre-commit run --all-files", help = "Run all pre-commit hooks on all files."}
+
+# Build tasks
+assemble = {cmd = "bin/generate-component-manifest-dagger.sh", help = "Generate component manifest files."}
+build-package = {cmd = "poetry build", help = "Build the python package: source and wheels archives."}
+build = {sequence = ["assemble", "openapi-generate", "build-package", "ruff-fix"], help = "Run all tasks to build the package."}
+
+# Format check tasks
+format-check = {sequence = ["_format-check-ruff", "_format-check-prettier"], help = "Check formatting for all file types via Ruff and Prettier.", ignore_fail = "return_non_zero"}
+_format-check-ruff = {cmd = "poetry run ruff format --check .", help = "Check formatting with Ruff."}
+_format-check-prettier = {cmd = "npx prettier . --check", help = "Check formatting with prettier."}
+
+# Format fix tasks
+format-fix = {sequence = ["_format-fix-ruff", "_format-fix-prettier"], help = "Format all file types via Ruff and Prettier.", ignore_fail = "return_non_zero"}
+_format-fix-ruff = {cmd = "poetry run ruff format .", help = "Format with Ruff."}
+_format-fix-prettier = {cmd = "npx prettier . --write", help = "Format with prettier."}
+
+# Linting/Typing check tasks
+lint = {cmd = "poetry run ruff check .", help = "Lint with Ruff."}
+type-check = {cmd = "poetry run mypy airbyte_cdk", help = "Type check modified files with mypy."}
+
+# Linting/Typing fix tasks
+lint-fix = { cmd = "poetry run ruff check --fix .", help = "Auto-fix any lint issues that Ruff can automatically resolve (excluding 'unsafe' fixes) with Ruff." }
+lint-fix-unsafe = { cmd = "poetry run ruff check --fix --unsafe-fixes .", help = "Lint-fix modified files, including 'unsafe' fixes with Ruff. It is recommended to first commit any pending changes and then always manually review any unsafe changes applied." }
+
+# ruff fix everything (ignoring non-Python fixes)
+ruff-fix = { sequence = ["lint-fix", "_format-fix-ruff"],  help = "Lint-fix and format-fix all code." }
+
+# Lockfile check task
+_check-lockfile = {cmd = "poetry check", help = "Check the poetry lock file."}
+
+# Combined Check and Fix tasks
+check-all = {sequence = ["lint", "format-check", "type-check", "_check-lockfile"], help = "Lint, format, and type-check modified files.", ignore_fail = "return_non_zero"}
+fix-all = {sequence = ["format-fix", "lint-fix"], help = "Lint-fix and format-fix modified files, ignoring unsafe fixes.", ignore_fail = "return_non_zero"}
+fix-and-check = {sequence = ["fix-all", "check-all"], help = "Lint-fix and format-fix, then re-check to see if any issues remain.", ignore_fail = "return_non_zero"}
+
+# PyTest tasks
+pytest = {cmd = "poetry run coverage run -m pytest --durations=10", help = "Run all pytest tests."}
+pytest-fast = {cmd = "poetry run coverage run -m pytest unit_tests --durations=5 --exitfirst -m 'not flaky and not slow and not requires_creds'", help = "Run pytest tests, failing fast and excluding slow tests."}
+unit-test-with-cov = {cmd = "poetry run pytest -s unit_tests --cov=airbyte_cdk --cov-report=term --cov-config ./pyproject.toml", help = "Run unit tests and create a coverage report."}
+
+# Combined check tasks (other)
+
+# TODO: find a version of the modified mypy check that works both locally and in CI.
+check-local = {sequence = ["lint", "type-check", "_check-lockfile", "unit-test-with-cov"], help = "Lint all code, type-check modified files, and run unit tests."}
+check-ci = {sequence = ["_check-lockfile", "build", "lint", "unit-test-with-cov"], help = "Build the package, lint and run unit tests. Does not include type-checking."}
+
+# Build and check
+pre-push = {sequence = ["build", "check-local"], help = "Run all build and check tasks."}
+
+# API Docs with PDoc
+docs-generate = {env = {PDOC_ALLOW_EXEC = "1"}, cmd = "python -m docs.generate run", help="Generate API documentation with PDoc."}
+docs-preview = {shell = "poe docs-generate && open docs/generated/index.html", help="Generate API documentation with PDoc and then open the docs in the default web browser."}
+
+# Manifest server
+openapi-generate = {cmd = "manifest-server generate-openapi", help = "Generate OpenAPI YAML specification for the manifest server."}
+
+[tool.check-wheel-contents]
+# Quality control for Python wheel generation. Docs here:
+# - https://github.com/jwodder/check-wheel-contents
+ignore = [
+  "W002"  # Duplicate files. (TODO: Fix the few duplicate files, mostly `__init__.py` files that have only copyright text.)
+]
+
+# [tool.pytest.ini_options]
+# NOTE: PyTest options moved to dedicated `pytest.ini`
+
+[tool.airbyte_ci]
+python_versions = [
+  "3.10",
+  "3.11",
+  "3.12",
+  "3.13",
+]
+optional_poetry_groups = ["dev"]
+poetry_extras = ["file-based", "vector-db-based", "manifest-server"]
+poe_tasks = ["check-ci"]
+mount_docker_socket = true
+
+[tool.deptry]
+exclude = [
+  "bin",
+  "docs",
+  "unit_tests",
+]
+
+[tool.deptry.per_rule_ignores]
+# This is a mapping of rules and package names to be ignored for that rule.
+
+# DEP001: Project should not contain missing dependencies.
+# https://deptry.com/rules-violations/#missing-dependencies-dep001
+DEP001 = [
+  # These are imported but not declared:
+  "source_declarative_manifest",  # Imported only in dynamic import tests, not in main code
+  "google"  # Imported via google.cloud.secretmanager_v1 which is provided by google-cloud-secret-manager
+]
+
+# DEP002: Project should not contain unused dependencies.
+# https://deptry.com/rules-violations/#missing-dependencies-dep002
+DEP002 = [
+  "setuptools",  # Incorrectly used without declaring in some connectors (e.g. source-shopify)
+  "google-cloud-secret-manager",  # Deptry can't detect that `google.cloud.secretmanager_v1` uses this package
+  "dateparser",  # Used by `source-amazon-seller-partner` for parsing string-formatted dates w/ timezone abbreviations. May add to `AirbyteDateTime`.
+  "unidecode",  # IMPORTANT: DO NOT USE. Added to support source-google-sheets migration. This dep is deprecated in favour of `anyascii` and is slated for removal.
+
+  # TODO: Remove these dependencies if not needed:
+  "avro",  # Only imported in `unit_tests` code
+  "rapidfuzz",
+  "cohere",
+  "markdown",
+  "openai",
+  "openpyxl",
+  "pdf2image",
+  "pdfminer.six",
+  "pytesseract",
+  "python-calamine",
+  "python-snappy",
+  "tiktoken",
+  "unstructured.pytesseract",
+]
+
+# DEP003: Project should not use transitive dependencies.
+# https://deptry.com/rules-violations/#transitive-dependencies-dep003
+DEP003 = [
+  # Transitive dependencies that are imported directly
+  "pydantic_core"  # Pydantic internals, no need to define as separate dependency
+]
+
+# DEP004: Project should not use development dependencies in non-development code.
+# https://deptry.com/rules-violations/#misplaced-development-dependencies-dep004
+DEP004 = [
+  # The `airbyte_cdk.test.utils` module is main code.
+  # TODO: These should probably be declared within a `tests` extra:
+  "pytest",
+  "requests_mock",
+]

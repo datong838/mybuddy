@@ -1,0 +1,51 @@
+/*
+ * Copyright Debezium Authors.
+ *
+ * Licensed under the Apache Software License version 2.0, available at http://www.apache.org/licenses/LICENSE-2.0
+ */
+package io.debezium.connector.mongodb;
+
+import org.assertj.core.api.Assertions;
+import org.bson.BsonDocument;
+import org.bson.BsonInt32;
+import org.bson.BsonObjectId;
+import org.bson.BsonString;
+import org.junit.jupiter.api.Test;
+
+public class JsonSerializationTest {
+
+    private JsonSerialization serialization = new JsonSerialization(MongoDbConnectorConfig.JsonSerializationMode.LEGACY);
+
+    @Test
+    void shouldGeOnlyIdFromCompositeKey() {
+        var id = new BsonInt32(42);
+        var composite = new BsonDocument("email", new BsonString("foo@bar.com"))
+                .append("_id", id);
+
+        var key = serialization.getDocumentId(composite);
+
+        Assertions.assertThat(key).isEqualTo("42");
+    }
+
+    @Test
+    void shouldGetEqualDocumentIdFromSimpleAndComposite() {
+        var id = new BsonObjectId();
+        var simple = new BsonDocument("_id", id);
+        var composite = new BsonDocument("email", new BsonString("foo@bar.com"))
+                .append("_id", id);
+
+        var simpleKey = serialization.getDocumentId(simple);
+        var compositeKey = serialization.getDocumentId(composite);
+
+        Assertions.assertThat(compositeKey).isEqualTo(simpleKey);
+    }
+
+    @Test
+    void shouldPreserveLegacyUpdatedFieldsFormatting() {
+        var updatedFields = new BsonDocument("name", new BsonString("Mary"))
+                .append("zipcode", new BsonString("11111"));
+
+        Assertions.assertThat(serialization.getUpdatedFields(updatedFields)).isEqualTo("{\"name\": \"Mary\", \"zipcode\": \"11111\"}");
+    }
+
+}

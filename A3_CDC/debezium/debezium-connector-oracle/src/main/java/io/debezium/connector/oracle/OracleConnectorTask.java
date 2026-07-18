@@ -1,0 +1,368 @@
+/*
+ * Copyright Debezium Authors.
+ *
+ * Licensed under the Apache Software License version 2.0, available at http://www.apache.org/licenses/LICENSE-2.0
+ */
+package io.debezium.connector.oracle;
+
+import java.sql.SQLException;
+import java.util.Comparator;
+import java.util.List;
+import java.util.Map;
+import java.util.Optional;
+import java.util.Set;
+import java.util.concurrent.locks.ReentrantLock;
+
+import org.apache.kafka.connect.source.SourceRecord;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+
+import io.debezium.DebeziumException;
+import io.debezium.bean.StandardBeanNames;
+import io.debezium.config.CommonConnectorConfig;
+import io.debezium.config.Configuration;
+import io.debezium.config.Field;
+import io.debezium.connector.base.ChangeEventQueue;
+import io.debezium.connector.base.QueueProviderService;
+import io.debezium.connector.common.BaseSourceTask;
+import io.debezium.connector.common.CdcSourceTaskContext;
+import io.debezium.connector.common.DebeziumHeaderProducer;
+import io.debezium.connector.oracle.OracleConnectorConfig.ConnectorAdapter;
+import io.debezium.connector.oracle.StreamingAdapter.TableNameCaseSensitivity;
+import io.debezium.connector.oracle.jdbc.OracleConnectionFactory;
+import io.debezium.connector.oracle.jdbc.OracleConnectionFactoryProvider;
+import io.debezium.document.DocumentReader;
+import io.debezium.heartbeat.HeartbeatFactory;
+import io.debezium.jdbc.JdbcConfiguration;
+import io.debezium.pipeline.ChangeEventSourceCoordinator;
+import io.debezium.pipeline.DataChangeEvent;
+import io.debezium.pipeline.ErrorHandler;
+import io.debezium.pipeline.EventDispatcher;
+import io.debezium.pipeline.GuardrailValidator;
+import io.debezium.pipeline.notification.NotificationService;
+import io.debezium.pipeline.signal.SignalProcessor;
+import io.debezium.pipeline.spi.OffsetContext;
+import io.debezium.pipeline.spi.Offsets;
+import io.debezium.pipeline.spi.Partition;
+import io.debezium.relational.CustomConverterRegistry;
+import io.debezium.relational.TableId;
+import io.debezium.schema.SchemaFactory;
+import io.debezium.schema.SchemaNameAdjuster;
+import io.debezium.snapshot.SnapshotterService;
+import io.debezium.spi.topic.TopicNamingStrategy;
+import io.debezium.util.Clock;
+import io.debezium.util.Strings;
+
+public class OracleConnectorTask extends BaseSourceTask<OraclePartition, OracleOffsetContext> {
+
+    private static final Logger LOGGER = LoggerFactory.getLogger(OracleConnectorTask.class);
+    private static final String CONTEXT_NAME = "oracle-connector-task";
+
+    private final ReentrantLock commitLock = new ReentrantLock();
+
+    private volatile OracleTaskContext taskContext;
+    private volatile ChangeEventQueue<DataChangeEvent> queue;
+    private volatile OracleConnection jdbcConnection;
+    private volatile OracleConnection beanRegistryJdbcConnection;
+    private volatile ErrorHandler errorHandler;
+    private volatile OracleDatabaseSchema schema;
+
+    private ConnectorAdapter connectorAdapter;
+    private Partition.Provider<OraclePartition> partitionProvider = null;
+    private OffsetContext.Loader<OracleOffsetContext> offsetContextLoader = null;
+    private OracleConnectorConfig connectorConfig;
+
+    @Override
+    public String version() {
+        return Module.version();
+    }
+
+    @Override
+    public CdcSourceTaskContext<? extends CommonConnectorConfig> preStart(Configuration config) {
+
+        connectorConfig = new OracleConnectorConfig(config);
+        taskContext = new OracleTaskContext(config, connectorConfig);
+
+        return taskContext;
+    }
+
+    @Override
+    public ChangeEventSourceCoordinator<OraclePartition, OracleOffsetContext> start(Configuration config) {
+
+        connectorAdapter = connectorConfig.getConnectorAdapter();
+        partitionProvider = new OraclePartition.Provider(connectorConfig);
+        offsetContextLoader = connectorConfig.getAdapter().getOffsetContextLoader();
+
+        TopicNamingStrategy<TableId> topicNamingStrategy = connectorConfig.getTopicNamingStrategy(CommonConnectorConfig.TOPIC_NAMING_STRATEGY);
+        SchemaNameAdjuster schemaNameAdjuster = connectorConfig.schemaNameAdjuster();
+
+        final JdbcConfiguration jdbcConfig = connectorConfig.getJdbcConfig();
+        final OracleConnectionFactory connectionFactory = OracleConnectionFactoryProvider.create(connectorConfig);
+
+        jdbcConnection = connectionFactory.mainConnection();
+
+        LOGGER.info("Database Version: {}", jdbcConnection.getOracleVersion().getBanner());
+
+        final boolean extendedStringsSupported = jdbcConnection.hasExtendedStringSupport();
+
+        // Service providers
+        registerServiceProviders(connectorConfig.getServiceRegistry());
+
+        OracleValueConverters valueConverters = connectorConfig.getAdapter().getValueConverter(connectorConfig, jdbcConnection);
+        OracleDefaultValueConverter defaultValueConverter = new OracleDefaultValueConverter(valueConverters, jdbcConnection);
+        TableNameCaseSensitivity tableNameCaseSensitivity = connectorConfig.getAdapter().getTableNameCaseSensitivity(jdbcConnection);
+        CustomConverterRegistry customConverterRegistry = connectorConfig.getServiceRegistry().tryGetService(CustomConverterRegistry.class);
+
+        this.schema = new OracleDatabaseSchema(connectorConfig, valueConverters, defaultValueConverter, schemaNameAdjuster,
+                topicNamingStrategy, tableNameCaseSensitivity, extendedStringsSupported, customConverterRegistry, taskContext);
+
+        Offsets<OraclePartition, OracleOffsetContext> previousOffsets = getPreviousOffsets(partitionProvider, offsetContextLoader);
+
+        // The bean registry JDBC connection should always be pinned to the PDB
+        // when the connector is configured to use a pluggable database
+        beanRegistryJdbcConnection = connectionFactory.newConnection();
+        if (!Strings.isNullOrEmpty(connectorConfig.getPdbName())) {
+            beanRegistryJdbcConnection.setSessionToPdb(connectorConfig.getPdbName());
+        }
+
+        // Manual Bean Registration
+        connectorConfig.getBeanRegistry().add(StandardBeanNames.CONFIGURATION, config);
+        connectorConfig.getBeanRegistry().add(StandardBeanNames.CONNECTOR_CONFIG, connectorConfig);
+        connectorConfig.getBeanRegistry().add(StandardBeanNames.DATABASE_SCHEMA, schema);
+        connectorConfig.getBeanRegistry().add(StandardBeanNames.JDBC_CONNECTION, beanRegistryJdbcConnection);
+        connectorConfig.getBeanRegistry().add(StandardBeanNames.VALUE_CONVERTER, valueConverters);
+        connectorConfig.getBeanRegistry().add(StandardBeanNames.OFFSETS, previousOffsets);
+        connectorConfig.getBeanRegistry().add(StandardBeanNames.CDC_SOURCE_TASK_CONTEXT, taskContext);
+
+        final SnapshotterService snapshotterService = connectorConfig.getServiceRegistry().tryGetService(SnapshotterService.class);
+
+        validateRedoLogConfiguration(connectorConfig, snapshotterService);
+
+        connectorConfig.getArchiveDestinationNameResolver().validate(jdbcConnection);
+
+        OracleOffsetContext previousOffset = previousOffsets.getTheOnlyOffset();
+
+        // Validate guardrail limits for captured tables to prevent loading excessive table schemas into memory
+        if (connectorConfig.getGuardrailCollectionsMax() <= 0) {
+            LOGGER.info("Guardrail validation skipped");
+        }
+        else {
+            validateGuardrailLimits(connectorConfig, jdbcConnection);
+        }
+
+        validateSchemaHistory(connectorConfig, jdbcConnection::validateLogPosition, previousOffsets, schema, snapshotterService.getSnapshotter());
+
+        // If the redo log position is not available it is necessary to re-execute snapshot
+        if (previousOffset == null) {
+            LOGGER.info("No previous offset found");
+        }
+        else {
+            LOGGER.info("Found previous offset {}", previousOffset);
+        }
+
+        Clock clock = Clock.system();
+
+        // Set up the task record queue ...
+        this.queue = new ChangeEventQueue.Builder<DataChangeEvent>()
+                .pollInterval(connectorConfig.getPollInterval())
+                .pollDispatchInterval(connectorConfig.getPollDispatchInterval())
+                .maxBatchSize(connectorConfig.getMaxBatchSize())
+                .maxQueueSize(connectorConfig.getMaxQueueSize())
+                .maxQueueSizeInBytes(connectorConfig.getMaxQueueSizeInBytes())
+                .queueProvider(connectorConfig.getServiceRegistry().tryGetService(QueueProviderService.class).getQueueProvider())
+                .loggingContextSupplier(() -> taskContext.configureLoggingContext(CONTEXT_NAME))
+                .build();
+
+        errorHandler = new OracleErrorHandler(connectorConfig, queue, errorHandler);
+
+        final OracleEventMetadataProvider metadataProvider = new OracleEventMetadataProvider();
+
+        SignalProcessor<OraclePartition, OracleOffsetContext> signalProcessor = new SignalProcessor<>(
+                OracleConnector.class, connectorConfig, Map.of(),
+                getAvailableSignalChannels(),
+                DocumentReader.defaultReader(),
+                previousOffsets);
+
+        EventDispatcher<OraclePartition, TableId> dispatcher = new EventDispatcher<>(
+                connectorConfig,
+                topicNamingStrategy,
+                schema,
+                queue,
+                connectorConfig.getTableFilters().dataCollectionFilter(),
+                DataChangeEvent::new,
+                metadataProvider,
+                new HeartbeatFactory<>().getScheduledHeartbeat(
+                        connectorConfig,
+                        () -> getHeartbeatConnection(connectorConfig, jdbcConfig),
+                        exception -> {
+                            final String sqlErrorId = exception.getMessage();
+                            if (exception.getErrorCode() == 2396) {
+                                // ORA-02396 idle time expired
+                                return;
+                            }
+                            throw new DebeziumException("Could not execute heartbeat action query (Error: " + sqlErrorId + ")", exception);
+                        }, queue),
+                schemaNameAdjuster,
+                signalProcessor,
+                connectorConfig.getServiceRegistry().tryGetService(DebeziumHeaderProducer.class));
+
+        final AbstractOracleStreamingChangeEventSourceMetrics streamingMetrics = connectorConfig.getAdapter()
+                .getStreamingMetrics(taskContext, queue, metadataProvider, connectorConfig, schema::dataCollectionIds);
+
+        NotificationService<OraclePartition, OracleOffsetContext> notificationService = new NotificationService<>(getNotificationChannels(),
+                connectorConfig, SchemaFactory.get(), dispatcher::enqueueNotification);
+
+        ChangeEventSourceCoordinator<OraclePartition, OracleOffsetContext> coordinator = new ChangeEventSourceCoordinator<>(
+                previousOffsets,
+                errorHandler,
+                OracleConnector.class,
+                connectorConfig,
+                new OracleChangeEventSourceFactory(connectorConfig, connectionFactory, errorHandler, dispatcher, clock, schema, jdbcConfig, taskContext,
+                        streamingMetrics, snapshotterService),
+                new OracleChangeEventSourceMetricsFactory(streamingMetrics),
+                dispatcher,
+                schema, signalProcessor,
+                notificationService, snapshotterService);
+
+        coordinator.start(taskContext, this.queue, metadataProvider);
+
+        return coordinator;
+    }
+
+    @Override
+    protected String connectorName() {
+        return Module.name();
+    }
+
+    private OracleConnection getHeartbeatConnection(OracleConnectorConfig connectorConfig, JdbcConfiguration jdbcConfig) {
+        final OracleConnection connection = new OracleConnection(connectorConfig, jdbcConfig, true);
+        if (!Strings.isNullOrBlank(connectorConfig.getPdbName())) {
+            connection.setSessionToPdb(connectorConfig.getPdbName());
+        }
+        return connection;
+    }
+
+    @Override
+    public List<SourceRecord> doPoll() throws InterruptedException {
+        return pollRecords(queue);
+    }
+
+    @Override
+    protected Optional<ErrorHandler> getErrorHandler() {
+        return Optional.ofNullable(errorHandler);
+    }
+
+    @Override
+    public void doStop() {
+        try {
+            if (jdbcConnection != null) {
+                jdbcConnection.close();
+            }
+        }
+        catch (SQLException e) {
+            LOGGER.error("Exception while closing JDBC connection", e);
+        }
+
+        try {
+            if (beanRegistryJdbcConnection != null) {
+                beanRegistryJdbcConnection.close();
+            }
+        }
+        catch (SQLException e) {
+            LOGGER.error("Exception while closing JDBC bean registry connection", e);
+        }
+
+        if (schema != null) {
+            schema.close();
+        }
+
+        if (queue != null) {
+            queue.close();
+        }
+    }
+
+    @Override
+    protected Iterable<Field> getAllConfigurationFields() {
+        return OracleConnectorConfig.ALL_FIELDS;
+    }
+
+    @Override
+    public void performCommit() {
+        if (!ConnectorAdapter.XSTREAM.equals(connectorAdapter)) {
+            super.performCommit();
+            return;
+        }
+
+        final boolean locked = commitLock.tryLock();
+        if (!locked) {
+            LOGGER.warn("Couldn't commit processed log positions with the source database due to a concurrent connector shutdown or restart");
+            return;
+        }
+
+        try {
+            final Offsets<OraclePartition, OracleOffsetContext> offsets = getPreviousOffsets(partitionProvider, offsetContextLoader);
+            if (offsets.getOffsets() != null) {
+                offsets.getOffsets().entrySet().stream()
+                        .filter(e -> e.getValue() != null)
+                        .max(Comparator.comparing(e -> e.getValue().getLcrPosition()))
+                        .ifPresent(entry -> {
+                            final Map<String, String> maxPartition = entry.getKey().getSourcePartition();
+                            final Map<String, ?> maxOffset = entry.getValue().getOffset();
+
+                            LOGGER.debug("Committing LCR offset position '{}'", maxOffset);
+                            coordinator.commitOffset(maxPartition, maxOffset);
+                        });
+            }
+        }
+        finally {
+            commitLock.unlock();
+        }
+    }
+
+    private void validateRedoLogConfiguration(OracleConnectorConfig config, SnapshotterService snapshotterService) {
+        // Check whether the archive log is enabled.
+        final boolean archivelogMode = jdbcConnection.isArchiveLogMode();
+        if (!archivelogMode) {
+            if (redoLogRequired(config, snapshotterService)) {
+                throw new DebeziumException("The Oracle server is not configured to use a archive log LOG_MODE, which is "
+                        + "required for this connector to work properly. Change the Oracle configuration to use a "
+                        + "LOG_MODE=ARCHIVELOG and restart the connector.");
+            }
+            else {
+                LOGGER.warn("Failed the archive log check but continuing as redo log isn't strictly required");
+            }
+        }
+    }
+
+    private void validateGuardrailLimits(OracleConnectorConfig connectorConfig, OracleConnection connection) {
+        boolean switchedToPdb = false;
+        try {
+            // Set the main connection to the PDB if configured.
+            // This is done before operations that need to see PDB-specific tables like validateGuardrailLimits.
+            if (!Strings.isNullOrEmpty(connectorConfig.getPdbName())) {
+                connection.setSessionToPdb(connectorConfig.getPdbName());
+                switchedToPdb = true;
+            }
+
+            Set<TableId> allTableIds = connection.getAllTableIds(connectorConfig.getCatalogName());
+            GuardrailValidator validator = new GuardrailValidator(connectorConfig, schema);
+            validator.validate(allTableIds);
+        }
+        catch (SQLException e) {
+            throw new DebeziumException("Failed to validate guardrail limits", e);
+        }
+        finally {
+            // Reset the connection to the CDB.
+            if (switchedToPdb) {
+                connection.resetSessionToCdb();
+            }
+        }
+    }
+
+    private static boolean redoLogRequired(OracleConnectorConfig config, SnapshotterService snapshotterService) {
+        // Check whether our connector configuration relies on the redo log and should fail fast if it isn't configured
+        return snapshotterService.getSnapshotter().shouldStream() ||
+                config.getLogMiningTransactionSnapshotBoundaryMode() == OracleConnectorConfig.TransactionSnapshotBoundaryMode.ALL;
+    }
+
+}

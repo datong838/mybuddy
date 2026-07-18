@@ -1,0 +1,91 @@
+/*
+ * Copyright Debezium Authors.
+ *
+ * Licensed under the Apache Software License version 2.0, available at http://www.apache.org/licenses/LICENSE-2.0
+ */
+package io.debezium.embedded.async;
+
+import java.util.Iterator;
+import java.util.List;
+import java.util.Map;
+import java.util.concurrent.Future;
+import java.util.function.Consumer;
+import java.util.function.Function;
+
+import org.apache.kafka.connect.source.SourceRecord;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+
+import io.debezium.engine.DebeziumEngine;
+import io.debezium.engine.StopEngineException;
+
+/**
+ * {@link RecordProcessor} which transforms and converts the records in parallel. Converted records are passed to the user-provided {@link Consumer}.
+ * This processor should be used when user provides only custom {@link Consumer}, records should be converted and passed to the consumer in the same order as they
+ * were obtained from the database.
+ *
+ * @author vjuranek
+ */
+public class ParallelSmtAndConvertConsumerProcessor<R> extends AbstractRecordProcessor<R> {
+    private static final Logger LOGGER = LoggerFactory.getLogger(ParallelSmtAndConvertConsumerProcessor.class);
+
+    private final DebeziumEngine.RecordCommitter committer;
+    private final Function<SourceRecord, R> convertor;
+    private final SingleProcessor<R> processor;
+
+    ParallelSmtAndConvertConsumerProcessor(final DebeziumEngine.RecordCommitter committer, final Function<SourceRecord, R> convertor, SingleProcessor<R> processor) {
+        this.committer = committer;
+        this.convertor = convertor;
+        this.processor = processor;
+    }
+
+    @Override
+    public void processRecords(final List<SourceRecord> records) throws Exception {
+        LOGGER.debug("Thread {} is submitting {} records for processing.", Thread.currentThread().getName(), records.size());
+        final Future<R>[] recordFutures = new Future[records.size()];
+        Iterator<SourceRecord> recordsIterator = records.iterator();
+        for (int i = 0; recordsIterator.hasNext(); i++) {
+            recordFutures[i] = recordService.submit(new ProcessingCallables.TransformAndConvertRecord(recordsIterator.next(), transformations, convertor));
+        }
+
+        LOGGER.trace("Calling user consumer.");
+        recordsIterator = records.iterator();
+        for (int i = 0; recordsIterator.hasNext(); i++) {
+            R record = recordFutures[i].get();
+            if (record != null) {
+                try {
+                    processor.process(record);
+                }
+                catch (StopEngineException e) {
+                    committer.markProcessed(recordsIterator.next());
+                    throw e;
+                }
+            }
+            committer.markProcessed(recordsIterator.next());
+        }
+
+        LOGGER.trace("Marking batch as finished.");
+        committer.markBatchFinished();
+    }
+
+    public static <R> ParallelSmtAndConvertConsumerProcessor<R> create(
+                                                                       DebeziumEngine.RecordCommitter<SourceRecord> committer,
+                                                                       Consumer<R> consumer,
+                                                                       Function<SourceRecord, R> convertor,
+                                                                       Watcher watcher,
+                                                                       DebeziumEngine.Shutdown<R> shutdown,
+                                                                       Runnable workflow, Map<String, String> configuration) {
+
+        if (shutdown == null) {
+            return new ParallelSmtAndConvertConsumerProcessor<>(committer, convertor,
+                    new AbstractRecordProcessor.SingleProcessor.DirectSingleProcessor<>(consumer));
+        }
+
+        return new ParallelSmtAndConvertConsumerProcessor<>(committer,
+                convertor,
+                new SingleProcessor.ObservableSingleProcessor<>(watcher, new ShutdownConsumer<>(
+                        DefaultShutdownHandler.create(shutdown.before(), workflow, committer, configuration),
+                        DefaultShutdownHandler.create(shutdown.after(), workflow, committer, configuration),
+                        consumer, watcher)));
+    }
+}

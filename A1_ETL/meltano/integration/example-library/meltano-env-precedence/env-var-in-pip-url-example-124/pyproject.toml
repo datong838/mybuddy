@@ -1,0 +1,19 @@
+[project]
+name = "env-var-in-pip-url-example-124"
+version = "0.1.0"
+description = ""
+authors = [{ name = "Meltano", email = "hello@meltano.com" }]
+requires-python = ">=3.10"
+
+[project.scripts]
+echo = "example:echo"
+
+[tool.hatch.build.targets.sdist]
+include = ["example.py"]
+
+[tool.hatch.build.targets.wheel]
+include = ["example.py"]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
