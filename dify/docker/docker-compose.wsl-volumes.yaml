@@ -1,0 +1,25 @@
+# WSL Linux FS volumes — Windows bind mounts under /mnt/c break postgres chmod.
+# Usage: docker compose -f docker-compose.yaml -f docker-compose.wsl-volumes.yaml up -d
+# Kept local (upstream gitignored). Do not commit if dify is ever tracked.
+services:
+  db_postgres:
+    volumes:
+      - dify_wsl_pgdata:/var/lib/postgresql/data
+  plugin_daemon:
+    volumes:
+      - dify_wsl_plugin:/app/storage
+  # app storage often also needs Linux FS for permission-sensitive ops
+  api:
+    volumes:
+      - dify_wsl_app:/app/api/storage
+  worker:
+    volumes:
+      - dify_wsl_app:/app/api/storage
+  worker_beat:
+    volumes:
+      - dify_wsl_app:/app/api/storage
+
+volumes:
+  dify_wsl_pgdata:
+  dify_wsl_plugin:
+  dify_wsl_app:

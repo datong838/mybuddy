@@ -1,0 +1,489 @@
+import { html, nothing } from "lit";
+import { icons } from "../icons.js";
+import type { BuiltInProvider } from "./models-builtin.ts";
+import { BUILTIN_PROVIDERS, parseModelRef } from "./models-builtin.ts";
+import {
+  canDeleteModelProvider,
+  getModelsForProvider,
+  getProviderDisplayName,
+  providerMatchesSearch,
+  renderModelsOverlays,
+  type ModelsProps,
+  type ModelProvider,
+} from "./models.ts";
+import { resolveModelProviderLogo } from "./model-provider-logos.js";
+import { renderEmbeddedLocalCard, renderModelPlaza, type ModelPlazaProps } from "./model-plaza.ts";
+import type { EmbeddedModelEntry } from "../controllers/embedded-models.ts";
+
+export type ModelLibraryCategory = "__all__" | "plaza" | "public" | "local";
+
+/** 安装引导中展示的常见国内模型厂商（含本地 Ollama） */
+export const WIZARD_BUILTIN_PROVIDER_IDS = [
+  "deepseek",
+  "moonshot-cn",
+  "kimi-coding",
+  "zai",
+  "qianfan",
+  "bailian",
+  "xunfei",
+  "minimax",
+  "ollama",
+] as const;
+
+export type ModelLibraryProps = ModelsProps & {
+  selectedCategory: ModelLibraryCategory;
+  onCategoryChange?: (category: ModelLibraryCategory) => void;
+  embeddedModels?: EmbeddedModelEntry[];
+  embeddedModelsLoading?: boolean;
+  embeddedModelsError?: string | null;
+  embeddedModelsBusyId?: string | null;
+  embeddedDownloadProgress?: ModelPlazaProps["downloadProgress"];
+  embeddedDownloadingModelId?: string | null;
+  onEmbeddedRefresh?: () => void;
+  onEmbeddedDownload?: (modelId: string) => void;
+  onEmbeddedCancelDownload?: () => void;
+  onEmbeddedStart?: (model: EmbeddedModelEntry) => void;
+  onEmbeddedStop?: (modelId: string) => void;
+  onEmbeddedDelete?: (model: EmbeddedModelEntry) => void;
+  embeddedPlazaDetailModel?: EmbeddedModelEntry | null;
+  embeddedPlazaDetailInfo?: import("../controllers/plaza-model-detail.ts").PlazaModelDetailInfo | null;
+  embeddedPlazaDetailLoading?: boolean;
+  embeddedPlazaDetailError?: string | null;
+  embeddedPlazaRecommendOpen?: boolean;
+  embeddedPlazaManualImportOpen?: boolean;
+  embeddedPlazaHardware?: import("../controllers/model-recommendation.ts").LocalHardwareProfile | null;
+  embeddedPlazaServerRecommendations?: import("../controllers/model-recommendation.ts").ServerModelRecommendation[] | null;
+  embeddedPlazaRecommendationsLoading?: boolean;
+  onEmbeddedSelectModel?: (model: EmbeddedModelEntry | null) => void;
+  onEmbeddedOpenRecommend?: () => void;
+  onEmbeddedCloseRecommend?: () => void;
+  onEmbeddedOpenManualImport?: () => void;
+  onEmbeddedCloseManualImport?: () => void;
+  onEmbeddedHardwareChange?: (hw: import("../controllers/model-recommendation.ts").LocalHardwareProfile) => void;
+  onEmbeddedChat?: (model: EmbeddedModelEntry) => void;
+  gatewayHost?: string;
+  embeddedPlazaChatModel?: EmbeddedModelEntry | null;
+  embeddedPlazaChatMessages?: import("../controllers/embedded-chat-test.ts").PlazaChatMessage[];
+  embeddedPlazaChatInput?: string;
+  embeddedPlazaChatLoading?: boolean;
+  embeddedPlazaChatError?: string | null;
+  onEmbeddedCloseChat?: () => void;
+  onEmbeddedChatInput?: (value: string) => void;
+  onEmbeddedSendChat?: () => void;
+};
+
+export type ModelLibraryProviderEntry = {
+  key: string;
+  provider?: ModelProvider;
+  builtin?: BuiltInProvider;
+  displayName: string;
+  baseUrl: string;
+  category: "public" | "local";
+  modelCount: number;
+  previewModel: string | null;
+  isDefault: boolean;
+};
+
+export type ModelLibraryCategoryInfo = {
+  orderedCategories: ModelLibraryCategory[];
+  counts: Map<ModelLibraryCategory, number>;
+};
+
+const MODEL_LIBRARY_CATEGORIES: ModelLibraryCategory[] = ["__all__", "plaza", "public", "local"];
+
+function isIpv4Host(hostname: string) {
+  const segments = hostname.split(".");
+  if (segments.length !== 4) {
+    return false;
+  }
+  return segments.every((segment) => {
+    if (!/^\d+$/.test(segment)) {
+      return false;
+    }
+    const value = Number(segment);
+    return Number.isInteger(value) && value >= 0 && value <= 255;
+  });
+}
+
+function isIpv6Host(hostname: string) {
+  const normalized = hostname.replace(/^\[/, "").replace(/\]$/, "");
+  return normalized.includes(":") && /^[0-9a-f:.]+$/i.test(normalized);
+}
+
+export function resolveModelLibraryBaseUrl(provider?: ModelProvider, builtin?: BuiltInProvider) {
+  const configuredBaseUrl = provider?.baseUrl?.trim();
+  if (configuredBaseUrl) {
+    return configuredBaseUrl;
+  }
+  return builtin?.baseUrl?.trim() ?? "";
+}
+
+export function classifyModelLibraryProvider(
+  provider?: ModelProvider,
+  builtin?: BuiltInProvider,
+): "public" | "local" {
+  const baseUrl = resolveModelLibraryBaseUrl(provider, builtin);
+  if (baseUrl === "(官方)") {
+    return "public";
+  }
+  if (!baseUrl) {
+    return "local";
+  }
+  try {
+    const parsed = new URL(baseUrl);
+    const hostname = parsed.hostname.trim().toLowerCase();
+    if (!hostname || hostname === "localhost" || isIpv4Host(hostname) || isIpv6Host(hostname)) {
+      return "local";
+    }
+    return "public";
+  } catch {
+    return "local";
+  }
+}
+
+export function getModelLibraryEntries(
+  providers: Record<string, ModelProvider>,
+  query: string,
+  defaultModelRef: string | null,
+): ModelLibraryProviderEntry[] {
+  const current = parseModelRef(defaultModelRef);
+  const builtinEntries = BUILTIN_PROVIDERS.filter((builtin) =>
+    providerMatchesSearch(builtin.id, providers?.[builtin.id], builtin, query),
+  ).map((builtin) => {
+    const provider = providers?.[builtin.id];
+    const models = getModelsForProvider(builtin.id, provider);
+    return {
+      key: builtin.id,
+      provider,
+      builtin,
+      displayName: getProviderDisplayName(builtin.id, provider),
+      baseUrl: resolveModelLibraryBaseUrl(provider, builtin),
+      category: classifyModelLibraryProvider(provider, builtin),
+      modelCount: models.length,
+      previewModel: models[0]?.id ?? null,
+      // 只有厂商和模型都匹配时才显示默认模型标识
+      isDefault: current?.provider === builtin.id && models.some((m) => m.id === current?.modelId),
+    };
+  });
+
+  const customEntries = Object.entries(providers ?? {})
+    .filter(([key, provider]) => {
+      if (BUILTIN_PROVIDERS.some((builtin) => builtin.id === key)) {
+        return false;
+      }
+      return providerMatchesSearch(key, provider, undefined, query);
+    })
+    .sort(([leftKey, leftProvider], [rightKey, rightProvider]) =>
+      getProviderDisplayName(leftKey, leftProvider).localeCompare(
+        getProviderDisplayName(rightKey, rightProvider),
+        "zh-Hans-CN",
+      ),
+    )
+    .map(([key, provider]) => {
+      const models = getModelsForProvider(key, provider);
+      return {
+        key,
+        provider,
+        displayName: getProviderDisplayName(key, provider),
+        baseUrl: resolveModelLibraryBaseUrl(provider),
+        category: classifyModelLibraryProvider(provider),
+        modelCount: models.length,
+        previewModel: models[0]?.id ?? null,
+        // 只有厂商和模型都匹配时才显示默认模型标识
+        isDefault: current?.provider === key && models.some((m) => m.id === current?.modelId),
+      };
+    });
+
+  return [...builtinEntries, ...customEntries];
+}
+
+export function getWizardModelLibraryEntries(
+  providers: Record<string, ModelProvider>,
+  query: string,
+  defaultModelRef: string | null,
+): ModelLibraryProviderEntry[] {
+  const wizardBuiltin = new Set<string>(WIZARD_BUILTIN_PROVIDER_IDS);
+  return getModelLibraryEntries(providers, query, defaultModelRef).filter(
+    (entry) => !entry.builtin || wizardBuiltin.has(entry.key),
+  );
+}
+
+export function computeModelLibraryCategories(
+  providers: Record<string, ModelProvider>,
+  query: string,
+  plazaCount = 4,
+  embeddedInstalledCount = 0,
+): ModelLibraryCategoryInfo {
+  const entries = getModelLibraryEntries(providers, query, null);
+  const counts = new Map<ModelLibraryCategory, number>();
+  counts.set("__all__", entries.length + embeddedInstalledCount);
+  counts.set("plaza", plazaCount);
+  counts.set("public", entries.filter((entry) => entry.category === "public").length);
+  counts.set("local", entries.filter((entry) => entry.category === "local").length + embeddedInstalledCount);
+  return {
+    orderedCategories: MODEL_LIBRARY_CATEGORIES,
+    counts,
+  };
+}
+
+function categoryLabel(category: Exclude<ModelLibraryCategory, "__all__" | "plaza">) {
+  return category === "public" ? "公有模型" : "本地模型";
+}
+
+function renderModelCard(
+  entry: ModelLibraryProviderEntry,
+  selectedProvider: string | null,
+  providers: Record<string, ModelProvider>,
+  onSelect: (key: string) => void,
+  onUseModelClick: (provider: string) => void,
+  onCancelUse: (provider: string) => void,
+  onDeleteProvider: (providerKey: string) => void,
+) {
+  const displayBaseUrl = entry.baseUrl || "未配置 Base URL";
+  const hasModels = entry.modelCount > 0;
+  const isSelected = selectedProvider === entry.key;
+  const deletable = canDeleteModelProvider(entry.key, providers);
+  // 解析 logo
+  const logoUrl = resolveModelProviderLogo(
+    entry.key,
+    entry.displayName,
+    entry.baseUrl,
+    entry.builtin,
+  );
+  const logoComponent = logoUrl !== null;
+
+  return html`
+    <div class="emp-card-wrap ${isSelected ? "active" : ""}">
+      <div class="emp-card emp-card-btn" @click=${() => onSelect(entry.key)}>
+        <div class="emp-card__icon emp-card__icon--default" aria-hidden="true">
+          ${logoComponent
+            ? html`<img src="${logoUrl}" alt="${entry.displayName}" class="provider-logo" />`
+            : icons.modelCube}
+        </div>
+        <div class="emp-card__actions models-provider-actions">
+          <button
+            class="btn btn--sm"
+            @click=${(e: Event) => {
+              e.stopPropagation();
+              onSelect(isSelected ? null : entry.key);
+            }}
+          >${isSelected ? "关闭配置" : "配置"}</button>
+          ${deletable
+            ? html`
+                <button
+                  class="btn btn--sm btn--danger"
+                  @click=${(e: Event) => {
+                    e.stopPropagation();
+                    onDeleteProvider(entry.key);
+                  }}
+                >删除</button>
+              `
+            : nothing}
+          ${hasModels
+            ? entry.isDefault
+              ? html`
+                <button
+                  class="btn btn--sm"
+                  @click=${(e: Event) => {
+                    e.stopPropagation();
+                    onCancelUse(entry.key);
+                  }}
+                >取消默认</button>
+                <span class="market-card-chip market-card-chip--state">默认模型</span>
+              `
+              : html`
+                <button
+                  class="btn btn--sm"
+                  @click=${(e: Event) => {
+                    e.stopPropagation();
+                    onUseModelClick(entry.key);
+                  }}
+                >设为默认</button>
+              `
+            : nothing}
+        </div>
+        <h3 class="emp-card__title">${entry.displayName}</h3>
+        <p class="emp-card__desc">${displayBaseUrl}</p>
+      </div>
+    </div>
+  `;
+}
+
+export function renderModelLibrary(props: ModelLibraryProps) {
+  const selectedCategory = props.selectedCategory ?? "__all__";
+
+  if (selectedCategory === "plaza") {
+    return html`
+      ${renderModelPlaza({
+        models: props.embeddedModels ?? [],
+        loading: props.embeddedModelsLoading ?? false,
+        error: props.embeddedModelsError ?? null,
+        busyId: props.embeddedModelsBusyId ?? null,
+        downloadProgress: props.embeddedDownloadProgress ?? null,
+        downloadingModelId: props.embeddedDownloadingModelId ?? null,
+        detailModel: props.embeddedPlazaDetailModel ?? null,
+        detailInfo: props.embeddedPlazaDetailInfo ?? null,
+        detailLoading: props.embeddedPlazaDetailLoading ?? false,
+        detailError: props.embeddedPlazaDetailError ?? null,
+        recommendOpen: props.embeddedPlazaRecommendOpen ?? false,
+        manualImportOpen: props.embeddedPlazaManualImportOpen ?? false,
+        hardware: props.embeddedPlazaHardware ?? null,
+        serverRecommendations: props.embeddedPlazaServerRecommendations ?? null,
+        recommendationsLoading: props.embeddedPlazaRecommendationsLoading ?? false,
+        onRefresh: () => props.onEmbeddedRefresh?.(),
+        onDownload: (id) => props.onEmbeddedDownload?.(id),
+        onCancelDownload: () => props.onEmbeddedCancelDownload?.(),
+        onStart: (m) => props.onEmbeddedStart?.(m),
+        onStop: (id) => props.onEmbeddedStop?.(id),
+        onDelete: (m) => props.onEmbeddedDelete?.(m),
+        onChat: (m) => props.onEmbeddedChat?.(m),
+        onSelectModel: (m) => props.onEmbeddedSelectModel?.(m),
+        onOpenRecommend: () => props.onEmbeddedOpenRecommend?.(),
+        onCloseRecommend: () => props.onEmbeddedCloseRecommend?.(),
+        onOpenManualImport: () => props.onEmbeddedOpenManualImport?.(),
+        onCloseManualImport: () => props.onEmbeddedCloseManualImport?.(),
+        onHardwareChange: (hw) => props.onEmbeddedHardwareChange?.(hw),
+        gatewayHost: props.gatewayHost ?? "",
+        chatModel: props.embeddedPlazaChatModel ?? null,
+        chatMessages: props.embeddedPlazaChatMessages ?? [],
+        chatInput: props.embeddedPlazaChatInput ?? "",
+        chatLoading: props.embeddedPlazaChatLoading ?? false,
+        chatError: props.embeddedPlazaChatError ?? null,
+        onCloseChat: () => props.onEmbeddedCloseChat?.(),
+        onChatInput: (v) => props.onEmbeddedChatInput?.(v),
+        onSendChat: () => props.onEmbeddedSendChat?.(),
+        searchQuery: props.providerSearchQuery,
+        onSearchChange: (q) => props.onProviderSearchChange(q),
+      })}
+      ${renderModelsOverlays(props)}
+    `;
+  }
+
+  const entries = getModelLibraryEntries(props.providers, props.providerSearchQuery, props.defaultModelRef);
+  const visibleEntries =
+    selectedCategory === "__all__"
+      ? entries
+      : entries.filter((entry) => entry.category === selectedCategory);
+  const publicEntries = visibleEntries.filter((entry) => entry.category === "public");
+  const localEntries = visibleEntries.filter((entry) => entry.category === "local");
+  const installedEmbedded = (props.embeddedModels ?? []).filter((m) => m.installed);
+  const showEmbeddedInLocal =
+    selectedCategory === "__all__" || selectedCategory === "local";
+  const sections =
+    selectedCategory === "__all__"
+      ? [
+          { title: "公有模型", items: publicEntries, embedded: [] as EmbeddedModelEntry[] },
+          {
+            title: "本地模型",
+            items: localEntries,
+            embedded: showEmbeddedInLocal ? installedEmbedded : [],
+          },
+        ]
+      : [
+          {
+            title: categoryLabel(selectedCategory as "public" | "local"),
+            items: visibleEntries,
+            embedded: showEmbeddedInLocal ? installedEmbedded : [],
+          },
+        ];
+  const showToolbarActions = !props.loading || entries.length > 0;
+  const hasVisibleContent =
+    visibleEntries.length > 0 ||
+    sections.some((s) => s.items.length > 0 || s.embedded.length > 0);
+
+  return html`
+    <main class="emp-page">
+      <section class="emp-list-wrap">
+        <div class="emp-content">
+          <div class="emp-main">
+            ${showToolbarActions
+              ? html`
+                  <div class="emp-main__body">
+                    <div class="emp-toolbar__actions">
+                      <div class="emp-search">
+                        <span class="input"><input
+                          class="emp-search__input"
+                          type="text"
+                          placeholder="搜索"
+                          .value=${props.providerSearchQuery}
+                          ?disabled=${props.loading}
+                          @input=${(e: Event) => props.onProviderSearchChange((e.target as HTMLInputElement).value)}
+                        /></span>
+                        <span class="emp-search__icon" aria-hidden="true">${icons.search}</span>
+                      </div>
+                      <button class="btn" type="button" ?disabled=${props.loading} @click=${props.onRefresh}>
+                        刷新
+                      </button>
+                      <button class="btn primary" type="button" ?disabled=${props.loading} @click=${props.onAddProvider}>
+                        添加
+                      </button>
+                    </div>
+                    <div class="emp-sections">
+                      ${sections.map((section) =>
+                        section.items.length === 0 && section.embedded.length === 0
+                          ? nothing
+                          : html`
+                              <div class="emp-section">
+                                <div class="emp-section__header">
+                                  <h3 class="emp-section__title">${section.title}</h3>
+                                </div>
+                                ${section.embedded.length > 0
+                                  ? html`
+                                      <div class="emp-subsection">
+                                        <h4 class="emp-subsection__title">内嵌本地模型</h4>
+                                        <div class="emp-grid">
+                                          ${section.embedded.map((model) =>
+                                            renderEmbeddedLocalCard({
+                                              model,
+                                              busyId: props.embeddedModelsBusyId ?? null,
+                                              onStart: (m) => props.onEmbeddedStart?.(m),
+                                              onStop: (id) => props.onEmbeddedStop?.(id),
+                                            }),
+                                          )}
+                                        </div>
+                                      </div>
+                                    `
+                                  : nothing}
+                                ${section.items.length > 0
+                                  ? html`
+                                      <div class="emp-subsection">
+                                        ${section.embedded.length > 0
+                                          ? html`<h4 class="emp-subsection__title">API 模型厂商</h4>`
+                                          : nothing}
+                                        <div class="emp-grid">
+                                          ${section.items.map((entry) =>
+                                            renderModelCard(
+                                              entry,
+                                              props.selectedProvider,
+                                              props.providers,
+                                              (key) => props.onSelect(props.selectedProvider === key ? null : key),
+                                              props.onUseModelClick,
+                                              props.onCancelUse,
+                                              (key) => props.onDeleteProvider(key),
+                                            ),
+                                          )}
+                                        </div>
+                                      </div>
+                                    `
+                                  : nothing}
+                              </div>
+                            `,
+                      )}
+                    </div>
+                  </div>
+                `
+              : nothing}
+
+            ${props.loading
+              ? html`<div class="emp-loading">加载中...</div>`
+              : !hasVisibleContent
+                ? html`<div class="emp-empty">暂无匹配的模型厂商</div>`
+                : nothing}
+          </div>
+        </div>
+      </section>
+    </main>
+
+    ${renderModelsOverlays(props)}
+  `;
+}

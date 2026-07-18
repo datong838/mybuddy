@@ -1,0 +1,1304 @@
+import { LitElement } from "lit";
+import { customElement, state } from "lit/decorators.js";
+import type { EventLogEntry } from "./app-events.ts";
+import type { AppViewState } from "./app-view-state.ts";
+import type { DevicePairingList } from "./controllers/devices.ts";
+import type { ExecApprovalRequest } from "./controllers/exec-approval.ts";
+import type { ExecApprovalsFile, ExecApprovalsSnapshot } from "./controllers/exec-approvals.ts";
+import { defaultChatSessionResources } from "./chat/chat-resources.ts";
+import type { SkillMessage } from "./controllers/skills.ts";
+import type { GatewayBrowserClient, GatewayHelloOk } from "./gateway.ts";
+import {
+  resolveSetupWizardVersion,
+  shouldShowSetupWizard,
+  syncSetupWizardCompletionCache,
+  createEmptySetupWizardSession,
+  type Tab,
+} from "./navigation.ts";
+import {
+  initSetupWizardSession,
+  persistSetupWizardCompletion,
+  persistSetupWizardSkipped,
+  flushSetupWizardSkipToConfig,
+  refreshSetupWizardFromConfig,
+} from "./app-setup-wizard.ts";
+import type { ResolvedTheme, ThemeMode } from "./theme.ts";
+import type {
+  AgentsListResult,
+  AgentsFilesListResult,
+  AgentIdentityResult,
+  ConfigSnapshot,
+  ConfigUiHints,
+  CronJob,
+  CronRunLogEntry,
+  CronStatus,
+  HealthSnapshot,
+  LogEntry,
+  LogLevel,
+  PresenceEntry,
+  ChannelsStatusSnapshot,
+  SessionsListResult,
+  SkillStatusReport,
+  StatusSummary,
+  NostrProfile,
+} from "./types.ts";
+import type { NostrProfileFormState } from "./views/channels.nostr-profile-form.ts";
+import {
+  handleChannelConfigReload as handleChannelConfigReloadInternal,
+  handleChannelConfigSave as handleChannelConfigSaveInternal,
+  handleNostrProfileCancel as handleNostrProfileCancelInternal,
+  handleNostrProfileEdit as handleNostrProfileEditInternal,
+  handleNostrProfileFieldChange as handleNostrProfileFieldChangeInternal,
+  handleNostrProfileImport as handleNostrProfileImportInternal,
+  handleNostrProfileSave as handleNostrProfileSaveInternal,
+  handleNostrProfileToggleAdvanced as handleNostrProfileToggleAdvancedInternal,
+  handleWeWorkQrStart as handleWeWorkQrStartInternal,
+  handleWeWorkQrModalClose as handleWeWorkQrModalCloseInternal,
+  handleWeixinQrStart as handleWeixinQrStartInternal,
+  handleWeixinQrModalClose as handleWeixinQrModalCloseInternal,
+  handleWhatsAppLogout as handleWhatsAppLogoutInternal,
+  handleWhatsAppStart as handleWhatsAppStartInternal,
+  handleWhatsAppWait as handleWhatsAppWaitInternal,
+} from "./app-channels.ts";
+import {
+  handleAbortChat as handleAbortChatInternal,
+  handleSendChat as handleSendChatInternal,
+  removeQueuedMessage as removeQueuedMessageInternal,
+} from "./app-chat.ts";
+import { DEFAULT_CRON_FORM, DEFAULT_API_KEY_FORM, DEFAULT_LOG_LEVEL_FILTERS } from "./app-defaults.ts";
+import { connectGateway as connectGatewayInternal } from "./app-gateway.ts";
+import {
+  handleConnected,
+  handleDisconnected,
+  handleFirstUpdated,
+  handleUpdated,
+} from "./app-lifecycle.ts";
+import { renderApp } from "./app-render.ts";
+import {
+  exportLogs as exportLogsInternal,
+  handleChatScroll as handleChatScrollInternal,
+  handleLogsScroll as handleLogsScrollInternal,
+  resetChatScroll as resetChatScrollInternal,
+  scheduleChatScroll as scheduleChatScrollInternal,
+} from "./app-scroll.ts";
+import {
+  applySettings as applySettingsInternal,
+  loadCron as loadCronInternal,
+  loadOverview as loadOverviewInternal,
+  setTab as setTabInternal,
+  setTheme as setThemeInternal,
+  onPopState as onPopStateInternal,
+} from "./app-settings.ts";
+import {
+  resetToolStream as resetToolStreamInternal,
+  type ToolStreamEntry,
+  type CompactionStatus,
+} from "./app-tool-stream.ts";
+import { resolveInjectedAssistantIdentity } from "./assistant-identity.ts";
+import { loadAssistantIdentity as loadAssistantIdentityInternal } from "./controllers/assistant-identity.ts";
+import {
+  registerNativeDialogInvoker,
+  unregisterNativeDialogInvoker,
+  type NativeDialogInvoker,
+} from "./native-dialog-bridge.ts";
+import { knowledgeVaultBeforeUnloadHandler } from "./app-knowledge-vault.ts";
+import { bootstrapShellModeFromUrl, isDesktopShell, openExternalUrl } from "./open-external-url.ts";
+import {
+  closeAppUpdateModal,
+  copyAppUpdateManualHint,
+  handleAppUpdateInstall,
+  handleAppUpdateSkip,
+  handleManualAppUpdateCheck,
+  stopAppUpdateInstallPolling,
+} from "./app-update.ts";
+import { loadSettings, type UiSettings } from "./storage.ts";
+import type { NativeDialogModel } from "./views/native-dialog-overlay.ts";
+import { type ChatAttachment, type ChatQueueItem, type CronFormState } from "./ui-types.ts";
+
+declare global {
+  interface Window {
+    __OPENCLAW_CONTROL_UI_BASE_PATH__?: string;
+    runtime?: {
+      Environment?: () => Promise<{ platform?: string }>;
+      WindowIsMaximised?: () => Promise<boolean>;
+      WindowMinimise?: () => void;
+      WindowToggleMaximise?: () => void;
+      Quit?: () => void;
+    };
+  }
+}
+
+const injectedAssistantIdentity = resolveInjectedAssistantIdentity();
+
+bootstrapShellModeFromUrl();
+
+function resolveOnboardingMode(): boolean {
+  if (!window.location.search) {
+    return false;
+  }
+  const params = new URLSearchParams(window.location.search);
+  const raw = params.get("onboarding");
+  if (!raw) {
+    return false;
+  }
+  const normalized = raw.trim().toLowerCase();
+  return normalized === "1" || normalized === "true" || normalized === "yes" || normalized === "on";
+}
+
+@customElement("openclaw-app")
+export class OpenClawApp extends LitElement implements NativeDialogInvoker {
+  @state() settings: UiSettings = loadSettings();
+  @state() password = "";
+  @state() tab: Tab = "message";
+  @state() onboarding = resolveOnboardingMode();
+  @state() setupWizardActive = false;
+  @state() setupWizardStepIndex = 0;
+  @state() setupWizardSession = createEmptySetupWizardSession();
+  @state() setupWizardResourceTab: import("./setup-wizard.ts").SetupWizardResourceTab = "skills";
+  @state() setupWizardModelSearchQuery = "";
+  @state() setupWizardModelTab: import("./setup-wizard.ts").SetupWizardModelTab = "embedded";
+  @state() setupWizardEnabledProviders = new Set<string>();
+  @state() setupWizardResourcesLoading = false;
+  @state() setupWizardResourcesError: string | null = null;
+  @state() setupWizardSkillItems: import("./controllers/remote-market.ts").SkillListItem[] = [];
+  @state() setupWizardSkillQuery = "";
+  @state() setupWizardSkillInstallingFolder: string | null = null;
+  @state() setupWizardEmployeeItems: import("./controllers/remote-market.ts").EmployeeListItem[] = [];
+  @state() setupWizardEmployeeQuery = "";
+  @state() setupWizardEmployeeInstallingId: string | null = null;
+  @state() setupWizardMcpItems: import("./controllers/remote-market.ts").McpListItem[] = [];
+  @state() setupWizardMcpQuery = "";
+  @state() setupWizardMcpInstallingId: string | null = null;
+  @state() setupWizardBrowserChromiumSelected = true;
+  @state() setupWizardBrowserReady = false;
+  @state() setupWizardBrowserInstalling = false;
+  @state() setupWizardBrowserInstallError: string | null = null;
+  @state() setupWizardBrowserInstallProgress: import("./controllers/browser-install.ts").BrowserInstallProgress | null =
+    null;
+  setupWizardBrowserPollTimer: number | null = null;
+  @state() setupWizardSelectedScenarioId: string | null = null;
+  @state() setupWizardScenarioMenuOpenId: string | null = null;
+  @state() setupWizardScenarioDetailId: string | null = null;
+  @state() setupWizardScenarioEnvPanelOpen = false;
+  @state() setupWizardSelectedChannelId: string | null = null;
+  @state() setupWizardScenarioRunning = false;
+  @state() setupWizardScenarioRunCompleted = false;
+  setupWizardScenarioCancelRequested = false;
+  @state() setupWizardWelcomeVisible = false;
+  @state() setupWizardScenarioProgress: import("./setup-wizard.ts").SetupWizardScenarioRunRecord | null = null;
+  @state() setupWizardScenarioEnvPrompt: import("./setup-wizard.ts").SetupWizardScenarioEnvPrompt | null = null;
+  private setupWizardStartTimer: number | null = null;
+  @state() isDesktopShell = isDesktopShell();
+  @state() isWindowsDesktop = false;
+  @state() isWindowMaximised = false;
+  @state() connected = false;
+  @state() theme: ThemeMode = this.settings.theme ?? "light";
+  @state() themeResolved: ResolvedTheme = "dark";
+  @state() hello: GatewayHelloOk | null = null;
+  @state() lastError: string | null = null;
+  @state() eventLog: EventLogEntry[] = [];
+  private eventLogBuffer: EventLogEntry[] = [];
+  private toolStreamSyncTimer: number | null = null;
+  private sidebarCloseTimer: number | null = null;
+
+  @state() assistantName = injectedAssistantIdentity.name;
+  @state() assistantAvatar = injectedAssistantIdentity.avatar;
+  @state() assistantAgentId = injectedAssistantIdentity.agentId ?? null;
+
+  @state() sessionKey = this.settings.sessionKey;
+  @state() chatLoading = false;
+  @state() chatSending = false;
+  @state() chatMessage = "";
+  @state() chatComposeHasText = false;
+  @state() chatComposeClearToken = 0;
+  @state() chatComposeInsertToken = 0;
+  @state() chatComposeInsertSnippet = "";
+  @state() chatMessages: unknown[] = [];
+  @state() chatToolMessages: unknown[] = [];
+  @state() chatStream: string | null = null;
+  @state() chatReasoningStream: string | null = null;
+  @state() chatStreamStartedAt: number | null = null;
+  @state() chatA2UIMessages: unknown[] = [];
+  @state() chatFilePreview: import("./chat/file-blocks.ts").FilePreviewRequest | null = null;
+  @state() chatRunId: string | null = null;
+  @state() chatTerminalRunIds: string[] = [];
+  @state() chatErrorRunId: string | null = null;
+  @state() chatRunPhase: "idle" | "thinking" | "tool" | "streaming" = "idle";
+  @state() compactionStatus: CompactionStatus | null = null;
+  @state() chatAvatarUrl: string | null = null;
+  @state() chatThinkingLevel: string | null = null;
+  @state() chatModelRef: string | null = null;
+  @state() chatResources = defaultChatSessionResources();
+  @state() chatResourcesPanelOpen = false;
+  @state() chatResourcesTab: "skills" | "mcp" = "skills";
+  @state() chatResourcesSkillSearch = "";
+  @state() chatResourcesMcpSearch = "";
+  @state() chatExtractSkillLoading = false;
+  @state() chatExtractSkillError: string | null = null;
+  @state() chatExtractSkillMarkdown: string | null = null;
+  @state() chatExtractSkillFilename: string | null = null;
+  @state() chatExtractSkillOpen = false;
+  @state() chatQueue: ChatQueueItem[] = [];
+  @state() chatAttachments: ChatAttachment[] = [];
+  @state() chatAttachmentError: string | null = null;
+  // Sidebar state for tool output viewing
+  @state() sidebarOpen = false;
+  @state() sidebarContent: string | null = null;
+  @state() sidebarError: string | null = null;
+  @state() splitRatio = this.settings.splitRatio;
+
+  @state() nodesLoading = false;
+  @state() nodes: Array<Record<string, unknown>> = [];
+  @state() devicesLoading = false;
+  @state() devicesError: string | null = null;
+  @state() devicesList: DevicePairingList | null = null;
+  @state() execApprovalsLoading = false;
+  @state() execApprovalsSaving = false;
+  @state() execApprovalsDirty = false;
+  @state() execApprovalsSnapshot: ExecApprovalsSnapshot | null = null;
+  @state() execApprovalsForm: ExecApprovalsFile | null = null;
+  @state() execApprovalsSelectedAgent: string | null = null;
+  @state() execApprovalsTarget: "gateway" | "node" = "gateway";
+  @state() execApprovalsTargetNodeId: string | null = null;
+  @state() execApprovalQueue: ExecApprovalRequest[] = [];
+  @state() execApprovalBusy = false;
+  @state() execApprovalError: string | null = null;
+  @state() pendingGatewayUrl: string | null = null;
+
+  @state() configLoading = false;
+  @state() configRaw = "{\n}\n";
+  @state() configRawOriginal = "";
+  @state() configValid: boolean | null = null;
+  @state() configIssues: unknown[] = [];
+  @state() configSaving = false;
+  @state() configApplying = false;
+  @state() updateRunning = false;
+  @state() applySessionKey = this.settings.lastActiveSessionKey;
+  @state() configSnapshot: ConfigSnapshot | null = null;
+  @state() configSchema: unknown = null;
+  @state() configSchemaVersion: string | null = null;
+  @state() configSchemaLoading = false;
+  @state() configUiHints: ConfigUiHints = {};
+  @state() configForm: Record<string, unknown> | null = null;
+  @state() configFormOriginal: Record<string, unknown> | null = null;
+  @state() configFormDirty = false;
+  @state() configFormMode: "form" | "raw" = "raw";
+  @state() configSearchQuery = "";
+  @state() configActiveSection: string | null = null;
+  @state() configActiveSubsection: string | null = null;
+
+  @state() channelsLoading = false;
+  @state() channelsSnapshot: ChannelsStatusSnapshot | null = null;
+  @state() channelsError: string | null = null;
+  @state() channelsLastSuccess: number | null = null;
+  @state() whatsappLoginMessage: string | null = null;
+  @state() whatsappLoginQrDataUrl: string | null = null;
+  @state() whatsappLoginConnected: boolean | null = null;
+  @state() whatsappBusy = false;
+  @state() weworkQrModalOpen = false;
+  @state() weworkQrModalLoading = false;
+  @state() weworkQrModalPolling = false;
+  @state() weworkQrModalSuccess = false;
+  @state() weworkQrModalError: string | null = null;
+  @state() weworkQrModalReplaceWarn = false;
+  @state() weworkQrModalAuthUrl: string | null = null;
+  @state() weworkQrModalGenPageUrl: string | null = null;
+  @state() weixinQrModalOpen = false;
+  @state() weixinQrModalLoading = false;
+  @state() weixinQrModalPolling = false;
+  @state() weixinQrModalSuccess = false;
+  @state() weixinQrModalError: string | null = null;
+  @state() weixinQrModalReplaceWarn = false;
+  @state() weixinQrModalImageSrc: string | null = null;
+  @state() weixinQrModalScanPageUrl: string | null = null;
+  @state() weixinQrModalScanned = false;
+  @state() nativeDialog: NativeDialogModel = null;
+  @state() nativePromptInput = "";
+  /** Browser interval id for WeCom QR polling (not reactive) */
+  weworkQrPollTimer: number | null = null;
+  weworkQrSuccessCloseTimer: number | null = null;
+  weixinQrPollAbort = false;
+  weixinQrSuccessCloseTimer: number | null = null;
+  weixinQrSessionQrcode = "";
+  weixinQrSessionBaseUrl = "";
+  weixinQrSessionBotType = "";
+  private nativeResolveConfirm: ((ok: boolean) => void) | null = null;
+  private nativeResolveAlert: (() => void) | null = null;
+  private nativeResolvePrompt: ((v: string | null) => void) | null = null;
+  @state() nostrProfileFormState: NostrProfileFormState | null = null;
+  @state() nostrProfileAccountId: string | null = null;
+  @state() channelsSelectedChannelId: string | null = null;
+  @state() mcpSelectedKey: string | null = null;
+  @state() mcpViewMode: "list" | "card" = "card";
+  @state() mcpEditMode: "form" | "raw" = "form";
+  @state() mcpEditConnectionType: "stdio" | "url" | "service" = "stdio";
+  @state() mcpFormDirty = false;
+  @state() mcpRawJson = "";
+  @state() mcpRawError: string | null = null;
+  @state() mcpAddModalOpen = false;
+  @state() mcpAddName = "";
+  @state() mcpAddDraft: Record<string, unknown> = {};
+  @state() mcpAddConnectionType: "stdio" | "url" | "service" = "stdio";
+  @state() mcpAddEditMode: "form" | "raw" = "form";
+  @state() mcpAddRawJson = "{}";
+  @state() mcpAddRawError: string | null = null;
+  @state() securityForm: import("./controllers/security.js").SecurityConfigForm | Record<string, unknown> | null = null;
+  @state() approvalsLoading = false;
+  @state() approvalsResult: import("./controllers/approvals.js").ApprovalsListResult | null = null;
+  @state() approvalsError: string | null = null;
+  @state() approvalBannerVisible = false;
+  @state() approvalBannerPollInitialized = false;
+  @state() approvalBannerBaselineIds: string[] = [];
+  @state() approvalBannerPendingCount = 0;
+  @state() modelsSelectedProvider: string | null = null;
+  @state() modelsProviderSearchQuery = "";
+  @state() modelsViewMode: "list" | "card" = "card";
+  @state() modelsFormDirty = false;
+  @state() modelsAddProviderModalOpen = false;
+  @state() modelsAddProviderForm: {
+    providerId: string;
+    displayName: string;
+    baseUrl: string;
+    apiKey: string;
+    apiKeyPrefix: string;
+  } = {
+    providerId: "",
+    displayName: "",
+    baseUrl: "",
+    apiKey: "",
+    apiKeyPrefix: "",
+  };
+  @state() modelsAddModelModalOpen = false;
+  @state() modelsAddModelForm: { modelId: string; modelName: string; contextWindow: string; maxTokens: string } = {
+    modelId: "",
+    modelName: "",
+    contextWindow: "",
+    maxTokens: "",
+  };
+  @state() modelsUseModelModalOpen = false;
+  @state() modelsUseModelModalProvider: string | null = null;
+  @state() modelsSaveError: string | null = null;
+  @state() modelLibraryCategory: "__all__" | "plaza" | "public" | "local" = "__all__";
+  @state() embeddedModelsLoading = false;
+  @state() embeddedModelsError: string | null = null;
+  @state() embeddedModels: import("./controllers/embedded-models.ts").EmbeddedModelEntry[] = [];
+  @state() embeddedModelsBusyId: string | null = null;
+  @state() embeddedDownloadStatus: import("./controllers/embedded-models.ts").EmbeddedDownloadStatus | null = null;
+  @state() embeddedPlazaDetailModel: import("./controllers/embedded-models.ts").EmbeddedModelEntry | null = null;
+  @state() embeddedPlazaDetailInfo: import("./controllers/plaza-model-detail.ts").PlazaModelDetailInfo | null = null;
+  @state() embeddedPlazaDetailLoading = false;
+  @state() embeddedPlazaDetailError: string | null = null;
+  @state() embeddedPlazaRecommendOpen = false;
+  @state() embeddedPlazaManualImportOpen = false;
+  @state() embeddedPlazaHardware: import("./controllers/model-recommendation.ts").LocalHardwareProfile | null = null;
+  @state() embeddedPlazaServerRecommendations: import("./controllers/model-recommendation.ts").ServerModelRecommendation[] | null = null;
+  @state() embeddedPlazaRecommendationsLoading = false;
+  @state() embeddedPlazaChatModel: import("./controllers/embedded-models.ts").EmbeddedModelEntry | null = null;
+  @state() embeddedPlazaChatMessages: import("./controllers/embedded-chat-test.ts").PlazaChatMessage[] = [];
+  @state() embeddedPlazaChatInput = "";
+  @state() embeddedPlazaChatLoading = false;
+  @state() embeddedPlazaChatError: string | null = null;
+  @state() modelLibrarySelectedProvider: string | null = null;
+  @state() skillsSelectedSkillKey: string | null = null;
+  @state() skillsSkillDocContent: string | null = null;
+  @state() skillsSkillDocLoading = false;
+  @state() skillsSkillDocError: string | null = null;
+  @state() skillsViewMode: "list" | "card" = "card";
+
+  @state() presenceLoading = false;
+  @state() presenceEntries: PresenceEntry[] = [];
+  @state() presenceError: string | null = null;
+  @state() presenceStatus: string | null = null;
+
+  @state() agentsLoading = false;
+  @state() agentsList: AgentsListResult | null = null;
+  @state() agentsError: string | null = null;
+  @state() agentsSelectedId: string | null = null;
+  @state() agentsPanel: "overview" | "files" | "tools" | "skills" | "channels" | "cron" =
+    "overview";
+  @state() agentFilesLoading = false;
+  @state() agentFilesError: string | null = null;
+  @state() agentFilesList: AgentsFilesListResult | null = null;
+  @state() agentFileContents: Record<string, string> = {};
+  @state() agentFileDrafts: Record<string, string> = {};
+  @state() agentFileActive: string | null = null;
+  @state() agentFileSaving = false;
+  @state() agentIdentityLoading = false;
+  @state() agentIdentityError: string | null = null;
+  @state() agentIdentityById: Record<string, AgentIdentityResult> = {};
+  @state() agentSkillsLoading = false;
+  @state() agentSkillsError: string | null = null;
+  @state() agentSkillsReport: SkillStatusReport | null = null;
+  @state() agentSkillsAgentId: string | null = null;
+
+  @state() sessionsLoading = false;
+  @state() sessionsResult: SessionsListResult | null = null;
+  @state() sessionEditingKey: string | null = null;
+  @state() sessionOverflow: { top: number; right: number; key: string } | null = null;
+  @state() sessionSidebarQuery = "";
+  @state() sessionsError: string | null = null;
+  @state() sessionsFilterActive = "";
+  @state() sessionsFilterLimit = "120";
+  @state() sessionsIncludeGlobal = true;
+  @state() sessionsIncludeUnknown = false;
+  @state() sessionsBulkMode = false;
+  @state() sessionsSelectedKeys: string[] = [];
+
+  @state() usageLoading = false;
+  @state() usageResult: import("./types.js").SessionsUsageResult | null = null;
+  @state() usageCostSummary: import("./types.js").CostUsageSummary | null = null;
+  @state() usageError: string | null = null;
+  @state() usageStartDate = (() => {
+    const d = new Date();
+    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+  })();
+  @state() usageEndDate = (() => {
+    const d = new Date();
+    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+  })();
+  @state() usageChartMode: "tokens" | "cost" = "tokens";
+  @state() usageDailyChartMode: "total" | "by-type" = "by-type";
+  @state() usageTimeZone: "local" | "utc" = "local";
+
+  @state() localAgentsLoading = false;
+  @state() localAgentsReport: import("./local-agents.js").LocalAgentsProbeReport | null = null;
+  @state() localAgentsError: string | null = null;
+
+  @state() cronLoading = false;
+  @state() cronJobs: CronJob[] = [];
+  @state() cronStatus: CronStatus | null = null;
+  @state() cronError: string | null = null;
+  @state() cronForm: CronFormState = { ...DEFAULT_CRON_FORM };
+  @state() cronRunsJobId: string | null = null;
+  @state() cronRuns: CronRunLogEntry[] = [];
+  @state() cronBusy = false;
+  @state() cronAddModalOpen = false;
+  @state() cronEditModalOpen = false;
+  @state() cronEditJobId: string | null = null;
+
+  @state() apiKeysLoading = false;
+  @state() apiKeys: import("./controllers/api-keys.ts").ApiKeyEntry[] = [];
+  @state() apiKeysError: string | null = null;
+  @state() apiKeysBusy = false;
+  @state() apiKeysForm: import("./controllers/api-keys.ts").ApiKeyFormState = { ...DEFAULT_API_KEY_FORM };
+  @state() apiKeysFormModalOpen = false;
+  @state() apiKeysFormModalMode: "create" | "edit" = "create";
+  @state() apiKeysViewSecret: import("./controllers/api-keys.ts").ApiKeySecretView | null = null;
+  @state() apiKeysCreatedSecret: string | null = null;
+  @state() apiKeysExamplesModalOpen = false;
+
+  @state() skillsLoading = false;
+  @state() skillsReport: SkillStatusReport | null = null;
+  @state() skillsError: string | null = null;
+  @state() skillsFilter = "";
+  @state() skillEdits: Record<string, string> = {};
+  @state() skillsBusyKey: string | null = null;
+  @state() skillMessages: Record<string, SkillMessage> = {};
+  @state() skillsAddPanel: import("./views/skill-create-modals.ts").SkillAddPanel = "closed";
+  @state() skillsUploadStep = 0;
+  @state() skillsUploadFile: File | null = null;
+  @state() skillsUploadAnalyze: import("./controllers/skill-create.ts").SkillAnalyzeResult | null = null;
+  @state() skillsUploadMeta: import("./controllers/skill-create.ts").SkillUploadMeta = {
+    name: "",
+    description: "",
+    category: "",
+    tags: "",
+    status: "open",
+  };
+  @state() skillsUploadError: string | null = null;
+  @state() skillsUploadTemplate: string | null = null;
+  @state() skillsUploadBusy = false;
+  @state() skillsCreativeScenario: "free" | "upgrade" = "free";
+  @state() skillsCreativeMessages: import("./controllers/skill-create.ts").SkillComposeMessage[] = [];
+  @state() skillsCreativeDraft = "";
+  @state() skillsCreativeFiles: import("./controllers/skill-create.ts").SkillComposeFile[] = [];
+  @state() skillsCreativeInput = "";
+  @state() skillsCreativeReady = false;
+  @state() skillsCreativeSelectedFile: string | null = null;
+
+  @state() swarmLoading = false;
+  @state() swarmError: string | null = null;
+  @state() swarmWorkspaces: import("./types/swarm-types.ts").SwarmWorkspace[] = [];
+  @state() swarmActiveWorkspaceId: string | null = null;
+  @state() swarmMembers: import("./types/swarm-types.ts").SwarmMember[] = [];
+  @state() swarmSelectedMemberId: string | null = null;
+  @state() swarmGraph: import("./types/swarm-types.ts").SwarmGraph | null = null;
+  @state() swarmHistory: import("./types/swarm-types.ts").SwarmHistoryEntry[] = [];
+  @state() swarmInput = "";
+  @state() swarmSending = false;
+  @state() swarmStreamText = "";
+  @state() swarmReasoningText = "";
+  @state() swarmToolEntries: import("./controllers/swarm.ts").SwarmToolEntry[] = [];
+  @state() swarmTreeCollapsed: Record<string, boolean> = {};
+  @state() swarmMidSplit = 0.52;
+  @state() swarmEventsCollapsed = false;
+  @state() swarmVizScale = 0.9;
+  @state() swarmVizOffsetX = 0;
+  @state() swarmVizOffsetY = 0;
+  @state() swarmPanelCollapsed: Record<string, boolean> = { reasoning: true, tools: true };
+  @state() swarmCreateModalOpen = false;
+  @state() swarmCreateModalLabel = "AgentSwarm";
+  @state() swarmDeleteModalOpen = false;
+  @state() swarmDeleteTargetId: string | null = null;
+  @state() swarmDeleteTargetLabel = "";
+  @state() swarmAddMemberModalOpen = false;
+  @state() swarmAddMemberEmployeeId = "";
+  @state() swarmAddMemberLabel = "子任务";
+
+  @state() digitalEmployeesLoading = false;
+  @state() digitalEmployeesError: string | null = null;
+  @state() digitalEmployeesFilter = "";
+  @state() digitalEmployeesViewMode: "list" | "card" = "list";
+  @state() digitalEmployees: {
+    id: string;
+    name: string;
+    description: string;
+    prompt?: string;
+    enabled?: boolean;
+    createdAt?: number;
+    builtin: boolean;
+    skillIds?: string[];
+    skillNames?: string[];
+    mcpServerKeys?: string[];
+  }[] = [];
+  @state() digitalEmployeeCreateModalOpen = false;
+  @state() digitalEmployeeCreateName = "";
+  @state() digitalEmployeeCreateDescription = "";
+  @state() digitalEmployeeCreatePrompt = "";
+  @state() digitalEmployeeCreateError: string | null = null;
+  @state() digitalEmployeeCreateBusy = false;
+  @state() digitalEmployeeAdvancedOpen = false;
+  @state() digitalEmployeeCreateMcpMode: "builder" | "raw" = "builder";
+  @state() digitalEmployeeCreateMcpJson = "";
+  @state() digitalEmployeeCreateMcpItems: import("./views/digital-employee.js").EmployeeMcpItem[] = [];
+  @state() digitalEmployeeSkillUploadName = "";
+  @state() digitalEmployeeSkillUploadFiles: File[] = [];
+  @state() digitalEmployeeSkillUploadError: string | null = null;
+  @state() digitalEmployeeSkillUploadBusy = false;
+  @state() digitalEmployeeEditModalOpen = false;
+  @state() digitalEmployeeEditId = "";
+  @state() digitalEmployeeEditName = "";
+  @state() digitalEmployeeEditDescription = "";
+  @state() digitalEmployeeEditPrompt = "";
+  @state() digitalEmployeeEditMcpJson = "";
+  @state() digitalEmployeeEditMcpMode: "builder" | "raw" = "raw";
+  @state() digitalEmployeeEditMcpItems: import("./views/digital-employee.js").EmployeeMcpItem[] = [];
+  @state() digitalEmployeeEditSkillNames: string[] = [];
+  @state() digitalEmployeeEditSkillFilesToUpload: File[] = [];
+  @state() digitalEmployeeEditSkillsToDelete: string[] = [];
+  @state() digitalEmployeeEditEnabled = true;
+  @state() digitalEmployeeEditError: string | null = null;
+  @state() digitalEmployeeEditBusy = false;
+
+  // Remote catalogs (employee market / skill library / tool library)
+  @state() employeeMarketLoadedOnce = false;
+  @state() employeeMarketLoading = false;
+  @state() employeeMarketError: string | null = null;
+  @state() employeeMarketQuery = "";
+  @state() employeeMarketCategory = "__all__";
+  @state() employeeMarketCategoryDescendants: string[] = [];
+  @state() employeeMarketViewMode: "list" | "card" = "card";
+  @state() employeeMarketItems: import("./controllers/remote-market.ts").EmployeeListItem[] = [];
+  @state() employeeMarketSelectedId: number | string | null = null;
+  @state() employeeMarketSelectedDetail: import("./controllers/remote-market.ts").EmployeeDetail | null = null;
+  @state() employeeMarketInstalledRemoteIds = new Set<string>();
+  @state() employeeMarketRemoteToLocal: Record<string, string> = {};
+  @state() employeeMarketInstallingId: string | null = null;
+
+  @state() skillLibraryLoadedOnce = false;
+  @state() skillLibraryLoading = false;
+  @state() skillLibraryError: string | null = null;
+  @state() skillLibraryQuery = "";
+  @state() skillLibraryCategory = "__all__";
+  @state() skillLibraryCategoryDescendants: string[] = [];
+  @state() skillLibraryStatus = "__all__";
+  @state() skillLibraryItems: import("./controllers/remote-market.ts").SkillListItem[] = [];
+  @state() skillLibrarySelectedFolder: string | null = null;
+  @state() skillLibrarySelectedDetail: import("./controllers/remote-market.ts").SkillDetail | null = null;
+  @state() skillLibraryInstallingFolder: string | null = null;
+  @state() skillLibraryInstallSuccess: string | null = null;
+  @state() skillLibraryEditModalOpen = false;
+  @state() skillLibraryEditSkillKey: string | null = null;
+  @state() skillLibraryEditFiles: string[] = [];
+  @state() skillLibraryEditSelectedFile: string | null = null;
+  @state() skillLibraryEditContent = "";
+  @state() skillLibraryEditOriginalContent = "";
+  @state() skillLibraryEditLoading = false;
+  @state() skillLibraryEditSaving = false;
+  @state() skillLibraryEditError: string | null = null;
+  @state() skillLibraryEditSyntaxError: string | null = null;
+  @state() skillLibraryEditSuccessMessage: string | null = null;
+
+  @state() knowledgeVaultLoadedOnce = false;
+  @state() knowledgeVaultLoading = false;
+  @state() knowledgeVaultError: string | null = null;
+  @state() knowledgeVaultDir = "";
+  @state() knowledgeVaultFiles: import("./controllers/vault.ts").VaultFileEntry[] = [];
+  @state() knowledgeVaultFolders: string[] = [];
+  @state() knowledgeVaultExpandedFolders: string[] = [];
+  @state() knowledgeVaultViewMode: import("./views/knowledge-vault.ts").KnowledgeVaultViewMode = "notes";
+  @state() knowledgeVaultSelectedPath: string | null = null;
+  @state() knowledgeVaultContent = "";
+  @state() knowledgeVaultContentLoading = false;
+  @state() knowledgeVaultEditorMode: import("./components/vault-editor.ts").VaultEditorMode = "preview";
+  @state() knowledgeVaultDraftContent = "";
+  @state() knowledgeVaultSaving = false;
+  @state() knowledgeVaultSaveMessage: string | null = null;
+  @state() knowledgeVaultSyncing = false;
+  @state() knowledgeVaultDirSaving = false;
+  @state() knowledgeVaultGraph: import("./controllers/vault.ts").VaultGraph | null = null;
+  @state() knowledgeVaultGraphLoading = false;
+  @state() knowledgeVaultQuery = "";
+  @state() knowledgeVaultSidebarWidth = 0;
+  @state() knowledgeVaultFileCount = 0;
+  @state() knowledgeVaultChunkCount = 0;
+  @state() knowledgeVaultLastSyncedAt: string | null = null;
+  @state() knowledgeVaultSearchMode: import("./views/vault-search-panel.ts").VaultSearchMode = "filename";
+  @state() knowledgeVaultSearchResults: import("./controllers/vault.ts").VaultSearchHit[] = [];
+  @state() knowledgeVaultSearchLoading = false;
+  @state() knowledgeVaultHighlightLine: number | null = null;
+  @state() knowledgeVaultSelectedFolderPath: string | null = null;
+  @state() knowledgeVaultItemModal: import("./views/vault-item-modal.ts").VaultItemModalState | null = null;
+  @state() knowledgeVaultItemModalSaving = false;
+  @state() knowledgeVaultItemModalError: string | null = null;
+
+  @state() toolLibraryLoadedOnce = false;
+  @state() toolLibraryLoading = false;
+  @state() toolLibraryError: string | null = null;
+  @state() toolLibraryQuery = "";
+  @state() toolLibraryCategory = "__all__";
+  @state() toolLibraryCategoryDescendants: string[] = [];
+  @state() toolLibraryItems: import("./controllers/remote-market.ts").McpListItem[] = [];
+  @state() toolLibrarySelectedId: number | string | null = null;
+  @state() toolLibrarySelectedDetail: import("./controllers/remote-market.ts").McpDetail | null = null;
+  @state() toolLibraryInstalledRemoteIds = new Set<string>();
+  @state() toolLibraryInstalledMcpMap = new Map<number | string, string>();
+  @state() toolLibraryInstallingId: number | null = null;
+  @state() toolLibraryMcpEditModalOpen = false;
+  @state() toolLibraryMcpEditServerKey = "";
+
+  @state() tutorialsLoadedOnce = false;
+  @state() tutorialsLoading = false;
+  @state() tutorialsError: string | null = null;
+  @state() tutorialCategories: import("./controllers/remote-market.ts").EduCategory[] = [];
+  @state() tutorialsActiveTab: import("./views/tutorials.ts").TutorialTab = "video";
+  @state() tutorialsQuery = "";
+  @state() tutorialsSelectedCategoryId: number | null = null;
+  @state() tutorialsPlayingLink: string | null = null;
+  @state() tutorialsQueryDebounceTimer: number | null = null;
+
+  @state() aboutUninstallModalOpen = false;
+  @state() aboutUninstallMode: "program" | "full" = "program";
+  @state() aboutUninstallLoading = false;
+  @state() aboutUninstallError: string | null = null;
+  aboutClearWorkspaceLoading = false;
+  @state() aboutClearWorkspaceError: string | null = null;
+
+  @state() appUpdateModalOpen = false;
+  @state() appUpdateCheckLoading = false;
+  @state() appUpdateInstalling = false;
+  @state() appUpdateInfo: import("./controllers/app-update.ts").AppUpdateCheckResult | null = null;
+  @state() appUpdateInstallProgress: import("./controllers/app-update.ts").AppUpdateProgress | null = null;
+  @state() appUpdateError: string | null = null;
+  @state() appUpdateManualHint: string | null = null;
+
+  @state() debugLoading = false;
+  @state() debugStatus: StatusSummary | null = null;
+  @state() debugHealth: HealthSnapshot | null = null;
+  @state() debugModels: unknown[] = [];
+  @state() debugHeartbeat: unknown = null;
+  @state() debugCallMethod = "";
+  @state() debugCallParams = "{}";
+  @state() debugCallResult: string | null = null;
+  @state() debugCallError: string | null = null;
+
+  @state() logsLoading = false;
+  @state() logsError: string | null = null;
+  @state() logsFile: string | null = null;
+  @state() logsEntries: LogEntry[] = [];
+  @state() logsFilterText = "";
+  @state() logsLevelFilters: Record<LogLevel, boolean> = {
+    ...DEFAULT_LOG_LEVEL_FILTERS,
+  };
+  @state() logsAutoFollow = true;
+  @state() logsTruncated = false;
+  @state() logsCursor: number | null = null;
+  @state() logsLastFetchAt: number | null = null;
+  @state() logsLimit = 500;
+  @state() logsMaxBytes = 250_000;
+  @state() logsAtBottom = true;
+
+  client: GatewayBrowserClient | null = null;
+  approvalBannerPollInterval: number | null = null;
+  private chatScrollFrame: number | null = null;
+  private chatScrollTimeout: number | null = null;
+  private chatHasAutoScrolled = false;
+  private chatUserNearBottom = true;
+  @state() chatNewMessagesBelow = false;
+  /** true = only assistant/user in thread; false = show tool rows (I/O still collapsible in UI). */
+  @state() chatConversationOnly = false;
+  private nodesPollInterval: number | null = null;
+  private logsPollInterval: number | null = null;
+  private debugPollInterval: number | null = null;
+  private logsScrollFrame: number | null = null;
+  private toolStreamById = new Map<string, ToolStreamEntry>();
+  private toolStreamOrder: string[] = [];
+  refreshSessionsAfterChat = new Set<string>();
+  basePath = "";
+  private popStateHandler = () =>
+    onPopStateInternal(this as unknown as Parameters<typeof onPopStateInternal>[0]);
+  private themeMedia: MediaQueryList | null = null;
+  private themeMediaHandler: ((event: MediaQueryListEvent) => void) | null = null;
+  private topbarObserver: ResizeObserver | null = null;
+  private desktopWindowResizeHandler: (() => void) | null = null;
+  private sessionOverflowEscapeHandler = (ev: KeyboardEvent) => {
+    if (ev.key !== "Escape") {
+      return;
+    }
+    if (this.nativeDialog) {
+      if (this.nativeDialog.kind === "alert") {
+        this.handleNativeDialogConfirm();
+      } else {
+        this.handleNativeDialogCancel();
+      }
+      return;
+    }
+    if (this.sessionOverflow) {
+      this.sessionOverflow = null;
+    }
+  };
+
+  private knowledgeVaultBeforeUnload = (event: BeforeUnloadEvent) => {
+    const msg = knowledgeVaultBeforeUnloadHandler(this as unknown as AppViewState);
+    if (msg) {
+      event.preventDefault();
+      event.returnValue = msg;
+    }
+  };
+
+  createRenderRoot() {
+    return this;
+  }
+
+  connectedCallback() {
+    super.connectedCallback();
+    registerNativeDialogInvoker(this);
+    document.addEventListener("keydown", this.sessionOverflowEscapeHandler);
+    window.addEventListener("beforeunload", this.knowledgeVaultBeforeUnload);
+    handleConnected(this as unknown as Parameters<typeof handleConnected>[0]);
+    void this.initialiseDesktopWindowChrome();
+  }
+
+  protected firstUpdated() {
+    handleFirstUpdated(this as unknown as Parameters<typeof handleFirstUpdated>[0]);
+  }
+
+  disconnectedCallback() {
+    if (this.setupWizardStartTimer != null) {
+      window.clearTimeout(this.setupWizardStartTimer);
+      this.setupWizardStartTimer = null;
+    }
+    unregisterNativeDialogInvoker(this);
+    document.removeEventListener("keydown", this.sessionOverflowEscapeHandler);
+    window.removeEventListener("beforeunload", this.knowledgeVaultBeforeUnload);
+    this.teardownDesktopWindowChrome();
+    handleDisconnected(this as unknown as Parameters<typeof handleDisconnected>[0]);
+    super.disconnectedCallback();
+  }
+
+  protected updated(changed: Map<PropertyKey, unknown>) {
+    handleUpdated(this as unknown as Parameters<typeof handleUpdated>[0], changed);
+    if (
+      this.setupWizardActive &&
+      (changed.has("configForm") || changed.has("configSnapshot"))
+    ) {
+      refreshSetupWizardFromConfig(this as unknown as AppViewState);
+    }
+    if (
+      !this.setupWizardActive &&
+      !this.onboarding &&
+      (changed.has("configSnapshot") ||
+        changed.has("connected") ||
+        changed.has("configSchemaVersion") ||
+        changed.has("hello"))
+    ) {
+      if (this.connected && this.configSnapshot) {
+        void flushSetupWizardSkipToConfig(this as unknown as AppViewState);
+      }
+      this.maybeStartSetupWizard();
+    }
+  }
+
+  connect() {
+    connectGatewayInternal(this as unknown as Parameters<typeof connectGatewayInternal>[0]);
+  }
+
+  handleChatScroll(event: Event) {
+    handleChatScrollInternal(
+      this as unknown as Parameters<typeof handleChatScrollInternal>[0],
+      event,
+    );
+  }
+
+  handleLogsScroll(event: Event) {
+    handleLogsScrollInternal(
+      this as unknown as Parameters<typeof handleLogsScrollInternal>[0],
+      event,
+    );
+  }
+
+  exportLogs(lines: string[], label: string) {
+    exportLogsInternal(lines, label);
+  }
+
+  resetToolStream() {
+    resetToolStreamInternal(this as unknown as Parameters<typeof resetToolStreamInternal>[0]);
+  }
+
+  resetChatScroll() {
+    resetChatScrollInternal(this as unknown as Parameters<typeof resetChatScrollInternal>[0]);
+  }
+
+  scrollToBottom() {
+    resetChatScrollInternal(this as unknown as Parameters<typeof resetChatScrollInternal>[0]);
+    scheduleChatScrollInternal(
+      this as unknown as Parameters<typeof scheduleChatScrollInternal>[0],
+      true,
+    );
+  }
+
+  async loadAssistantIdentity() {
+    await loadAssistantIdentityInternal(this);
+  }
+
+  applySettings(next: UiSettings) {
+    applySettingsInternal(this as unknown as Parameters<typeof applySettingsInternal>[0], next);
+  }
+
+  setTab(next: Tab) {
+    setTabInternal(this as unknown as Parameters<typeof setTabInternal>[0], next);
+  }
+
+  setTheme(next: ThemeMode, context?: Parameters<typeof setThemeInternal>[2]) {
+    setThemeInternal(this as unknown as Parameters<typeof setThemeInternal>[0], next, context);
+  }
+
+  async loadOverview() {
+    await loadOverviewInternal(this as unknown as Parameters<typeof loadOverviewInternal>[0]);
+  }
+
+  async loadCron() {
+    await loadCronInternal(this as unknown as Parameters<typeof loadCronInternal>[0]);
+  }
+
+  async handleAbortChat() {
+    await handleAbortChatInternal(this as unknown as Parameters<typeof handleAbortChatInternal>[0]);
+  }
+
+  removeQueuedMessage(id: string) {
+    removeQueuedMessageInternal(
+      this as unknown as Parameters<typeof removeQueuedMessageInternal>[0],
+      id,
+    );
+  }
+
+  async handleSendChat(
+    messageOverride?: string,
+    opts?: Parameters<typeof handleSendChatInternal>[2],
+  ) {
+    await handleSendChatInternal(
+      this as unknown as Parameters<typeof handleSendChatInternal>[0],
+      messageOverride,
+      opts,
+    );
+  }
+
+  async handleWhatsAppStart(force: boolean) {
+    await handleWhatsAppStartInternal(this, force);
+  }
+
+  async handleWhatsAppWait() {
+    await handleWhatsAppWaitInternal(this);
+  }
+
+  async handleWhatsAppLogout() {
+    await handleWhatsAppLogoutInternal(this);
+  }
+
+  async handleWeWorkQrStart() {
+    await handleWeWorkQrStartInternal(this);
+  }
+
+  handleWeWorkQrModalClose() {
+    handleWeWorkQrModalCloseInternal(this);
+  }
+
+  async handleWeixinQrStart() {
+    await handleWeixinQrStartInternal(this);
+  }
+
+  handleWeixinQrModalClose() {
+    handleWeixinQrModalCloseInternal(this);
+  }
+
+  async handleChannelConfigSave() {
+    await handleChannelConfigSaveInternal(this);
+  }
+
+  async handleChannelConfigReload() {
+    await handleChannelConfigReloadInternal(this);
+  }
+
+  handleNostrProfileEdit(accountId: string, profile: NostrProfile | null) {
+    handleNostrProfileEditInternal(this, accountId, profile);
+  }
+
+  handleNostrProfileCancel() {
+    handleNostrProfileCancelInternal(this);
+  }
+
+  handleNostrProfileFieldChange(field: keyof NostrProfile, value: string) {
+    handleNostrProfileFieldChangeInternal(this, field, value);
+  }
+
+  async handleNostrProfileSave() {
+    await handleNostrProfileSaveInternal(this);
+  }
+
+  async handleNostrProfileImport() {
+    await handleNostrProfileImportInternal(this);
+  }
+
+  handleNostrProfileToggleAdvanced() {
+    handleNostrProfileToggleAdvancedInternal(this);
+  }
+
+  async handleExecApprovalDecision(decision: "allow-once" | "allow-always" | "deny") {
+    const active = this.execApprovalQueue[0];
+    if (!active || !this.client || this.execApprovalBusy) {
+      return;
+    }
+    this.execApprovalBusy = true;
+    this.execApprovalError = null;
+    try {
+      await this.client.request("exec.approval.resolve", {
+        id: active.id,
+        decision,
+      });
+      this.execApprovalQueue = this.execApprovalQueue.filter((entry) => entry.id !== active.id);
+    } catch (err) {
+      this.execApprovalError = `Exec approval failed: ${String(err)}`;
+    } finally {
+      this.execApprovalBusy = false;
+    }
+  }
+
+  dismissApprovalBanner() {
+    this.approvalBannerVisible = false;
+  }
+
+  maybeStartSetupWizard() {
+    if (this.onboarding || this.setupWizardActive) {
+      return;
+    }
+    const configLoaded = this.configSnapshot != null || this.configForm != null;
+    if (this.connected && !configLoaded && (this.configLoading || !this.configSnapshot)) {
+      return;
+    }
+    const config = configLoaded
+      ? ((this.configForm ?? this.configSnapshot?.config) as Record<string, unknown> | null)
+      : undefined;
+    if (configLoaded) {
+      syncSetupWizardCompletionCache(config);
+    }
+    const version = resolveSetupWizardVersion(this.configSchemaVersion, this.hello);
+    if (!version) {
+      return;
+    }
+    if (!shouldShowSetupWizard(version, config)) {
+      return;
+    }
+    initSetupWizardSession(this as unknown as AppViewState);
+    this.setupWizardActive = true;
+  }
+
+  openSetupWizard() {
+    if (this.setupWizardActive) {
+      return;
+    }
+    this.setupWizardWelcomeVisible = false;
+    initSetupWizardSession(this as unknown as AppViewState);
+    this.setupWizardStepIndex = 0;
+    this.setupWizardActive = true;
+  }
+
+  async finishSetupWizard() {
+    await persistSetupWizardCompletion(this as unknown as AppViewState);
+    this.closeSetupWizardWithWelcome();
+  }
+
+  async skipAllSetupWizard() {
+    if (this.setupWizardScenarioRunning) {
+      return;
+    }
+    await persistSetupWizardSkipped(this as unknown as AppViewState);
+    this.closeSetupWizardWithWelcome();
+  }
+
+  private closeSetupWizardWithWelcome() {
+    this.setupWizardActive = false;
+    this.setupWizardStepIndex = 0;
+    this.setupWizardScenarioProgress = null;
+    this.setupWizardScenarioRunning = false;
+    this.setupWizardScenarioRunCompleted = false;
+    this.setupWizardScenarioCancelRequested = false;
+    this.setupWizardScenarioEnvPrompt = null;
+    this.setupWizardWelcomeVisible = true;
+  }
+
+  dismissSetupWizardWelcome() {
+    this.setupWizardWelcomeVisible = false;
+  }
+
+  handleGatewayUrlConfirm() {
+    const nextGatewayUrl = this.pendingGatewayUrl;
+    if (!nextGatewayUrl) {
+      return;
+    }
+    this.pendingGatewayUrl = null;
+    applySettingsInternal(this as unknown as Parameters<typeof applySettingsInternal>[0], {
+      ...this.settings,
+      gatewayUrl: nextGatewayUrl,
+    });
+    this.connect();
+  }
+
+  handleGatewayUrlCancel() {
+    this.pendingGatewayUrl = null;
+  }
+
+  // Sidebar handlers for tool output viewing
+  handleOpenSidebar(content: string) {
+    if (this.sidebarCloseTimer != null) {
+      window.clearTimeout(this.sidebarCloseTimer);
+      this.sidebarCloseTimer = null;
+    }
+    this.sidebarContent = content;
+    this.sidebarError = null;
+    this.sidebarOpen = true;
+  }
+
+  handleCloseSidebar() {
+    this.sidebarOpen = false;
+    // Clear content after transition
+    if (this.sidebarCloseTimer != null) {
+      window.clearTimeout(this.sidebarCloseTimer);
+    }
+    this.sidebarCloseTimer = window.setTimeout(() => {
+      if (this.sidebarOpen) {
+        return;
+      }
+      this.sidebarContent = null;
+      this.sidebarError = null;
+      this.sidebarCloseTimer = null;
+    }, 200);
+  }
+
+  handleSplitRatioChange(ratio: number) {
+    const newRatio = Math.max(0.4, Math.min(0.7, ratio));
+    this.splitRatio = newRatio;
+    this.applySettings({ ...this.settings, splitRatio: newRatio });
+  }
+
+  showConfirm(message: string): Promise<boolean> {
+    return new Promise((resolve) => {
+      this.nativeResolveConfirm = resolve;
+      this.nativeDialog = { kind: "confirm", message };
+    });
+  }
+
+  showAlert(message: string): Promise<void> {
+    return new Promise((resolve) => {
+      this.nativeResolveAlert = resolve;
+      this.nativeDialog = { kind: "alert", message };
+    });
+  }
+
+  showPrompt(message: string, defaultValue = ""): Promise<string | null> {
+    return new Promise((resolve) => {
+      this.nativePromptInput = defaultValue;
+      this.nativeResolvePrompt = resolve;
+      this.nativeDialog = { kind: "prompt", message, defaultValue };
+    });
+  }
+
+  handleNativeDialogConfirm() {
+    const d = this.nativeDialog;
+    if (!d) {
+      return;
+    }
+    if (d.kind === "alert") {
+      this.nativeResolveAlert?.();
+    } else if (d.kind === "confirm") {
+      this.nativeResolveConfirm?.(true);
+    } else {
+      this.nativeResolvePrompt?.(this.nativePromptInput);
+    }
+    this.clearNativeDialogState();
+  }
+
+  handleNativeDialogCancel() {
+    const d = this.nativeDialog;
+    if (!d) {
+      return;
+    }
+    if (d.kind === "confirm") {
+      this.nativeResolveConfirm?.(false);
+    } else if (d.kind === "prompt") {
+      this.nativeResolvePrompt?.(null);
+    }
+    this.clearNativeDialogState();
+  }
+
+  handleNativePromptInput(value: string) {
+    this.nativePromptInput = value;
+  }
+
+  private _maximiseDebounceTimer: number | null = null;
+
+  async refreshWindowMaximised() {
+    if (!this.isWindowsDesktop) {
+      this.isWindowMaximised = false;
+      return;
+    }
+    // 防抖：避免 resize 事件频繁触发导致 UI 持续刷新
+    if (this._maximiseDebounceTimer !== null) {
+      window.clearTimeout(this._maximiseDebounceTimer);
+    }
+    this._maximiseDebounceTimer = window.setTimeout(async () => {
+      this._maximiseDebounceTimer = null;
+      try {
+        const maximised = await this.getDesktopRuntime()?.WindowIsMaximised?.();
+        this.isWindowMaximised = Boolean(maximised);
+      } catch {
+        this.isWindowMaximised = false;
+      }
+    }, 120);
+  }
+
+  handleWindowMinimise() {
+    if (!this.isWindowsDesktop) {
+      return;
+    }
+    this.getDesktopRuntime()?.WindowMinimise?.();
+  }
+
+  handleWindowToggleMaximise() {
+    if (!this.isWindowsDesktop) {
+      return;
+    }
+    this.getDesktopRuntime()?.WindowToggleMaximise?.();
+    window.setTimeout(() => {
+      void this.refreshWindowMaximised();
+    }, 60);
+  }
+
+  handleWindowClose() {
+    if (!this.isWindowsDesktop) {
+      return;
+    }
+    this.getDesktopRuntime()?.Quit?.();
+  }
+
+  handleAppUpdateCheckClick() {
+    void handleManualAppUpdateCheck(this as unknown as AppViewState);
+  }
+
+  handleAppUpdateModalClose() {
+    closeAppUpdateModal(this as unknown as AppViewState);
+  }
+
+  handleAppUpdateSkipClick() {
+    void handleAppUpdateSkip(this as unknown as AppViewState);
+  }
+
+  handleAppUpdateInstallClick() {
+    void handleAppUpdateInstall(this as unknown as AppViewState);
+  }
+
+  handleAppUpdateCopyManualHintClick() {
+    void copyAppUpdateManualHint(this as unknown as AppViewState);
+  }
+
+  handleAppUpdateOpenDownloadClick() {
+    const url = this.appUpdateInfo?.downloadUrl?.trim();
+    if (!url) {
+      return;
+    }
+    void openExternalUrl(url, {
+      gatewayHost: this.settings.gatewayUrl,
+      gatewayToken: this.settings.token,
+    });
+  }
+
+  handleTopbarDoubleClick(event: MouseEvent) {
+    if (!this.isWindowsDesktop) {
+      return;
+    }
+    const target = event
+      .composedPath()
+      .find((node): node is Element => node instanceof Element);
+    if (target?.closest(".topbar__no-drag")) {
+      return;
+    }
+    this.handleWindowToggleMaximise();
+  }
+
+  private clearNativeDialogState() {
+    this.nativeDialog = null;
+    this.nativePromptInput = "";
+    this.nativeResolveConfirm = null;
+    this.nativeResolveAlert = null;
+    this.nativeResolvePrompt = null;
+  }
+
+  private getDesktopRuntime() {
+    return window.runtime ?? null;
+  }
+
+  private async initialiseDesktopWindowChrome() {
+    this.isDesktopShell = isDesktopShell();
+    if (!this.isDesktopShell) {
+      return;
+    }
+    try {
+      const platform = (await this.getDesktopRuntime()?.Environment?.())?.platform ?? "";
+      this.isWindowsDesktop = platform === "windows";
+      if (!this.isWindowsDesktop) {
+        this.isWindowMaximised = false;
+        return;
+      }
+      await this.refreshWindowMaximised();
+      if (!this.desktopWindowResizeHandler) {
+        this.desktopWindowResizeHandler = () => {
+          void this.refreshWindowMaximised();
+        };
+        window.addEventListener("resize", this.desktopWindowResizeHandler);
+      }
+    } catch {
+      this.isWindowsDesktop = false;
+      this.isWindowMaximised = false;
+    }
+  }
+
+  private teardownDesktopWindowChrome() {
+    if (this.desktopWindowResizeHandler) {
+      window.removeEventListener("resize", this.desktopWindowResizeHandler);
+      this.desktopWindowResizeHandler = null;
+    }
+  }
+
+  render() {
+    return renderApp(this as unknown as AppViewState);
+  }
+}

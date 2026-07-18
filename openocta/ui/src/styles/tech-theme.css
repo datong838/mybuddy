@@ -1,0 +1,807 @@
+/* ===========================================
+   Tech Theme — visual polish layer
+   Layout unchanged; display style & motion only
+   =========================================== */
+
+/* ── Shell & background grid ── */
+
+.shell {
+  animation: dashboard-enter var(--duration-slow) var(--ease-out);
+}
+
+.content {
+  position: relative;
+  background-color: var(--bg-content);
+}
+
+.content.content--catalog {
+  background-color: var(--bg-catalog);
+}
+
+/* 不用 transform 入场：translateY(0) 也会成为 fixed 定位的 containing block，导致弹层落在页面底部 */
+.content > *:not(.modal-overlay):not(.channel-panel-overlay) {
+  position: relative;
+  z-index: 1;
+  animation: fade-in var(--duration-slow) var(--ease-out) both;
+}
+
+.content > *:nth-child(1) { animation-delay: 0ms; }
+.content > *:nth-child(2) { animation-delay: 60ms; }
+.content > *:nth-child(3) { animation-delay: 120ms; }
+.content > *:nth-child(4) { animation-delay: 180ms; }
+.content > *:nth-child(5) { animation-delay: 240ms; }
+.content > *:nth-child(n+6) { animation-delay: 300ms; }
+
+/* ── Topbar tabs ── */
+
+.top-tab {
+  position: relative;
+  font-size: 13px;
+  letter-spacing: 0.01em;
+  transition:
+    color var(--duration-fast) var(--ease-out),
+    background var(--duration-fast) var(--ease-out);
+}
+
+.top-tab:hover {
+  color: var(--text-primary);
+}
+
+.top-tab--active {
+  color: var(--accent);
+}
+
+.top-tab--active::after {
+  width: 100%;
+  left: 0;
+  margin-left: 0;
+  height: 2px;
+  background: linear-gradient(90deg, var(--accent), var(--accent-tech));
+  border-radius: var(--radius-full);
+  box-shadow: 0 0 8px var(--accent-glow);
+}
+
+.brand-title {
+  font-family: var(--font-body);
+  font-size: 14px;
+  font-weight: 600;
+  letter-spacing: -0.03em;
+}
+
+/* ── Navigation ── */
+
+.nav {
+  border-right: 1px solid var(--border);
+  background: var(--bg);
+}
+
+.nav-label {
+  font-family: var(--font-body);
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--text-placeholder);
+}
+
+.nav-item {
+  position: relative;
+  border-radius: var(--radius-md);
+  font-size: 13px;
+  transition:
+    background var(--duration-fast) var(--ease-out),
+    color var(--duration-fast) var(--ease-out),
+    transform var(--duration-fast) var(--ease-out);
+}
+
+.nav-item::before {
+  content: "";
+  position: absolute;
+  left: 0;
+  top: 50%;
+  transform: translateY(-50%) scaleY(0);
+  width: 2px;
+  height: 16px;
+  background: linear-gradient(180deg, var(--accent), var(--accent-tech));
+  border-radius: var(--radius-full);
+  transition: transform var(--duration-fast) var(--ease-spring);
+}
+
+.nav-item:hover {
+  background: color-mix(in srgb, var(--accent) 5%, var(--bg-content));
+  transform: translateX(2px);
+}
+
+.nav-item.active {
+  background: var(--accent-subtle);
+  color: var(--accent);
+  font-weight: 500;
+}
+
+.nav-item.active::before {
+  transform: translateY(-50%) scaleY(1);
+}
+
+.nav-item.active .nav-item__icon {
+  color: var(--accent);
+}
+
+/* Session sidebar */
+.session-item {
+  border-radius: var(--radius-md);
+  margin: 0 8px;
+  transition:
+    background var(--duration-fast) var(--ease-out),
+    box-shadow var(--duration-fast) var(--ease-out);
+}
+
+.session-item:hover,
+.session-item--active {
+  background: color-mix(in srgb, var(--accent) 6%, var(--bg-content));
+  box-shadow: inset 2px 0 0 var(--accent);
+}
+
+.session-item__icon {
+  border-radius: var(--radius-sm);
+  background: color-mix(in srgb, var(--accent) 12%, transparent);
+  border: 1px solid color-mix(in srgb, var(--accent) 20%, transparent);
+}
+
+/* ── Page header ── */
+
+.page-title {
+  font-family: var(--font-body);
+  font-size: 22px;
+  font-weight: 600;
+  letter-spacing: -0.03em;
+  color: var(--text-primary);
+}
+
+.page-summary {
+  font-size: 13px;
+  line-height: 1.5;
+  letter-spacing: 0;
+}
+
+/* ── Cards ── */
+
+.card {
+  background: var(--bg-elevated);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-sm);
+  transition:
+    border-color var(--duration-normal) var(--ease-out),
+    box-shadow var(--duration-normal) var(--ease-out),
+    transform var(--duration-normal) var(--ease-out);
+}
+
+.card:hover {
+  border-color: var(--border-primary);
+  box-shadow: var(--shadow-md);
+}
+
+.card-title {
+  font-family: var(--font-body);
+  font-size: 14px;
+  font-weight: 600;
+  letter-spacing: -0.02em;
+  text-transform: none;
+  padding-left: 10px;
+  border-left: 2px solid var(--accent);
+}
+
+.card-sub {
+  font-size: 13px;
+  line-height: 1.5;
+}
+
+/* ── Stats ── */
+
+.stat-label {
+  font-family: var(--font-body);
+  font-size: 13px;
+  font-weight: 500;
+  letter-spacing: 0;
+  text-transform: none;
+  color: var(--text-secondary);
+  line-height: 1.4;
+}
+
+.stat-value {
+  font-family: var(--font-body);
+  font-size: 20px;
+  font-weight: 600;
+  letter-spacing: -0.02em;
+  line-height: 1.3;
+  font-variant-numeric: tabular-nums;
+  color: var(--text-primary);
+}
+
+.stat-value.ok {
+  color: var(--accent);
+  text-shadow: 0 0 20px var(--accent-glow);
+}
+
+/* ── Buttons ── */
+
+.btn {
+  border-radius: var(--radius-md);
+  font-size: 13px;
+  font-weight: 500;
+  letter-spacing: 0.01em;
+  transition:
+    border-color var(--duration-fast) var(--ease-out),
+    background var(--duration-fast) var(--ease-out),
+    box-shadow var(--duration-fast) var(--ease-out),
+    transform var(--duration-fast) var(--ease-spring);
+}
+
+.btn:hover:not(:disabled) {
+  transform: translateY(-1px);
+}
+
+.btn:active:not(:disabled) {
+  transform: translateY(0);
+}
+
+.btn.primary {
+  background: linear-gradient(135deg, var(--accent) 0%, color-mix(in srgb, var(--accent-tech) 60%, var(--accent)) 100%);
+  border-color: transparent;
+  box-shadow: 0 2px 8px var(--accent-glow);
+}
+
+.btn.primary:hover:not(:disabled) {
+  box-shadow: 0 4px 16px var(--accent-glow);
+}
+
+.btn.active {
+  border-color: var(--border-glow);
+  box-shadow: 0 0 0 1px var(--border-glow);
+}
+
+/* ── Inputs ── */
+
+.input > input,
+.date > input,
+.select > select,
+.textarea > textarea {
+  background: var(--bg-content);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  transition:
+    border-color var(--duration-fast) var(--ease-out),
+    box-shadow var(--duration-fast) var(--ease-out),
+    background var(--duration-fast) var(--ease-out);
+}
+
+.input > input:focus,
+.date > input:focus,
+.select > select:focus,
+.textarea > textarea:focus {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px var(--accent-subtle);
+  background: var(--bg-elevated);
+}
+
+/* ── Pills & chips ── */
+
+.pill {
+  font-family: var(--font-body);
+  font-size: 12px;
+  border-radius: var(--radius-md);
+  background: var(--bg-content);
+  border: 1px solid var(--border);
+}
+
+.chip {
+  border-radius: var(--radius-md);
+  font-family: var(--font-body);
+  font-size: 11px;
+  letter-spacing: 0.02em;
+}
+
+.chip.active {
+  border-color: var(--border-glow);
+  color: var(--accent);
+  background: var(--accent-subtle);
+  box-shadow: 0 0 0 1px var(--border-glow);
+}
+
+/* ── Status dot ── */
+
+.statusDot {
+  animation: status-blink 2s ease-in-out infinite;
+}
+
+.statusDot.ok {
+  animation: glow-pulse 2.5s ease-in-out infinite;
+}
+
+/* ── List items ── */
+
+.list-item {
+  border-radius: var(--radius-lg);
+  background: var(--bg-elevated);
+  transition:
+    border-color var(--duration-fast) var(--ease-out),
+    box-shadow var(--duration-fast) var(--ease-out),
+    transform var(--duration-fast) var(--ease-out);
+}
+
+.list-item:hover {
+  border-color: var(--border-primary);
+  box-shadow: var(--shadow-sm);
+  transform: translateY(-1px);
+}
+
+.list-item__title,
+.list-title {
+  font-weight: 600;
+  letter-spacing: -0.01em;
+}
+
+/* ── Callouts ── */
+
+.callout {
+  border-radius: var(--radius-lg);
+  border-left-width: 3px;
+  border-left-style: solid;
+}
+
+.callout.danger {
+  border-left-color: var(--danger);
+}
+
+.callout.info {
+  border-left-color: var(--info);
+}
+
+.callout.success {
+  border-left-color: var(--accent);
+}
+
+/* ── Modal ── */
+
+.modal-overlay {
+  background: color-mix(in srgb, var(--bg) 60%, transparent);
+  backdrop-filter: blur(8px) saturate(1.2);
+  -webkit-backdrop-filter: blur(8px) saturate(1.2);
+  animation: fade-in var(--duration-normal) var(--ease-out);
+}
+
+.modal-overlay .modal,
+.emp-detail-modal {
+  animation: scale-in var(--duration-normal) var(--ease-out);
+  border: 1px solid var(--border);
+  box-shadow: var(--shadow-xl);
+}
+
+/* ── Market / catalog cards ── */
+
+.market-card,
+.emp-card-wrap,
+.employee-market-card {
+  border-radius: var(--radius-lg);
+  background: var(--bg-elevated);
+  transition:
+    border-color var(--duration-normal) var(--ease-out),
+    box-shadow var(--duration-normal) var(--ease-out),
+    transform var(--duration-normal) var(--ease-out);
+}
+
+.market-card:hover,
+.emp-card-wrap:hover,
+.employee-market-card:hover {
+  transform: translateY(-2px);
+  box-shadow: var(--shadow-md);
+}
+
+.market-card.active,
+.emp-card-wrap.active,
+.employee-market-card.selected {
+  border-color: var(--border-glow);
+  box-shadow: var(--shadow-glow);
+}
+
+.emp-cat.active {
+  background: var(--accent-subtle);
+  color: var(--accent);
+}
+
+.emp-cat.active .emp-cat__count {
+  background: var(--accent);
+  color: var(--accent-foreground);
+  font-family: var(--font-body);
+  font-size: 11px;
+}
+
+.emp-section__title,
+.market-section__title,
+.emp-toolbar__title {
+  font-family: var(--font-body);
+  font-size: 14px;
+  font-weight: 600;
+  letter-spacing: -0.02em;
+}
+
+/* ── Chat ── */
+
+.chat-brain-toggle {
+  border-radius: var(--radius-md);
+  backdrop-filter: blur(8px);
+  transition:
+    border-color var(--duration-fast) var(--ease-out),
+    box-shadow var(--duration-fast) var(--ease-out),
+    background var(--duration-fast) var(--ease-out);
+}
+
+.chat-brain-toggle--active {
+  box-shadow: 0 0 12px var(--accent-glow);
+}
+
+/* ── Chat bubbles (theme-aware tech style) ── */
+
+.chat-line.user .chat-bubble {
+  border-color: color-mix(in srgb, var(--accent) 40%, var(--border));
+  background: color-mix(in srgb, var(--accent) 12%, var(--bg-elevated));
+  border-radius: var(--radius-lg) var(--radius-sm) var(--radius-lg) var(--radius-lg);
+  box-shadow: 0 1px 4px color-mix(in srgb, var(--accent) 10%, transparent);
+  transition: box-shadow var(--duration-fast) var(--ease-out);
+}
+
+.chat-line.assistant .chat-bubble {
+  border-color: var(--border-primary);
+  background: var(--bg-elevated);
+  border-radius: var(--radius-sm) var(--radius-lg) var(--radius-lg) var(--radius-lg);
+  box-shadow: var(--shadow-sm);
+}
+
+.chat-line {
+  animation: tech-slide-up var(--duration-normal) var(--ease-out) both;
+}
+
+/* Chat compose */
+.chat-compose__inner {
+  border-color: var(--border-primary);
+  background: var(--bg-elevated);
+  transition:
+    border-color var(--duration-fast) var(--ease-out),
+    box-shadow var(--duration-fast) var(--ease-out);
+}
+
+.chat-compose__inner:focus-within {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px var(--accent-subtle), 0 4px 16px color-mix(in srgb, var(--accent) 8%, transparent);
+}
+
+.chat-compose__chip {
+  font-family: var(--font-body);
+  font-size: 11px;
+  border-radius: var(--radius-md);
+  transition:
+    background var(--duration-fast) var(--ease-out),
+    border-color var(--duration-fast) var(--ease-out),
+    box-shadow var(--duration-fast) var(--ease-out);
+}
+
+.chat-compose__chip--active {
+  border-color: var(--border-glow);
+  box-shadow: 0 0 8px var(--accent-glow);
+}
+
+.chat-new-messages {
+  font-family: var(--font-body);
+  font-size: 11px;
+  border-radius: var(--radius-md);
+  backdrop-filter: blur(8px);
+  transition:
+    border-color var(--duration-fast) var(--ease-out),
+    box-shadow var(--duration-fast) var(--ease-out);
+}
+
+.chat-new-messages:hover {
+  box-shadow: 0 0 12px var(--accent-glow);
+}
+
+.chat-queue {
+  border-radius: var(--radius-lg);
+  background: var(--bg-elevated);
+  border-color: var(--border-primary);
+}
+
+.chat-queue__item {
+  border-style: solid;
+  border-color: var(--border);
+  background: var(--bg-content);
+}
+
+
+.chat-text :where(:not(pre) > code) {
+  font-family: var(--font-body);
+  font-size: 0.85em;
+  border-color: color-mix(in srgb, var(--accent) 20%, var(--border));
+  background: color-mix(in srgb, var(--accent) 5%, var(--bg-content));
+}
+
+.chat-text :where(pre) {
+  border-color: var(--border-primary);
+  background: var(--bg-elevated);
+  box-shadow: inset 0 1px 0 var(--border);
+}
+
+.chat-bubble.streaming .chat-text::after {
+  color: var(--accent-tech);
+  text-shadow: 0 0 6px var(--accent-glow);
+}
+
+.chat-sidebar {
+  border-radius: var(--radius-lg);
+  border-color: var(--border-primary);
+  box-shadow: var(--shadow-md);
+}
+
+/* ── Code blocks ── */
+
+.code-block {
+  font-family: var(--font-body);
+  border-radius: var(--radius-lg);
+  background: var(--bg-elevated);
+  border-color: var(--border-primary);
+  box-shadow: inset 0 1px 0 var(--border);
+}
+
+/* ── Agent tabs ── */
+
+.agent-tab {
+  font-family: var(--font-body);
+  font-size: 11px;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  border-radius: var(--radius-md);
+}
+
+.agent-tab.active {
+  background: linear-gradient(135deg, var(--accent), color-mix(in srgb, var(--accent-tech) 50%, var(--accent)));
+  box-shadow: 0 2px 8px var(--accent-glow);
+}
+
+.agent-pill {
+  font-family: var(--font-body);
+  font-size: 10px;
+}
+
+/* ── Cron ── */
+
+.cron-job-status-pill {
+  font-family: var(--font-body);
+  font-size: 10px;
+  letter-spacing: 0.04em;
+}
+
+.cron-schedule-tabs {
+  border: 1px solid var(--border);
+  background: var(--bg-content);
+  border-radius: var(--radius-md);
+}
+
+.cron-schedule-tabs__tab--active {
+  background: var(--bg-elevated);
+  box-shadow: var(--shadow-sm);
+}
+
+/* ── Usage / charts ── */
+
+.usage-refresh-indicator {
+  font-family: var(--font-body);
+  border-radius: var(--radius-md);
+  border: 1px solid color-mix(in srgb, var(--accent) 30%, transparent);
+}
+
+.filter-chip {
+  font-family: var(--font-body);
+  border-radius: var(--radius-md);
+}
+
+/* ── Badge ── */
+
+.badge {
+  font-family: var(--font-body);
+  font-size: 11px;
+  letter-spacing: 0.02em;
+  border-radius: var(--radius-md);
+}
+
+.nav-badge--beta {
+  font-family: var(--font-body);
+  font-size: 9px;
+  letter-spacing: 0.08em;
+}
+
+/* ── Approval banner ── */
+
+.approval-banner {
+  border-bottom-color: color-mix(in srgb, var(--accent) 35%, var(--border));
+  background: linear-gradient(
+    90deg,
+    color-mix(in srgb, var(--accent) 10%, var(--bg)) 0%,
+    var(--bg) 100%
+  );
+  font-family: var(--font-body);
+  font-size: 12px;
+}
+
+/* ── Toggle buttons (usage chart etc.) ── */
+
+.toggle-btn {
+  transition:
+    background var(--duration-fast) var(--ease-out),
+    color var(--duration-fast) var(--ease-out),
+    box-shadow var(--duration-fast) var(--ease-out);
+}
+
+.toggle-btn.active {
+  box-shadow: 0 0 0 1px var(--border-glow);
+}
+
+/* ── Window controls (desktop) ── */
+
+.window-control {
+  transition:
+    background var(--duration-fast) var(--ease-out),
+    color var(--duration-fast) var(--ease-out);
+}
+
+/* ── Loading skeleton shimmer ── */
+
+.tech-shimmer {
+  background: linear-gradient(
+    90deg,
+    var(--bg-content) 25%,
+    color-mix(in srgb, var(--accent) 8%, var(--bg-content)) 50%,
+    var(--bg-content) 75%
+  );
+  background-size: 200% 100%;
+  animation: shimmer 1.8s ease-in-out infinite;
+}
+
+/* ── Theme toggle (topbar) ── */
+
+.theme-toggle {
+  flex-shrink: 0;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 32px;
+  padding: 0 10px;
+  margin-left: auto;
+  margin-right: 8px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  background: var(--bg-content);
+  color: var(--text-secondary);
+  cursor: pointer;
+  font: inherit;
+  transition:
+    border-color var(--duration-fast) var(--ease-out),
+    background var(--duration-fast) var(--ease-out),
+    color var(--duration-fast) var(--ease-out),
+    box-shadow var(--duration-fast) var(--ease-out);
+}
+
+.theme-toggle:hover {
+  border-color: var(--border-primary);
+  color: var(--text-primary);
+  background: var(--bg-elevated);
+}
+
+.theme-toggle__icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 16px;
+  height: 16px;
+}
+
+.theme-toggle__icon svg {
+  width: 16px;
+  height: 16px;
+  stroke: currentColor;
+  fill: none;
+  stroke-width: 1.75px;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.theme-toggle__label {
+  font-family: var(--font-body);
+  font-size: 11px;
+  letter-spacing: 0.02em;
+  white-space: nowrap;
+}
+
+@media (max-width: 900px) {
+  .theme-toggle__label {
+    display: none;
+  }
+
+  .theme-toggle {
+    padding: 0 8px;
+    margin-right: 4px;
+  }
+}
+
+/* ── Theme-aware surfaces (smooth switch) ── */
+
+.shell,
+.topbar,
+.nav,
+.content,
+.card,
+.list-item,
+.chat-compose__inner,
+.chat-sidebar,
+.modal-overlay .modal,
+.market-card,
+.emp-card-wrap {
+  transition:
+    background-color var(--duration-normal) var(--ease-out),
+    border-color var(--duration-normal) var(--ease-out),
+    box-shadow var(--duration-normal) var(--ease-out),
+    color var(--duration-normal) var(--ease-out);
+}
+
+/* Light: softer glow; Dark: stronger accent glow */
+:root[data-theme="light"] .stat-value.ok {
+  text-shadow: none;
+}
+
+:root[data-theme="light"] .top-tab--active::after {
+  box-shadow: none;
+}
+
+:root[data-theme="light"] .btn.primary {
+  color: var(--accent-foreground);
+}
+
+:root[data-theme="dark"] .top-tab--active {
+  color: var(--accent);
+}
+
+:root[data-theme="dark"] .top-tab--active::after {
+  background: linear-gradient(90deg, var(--accent), var(--accent-tech));
+}
+
+/* Chat page */
+.content--chat {
+  background-color: var(--bg-content);
+}
+
+.shell--chat .content--chat > * {
+  position: relative;
+  z-index: 1;
+}
+
+/* Session sidebar in chat */
+.nav--massage {
+  background: var(--bg);
+  border-right: 1px solid var(--border);
+}
+
+/* Compose area */
+.chat-compose {
+  background: linear-gradient(to bottom, transparent, var(--bg-content) 28%);
+}
+
+.chat-compose__inner {
+  background: var(--bg-elevated);
+}
+
+/* Focus ring uses elevated bg in both themes */
+.btn:focus-visible,
+.nav-item:focus-visible,
+.top-tab:focus-visible,
+.theme-toggle:focus-visible {
+  outline: none;
+  box-shadow: var(--focus-ring);
+}

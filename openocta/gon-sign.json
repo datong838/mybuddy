@@ -1,0 +1,13 @@
+{
+  "source": ["./src/build/bin/OpenOcta.app"],
+  "bundle_id": "com.databuff.openocta",
+  "apple_id": {
+    "username": "@env:AC_USERNAME",
+    "password": "@env:AC_PASSWORD",
+    "provider": "@env:AC_TEAM_ID"
+  },
+  "sign": {
+    "application_identity": "Developer ID Application: Hangzhou Chengyun Digital Technology Co., Ltd. (Z7AL65SH72)",
+    "entitlements_file": "./src/build/darwin/entitlements.plist"
+  }
+}

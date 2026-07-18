@@ -1,0 +1,21 @@
+{
+  "$schema": "https://wails.io/schemas/config.v2.json",
+  "name": "OpenOcta",
+  "outputfilename": "OpenOcta",
+  "icon": "build/appicon.ico",
+  "info": {
+    "companyName": "OpenOcta",
+    "productName": "OpenOcta",
+    "productVersion": "0.2.0",
+    "copyright": "OpenOcta - GPLv3. 本仓库遵循 GPLv3 开源限制。",
+    "comments": "OpenOcta Desktop - Built with Wails"
+  },
+  "frontend:dir": "wails-bootstrap",
+  "assetdir": "wails-bootstrap",
+  "build:dir": "build",
+  "preBuildHooks": {
+    "darwin/*": "echo skip",
+    "linux/*": "echo skip",
+    "windows/*": "cmd.exe /c echo skip"
+  }
+}

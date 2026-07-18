@@ -1,0 +1,335 @@
+请求内容：
+curl --request POST \
+  --url http://127.0.0.1:18902/v1/chat/completions \
+  --header 'Accept: */*' \
+  --data '{
+  "messages": [
+    {
+      "role": "system",
+      "content": "你是运行在 OpenOcta 中的个人助手。\n\n## 工具\n工具按策略过滤后可用，工具名区分大小写，请严格按所列名称调用。\n\n## Bash / execute 命令执行\n调用 **execute** 工具时，`command` 参数必须是**单行、可直接执行**的完整命令：\n- **禁止**在 command 中使用换行符（`\n`）；多步操作用 `;` 或 `&&` 写在同一行\n- **禁止**在 command 中嵌入超长脚本（建议 inline 命令 < 800 字符）；过长会导致 tool arguments JSON 被模型截断（finish_reason=length）而无法执行\n- 长脚本流程：先用 **write_file** 写入 `.ps1`/`.sh`，再 `execute(command=\"powershell -NoProfile -ExecutionPolicy Bypass -File \\\"<绝对路径>\\\"\")`\n- Windows 进程/桌面类任务优先用 **desktop-control** skill 自带脚本（如 `process-manager.ps1`），不要手写同等的大段 inline PowerShell\n- 含空格的路径用双引号包裹；避免在 `powershell -Command \"...\"` 里塞整段脚本（`$` 变量易被外层 shell 吃掉且 JSON 极易超长）\n- 示例：`execute(command=\"npm test && npm run build\")`\n单次 bash 默认硬超时约 **10 秒**（可由配置上调，但请假设交互场景时间很紧）。\n生成命令时**避免全量扫描**，优先用带范围、带过滤的快速命令：\n- 监听端口：用 `lsof -iTCP -sTCP:LISTEN -P -n` 或 `ss -lntp`，**禁止** `lsof -i -P` 这类无过滤全扫描\n- 查文件：限定目录与深度，如 `find ./src -maxdepth 3 -name '\''*.go'\''`，**禁止**从 `/` 或无边界递归\n- 进程/连接：加过滤（`grep`、`-p`、具体 PID/端口），避免 `ps aux` + 管道全表扫描当首选\n- 网络信息：分别用 `ifconfig`/`ip addr`、`netstat -rn`/`ip route` 等轻量命令，不要一条命令扫遍全系统\n若任务确实需要更长时间，应拆成多步、缩小范围，或先向用户说明；不要依赖默认超时撑过长任务。\n\n## 安全\n你没有独立目标：不追求自保、复制、获取资源或权力。\n优先考虑安全与人工监督；服从停止/暂停/审计请求，不得绕过安全措施。\n\n## 工作区\n你的工作目录为：/Users/zhanbei/.openocta/workspace\n除非另有明确说明，请将此目录视为文件操作的唯一全局工作区。\n\n## 知识库（Vault）\n\n你的 Obsidian 兼容知识库目录：/Users/zhanbei/.openocta/workspace/vault\n\n**检索规则（必须遵守）**：\n- 当用户询问可能记录在知识库中的内容（文档、Runbook、架构、流程、项目约定、历史决策、配置说明等）时，**必须先调用 memory_search** 检索 Vault，再基于检索结果回答。\n- 不要仅凭对话上下文、猜测或训练数据回答知识库相关问题。\n- 若 memory_search 无命中，明确说明知识库中未找到相关内容，并建议用户补充笔记或在知识库页点击「同步索引」。\n\n工具：memory_search（Vault 笔记）；session_search（当前会话历史）。\n\n══════════════════════════════════════════════\nUSER PROFILE (who the user is) [4% — 66/1375 chars]\n══════════════════════════════════════════════\n用户名叫芬达。\n§\n用户不喜欢直接执行 bash 命令。执行 df 命令前必须先向用户确认，等用户在聊天输入框回复「确认」后再执行。\n# '\''task'\'' (subagent spawner)\n\nYou have access to a '\''task'\'' tool to launch short-lived subagents that handle isolated tasks. These agents are ephemeral — they live only for the duration of the task and return a single result.\nYou should proactively use the '\''task'\'' tool with specialized agents when the task at hand matches the agent'\''s description.\n\nWhen to use the task tool:\n- When a task is complex and multi-step, and can be fully delegated in isolation\n- When a task is independent of other tasks and can run in parallel\n- When a task requires focused reasoning or heavy token/context usage that would bloat the orchestrator thread\n- When sandboxing improves reliability (e.g. code execution, structured searches, data formatting)\n- When you only care about the output of the subagent, and not the intermediate steps (ex. performing a lot of research and then returned a synthesized report, performing a series of computations or lookups to achieve a concise, relevant answer.)\n\nSubagent lifecycle:\n1. **Spawn** → Provide clear role, instructions, and expected output\n2. **Run** → The subagent completes the task autonomously\n3. **Return** → The subagent provides a single structured result\n4. **Reconcile** → Incorporate or synthesize the result into the main thread\n\nWhen NOT to use the task tool:\n- If you need to see the intermediate reasoning or steps after the subagent has completed (the task tool hides them)\n- If the task is trivial (a few tool calls or simple lookup)\n- If delegating does not reduce token usage, complexity, or context switching\n- If splitting would add latency without benefit\n\n## Important Task Tool Usage Notes to Remember\n- Whenever possible, parallelize the work that you do. This is true for both tool_calls, and for tasks. Whenever you have independent steps to complete - make tool_calls, or kick off tasks (subagents) in parallel to accomplish them faster. This saves time for the user, which is incredibly important.\n- Remember to use the '\''task'\'' tool to silo independent tasks within a multi-part objective.\n- You should use the '\''task'\'' tool whenever you have a complex task that will take multiple steps, and is independent from other tasks that the agent needs to complete. These agents are highly competent and efficient.\n\n\n# Skills System\n\n**How to Use Skills (Progressive Disclosure):**\n\nSkills follow a **progressive disclosure** pattern - you see their name and description above, but only read full instructions when needed:\n\n1. **Recognize when a skill applies**: Check if the user'\''s task matches a skill'\''s description\n2. **Read the skill'\''s full instructions**: Use the '\''skill'\'' tool to load skill\n3. **Follow the skill'\''s instructions**: tool result contains step-by-step workflows, best practices, and examples\n4. **Access supporting files**: Skills may include helper scripts, configs, or reference docs - use absolute paths\n\n**When to Use Skills:**\n- User'\''s request matches a skill'\''s domain (e.g., \"research X\" -> web-research skill)\n- You need specialized knowledge or structured workflows\n- A skill provides proven patterns for complex tasks\n\n**Executing Skill Scripts:**\nSkills may contain Python scripts or other executable files. Always use absolute paths.\n\n**Example Workflow:**\n\nUser: \"Can you research the latest developments in quantum computing?\"\n\n1. Check available skills -> See \"web-research\" skill\n2. Call '\''skill'\'' tool to read the full skill instructions\n3. Follow the skill'\''s research workflow (search -> organize -> synthesize)\n4. Use any helper scripts with absolute paths\n\nRemember: Skills make you more capable and consistent. When in doubt, check if a skill exists for the task!\n\n## execute tool (command parameter)\n- The \"command\" argument MUST be a single line with no newline characters.\n- Chain multiple steps with \";\" or \"&&\" on the same line (e.g. \"mkdir dir && cd dir && npm test\").\n- Keep inline command short (aim for < 800 characters). If JSON arguments may exceed model output limits, do NOT embed large scripts in command.\n- For long PowerShell/Bash: use write_file to save a .ps1/.sh script, then execute with powershell -NoProfile -ExecutionPolicy Bypass -File \"<absolute-path>\" (or bash \"<path>\").\n- On Windows process/desktop tasks, prefer the desktop-control skill scripts (e.g. process-manager.ps1) instead of rewriting inline PowerShell.\n- On Windows, avoid mega inline powershell -Command \"...\" ; cmd.exe and JSON escaping eat $ variables easily. Prefer -File scripts.\n- Do not split one logical command across multiple lines in the JSON argument.\n- If tool result says arguments JSON was truncated (finish_reason=length), shorten the approach — never retry with a longer inline command.\n"
+    },
+    {
+      "role": "user",
+      "content": "This session is being continued from a previous conversation that ran out of context. The summary below covers the earlier portion of the conversation.\n\n<think>\nOkay, let me start by understanding the conversation. The user has been engaging in a discussion, and I need to summarize it according to the specified structure. The user'\''s main request is clear: to summarize the conversation in a specific format.\n\nFirst, I need to chronologically analyze each message. The user'\''s explicit requests and intents are evident in the conversation. For example, there'\''s a mention of browser configurations, local agent settings, and memory management. These are all key technical concepts.\n\nNext, I should list the files and code sections. The conversation includes references to browser configurations, local agent settings, and memory management. I need to note the specific files and code snippets provided. For instance, there might be a code snippet related to configuration files or agent settings.\n\nErrors and fixes section should include any mistakes made and how they were resolved. If there were issues like incorrect file paths or syntax errors, I need to explain those. It'\''s important to mention user feedback where necessary.\n\nProblem solving should cover the solutions applied. For example, if there were issues with the agent configuration, the solution would be to adjust the configuration file accordingly.\n\nAll user messages need to be included in the <all_user_messages>\n    - <available-deferred-tools>\nbrowser\ngateway_config\nlocal_agent\nmemory_search\n</available-deferred-tools>\n    - 你好\n</all_user_messages>\n\n7. Pending Tasks:\n- \"Review and fix any edge cases in memory pool configuration.\"  \n\n8. Current Work:\n- \"Summary of current work on configuration files and memory management.\"  \n\n</summary>\n\nIf you need specific details from before compaction (like exact code snippets, error messages, or content you generated), read the full transcript at: /Users/zhanbei/.openocta/agents/transcripts/conversation.jsonl\n\nContinue the conversation from where it left off without asking the user any further questions. Resume directly — do not acknowledge the summary, do not recap what was happening, do not preface with \"I'\''ll continue\" or similar. Pick up the last task as if the break never happened.",
+      "metadata": {
+        "_eino_summarization_content_type": "\"summary\""
+      }
+    }
+  ],
+  "tools": [
+    {
+      "type": "function",
+      "function": {
+        "name": "ls",
+        "description": "Lists all files in the filesystem, filtering by directory.\n\nUsage:\n- The path parameter must be an absolute path, not a relative path\n- The ls tool will return a list of all files in the specified directory.\n- This is very useful for exploring the file system and finding the right file to read or edit.\n- You should almost ALWAYS use this tool before using the read_file or edit_file tools.",
+        "parameters": {
+          "properties": {
+            "path": {
+              "type": "string"
+            }
+          },
+          "additionalProperties": false,
+          "required": [
+            "path"
+          ],
+          "type": "object"
+        }
+      }
+    },
+    {
+      "type": "function",
+      "function": {
+        "name": "read_file",
+        "description": "Reads a file from the filesystem. You can access any file directly by using this tool.\nAssume this tool is able to read all files on the machine. If the User provides a path to a file assume that path is valid. It is okay to read a file that does not exist; an error will be returned.\n\nUsage:\n- The file_path parameter must be an absolute path, not a relative path\n- By default, it reads up to 2000 lines starting from the beginning of the file\n- **IMPORTANT for large files and codebase exploration**: Use pagination with offset and limit parameters to avoid context overflow\n\t- First scan: read_file(path, limit=100) to see file structure\n\t- Read more sections: read_file(path, offset=100, limit=200) for next 200 lines\n\t- Only omit limit (read full file) when necessary for editing\n- Specify offset and limit: read_file(path, offset=0, limit=100) reads first 100 lines\n- Results are returned using cat -n format, with line numbers starting at 1\n- You have the capability to call multiple tools in a single response. It is always better to speculatively read multiple files as a batch that are potentially useful.\n- If you read a file that exists but has empty contents you will receive a system reminder warning in place of file contents.\n- You should ALWAYS make sure a file has been read before editing it.",
+        "parameters": {
+          "properties": {
+            "file_path": {
+              "description": "The path to the file to read",
+              "type": "string"
+            },
+            "offset": {
+              "description": "The line number to start reading from. Only provide if the file is too large to read at once",
+              "type": "integer"
+            },
+            "limit": {
+              "description": "The number of lines to read. Only provide if the file is too large to read at once.",
+              "type": "integer"
+            }
+          },
+          "additionalProperties": false,
+          "required": [
+            "file_path",
+            "limit",
+            "offset"
+          ],
+          "type": "object"
+        }
+      }
+    },
+    {
+      "type": "function",
+      "function": {
+        "name": "write_file",
+        "description": "Writes a file to the local filesystem.\n\nUsage:\n- This tool will overwrite the existing file if there is one at the provided path.\n- If this is an existing file, you MUST use the Read tool first to read the file'\''s contents. This tool will fail if you did not read the file first.\n- ALWAYS prefer editing existing files in the codebase. NEVER write new files unless explicitly required.\n- NEVER proactively create documentation files (*.md) or README files. Only create documentation files if explicitly requested by the User.\n- Only use emojis if the user explicitly requests it. Avoid writing emojis to files unless asked.",
+        "parameters": {
+          "properties": {
+            "file_path": {
+              "description": "The path to the file to write",
+              "type": "string"
+            },
+            "content": {
+              "description": "The content to write to the file",
+              "type": "string"
+            }
+          },
+          "additionalProperties": false,
+          "required": [
+            "content",
+            "file_path"
+          ],
+          "type": "object"
+        }
+      }
+    },
+    {
+      "type": "function",
+      "function": {
+        "name": "edit_file",
+        "description": "Performs exact string replacements in files.\n\nUsage:\n- You must use your '\''read_file'\'' tool at least once in the conversation before editing. This tool will error if you attempt an edit without reading the file.\n- When editing text from Read tool output, ensure you preserve the exact indentation (tabs/spaces) as it appears AFTER the line number prefix. The line number prefix format is: spaces + line number + tab. Everything after that tab is the actual file content to match. Never include any part of the line number prefix in the old_string or new_string.\n- ALWAYS prefer editing existing files. NEVER write new files unless explicitly required.\n- Only use emojis if the user explicitly requests it. Avoid adding emojis to files unless asked.\n- The edit will FAIL if '\''old_string'\'' is not unique in the file. Either provide a larger string with more surrounding context to make it unique or use '\''replace_all'\'' to change every instance of '\''old_string'\''.\n- Use '\''replace_all'\'' for replacing and renaming strings across the file. This parameter is useful if you want to rename a variable for instance.",
+        "parameters": {
+          "properties": {
+            "file_path": {
+              "description": "The path to the file to modify",
+              "type": "string"
+            },
+            "old_string": {
+              "description": "The text to replace",
+              "type": "string"
+            },
+            "new_string": {
+              "description": "The text to replace it with (must be different from old_string)",
+              "type": "string"
+            },
+            "replace_all": {
+              "description": "Replace all occurrences of old_string (default false)",
+              "default": false,
+              "type": "boolean"
+            }
+          },
+          "additionalProperties": false,
+          "required": [
+            "file_path",
+            "new_string",
+            "old_string",
+            "replace_all"
+          ],
+          "type": "object"
+        }
+      }
+    },
+    {
+      "type": "function",
+      "function": {
+        "name": "glob",
+        "description": "Fast file pattern matching tool that works with any codebase size\n- Supports glob patterns like \"**/*.js\" or \"src/**/*.ts\"\n- Returns matching file paths sorted by modification time\n- Use this tool when you need to find files by name patterns\n- You can call multiple tools in a single response. It is always better to speculatively perform multiple searches in parallel if they are potentially useful.\n\nExamples:\n- '\''**/*.py'\'' - Find all Python files\n- '\''*.txt'\'' - Find all text files in root\n- '\''/subdir/**/*.md'\'' - Find all markdown files under /subdir",
+        "parameters": {
+          "properties": {
+            "pattern": {
+              "description": "The glob pattern to match files against",
+              "type": "string"
+            },
+            "path": {
+              "description": "The directory to search in. If not specified, the current working directory will be used. IMPORTANT: Omit this field to use the default directory. DO NOT enter '\''undefined'\'' or '\''null'\'' - simply omit it for the default behavior. Must be a valid directory path if provided.",
+              "type": "string"
+            }
+          },
+          "additionalProperties": false,
+          "required": [
+            "path",
+            "pattern"
+          ],
+          "type": "object"
+        }
+      }
+    },
+    {
+      "type": "function",
+      "function": {
+        "name": "grep",
+        "description": "\nA powerful search tool built on ripgrep\n\n  Usage:\n  - ALWAYS use Grep for search tasks. NEVER invoke '\''grep'\'' or '\''rg'\'' as a Bash command. The Grep tool has been optimized for correct permissions and access.\n  - Supports full regex syntax (e.g., \"log.*Error\", \"function\\s+\\w+\")\n  - Filter files with glob parameter (e.g., \"*.js\", \"**/*.tsx\") or type parameter (e.g., \"js\", \"py\", \"rust\")\n  - Output modes: \"content\" shows matching lines, \"files_with_matches\" shows only file paths (default), \"count\" shows match counts\n  - Use Task tool for open-ended searches requiring multiple rounds\n  - Pattern syntax: Uses ripgrep (not grep) - literal braces need escaping (use '\''interface\\{\\}'\'' to find '\''interface{}'\'' in Go code)\n  - Multiline matching: By default patterns match within single lines only. For cross-line patterns like '\''struct \\{[\\s\\S]*?field'\'', use '\''multiline: true'\''",
+        "parameters": {
+          "properties": {
+            "pattern": {
+              "description": "The regular expression pattern to search for in file contents",
+              "type": "string"
+            },
+            "path": {
+              "description": "File or directory to search in (rg PATH). Defaults to current working directory.",
+              "type": "string"
+            },
+            "glob": {
+              "description": "Glob pattern to filter files (e.g. '\''*.js'\'', '\''*.{ts,tsx}'\'') - maps to rg --glob",
+              "type": "string"
+            },
+            "output_mode": {
+              "enum": [
+                "content",
+                "files_with_matches",
+                "count"
+              ],
+              "description": "Output mode: '\''content'\'' shows matching lines (supports -A/-B/-C context, -n line numbers, head_limit), '\''files_with_matches'\'' shows file paths (supports head_limit), '\''count'\'' shows match counts (supports head_limit). Defaults to '\''files_with_matches'\''.",
+              "type": "string"
+            },
+            "-C": {
+              "description": "Number of lines to show before and after each match (rg -C). Requires output_mode: '\''content'\'', ignored otherwise.",
+              "type": "integer"
+            },
+            "-B": {
+              "description": "Number of lines to show before each match (rg -B). Requires output_mode: '\''content'\'', ignored otherwise.",
+              "type": "integer"
+            },
+            "-A": {
+              "description": "Number of lines to show after each match (rg -A). Requires output_mode: '\''content'\'', ignored otherwise.",
+              "type": "integer"
+            },
+            "-n": {
+              "description": "Show line numbers in output (rg -n). Requires output_mode: '\''content'\'', ignored otherwise. Defaults to true.",
+              "type": "boolean"
+            },
+            "-i": {
+              "description": "Case insensitive search (rg -i)",
+              "type": "boolean"
+            },
+            "type": {
+              "description": "File type to search (rg --type). Common types: js, py, rust, go, java, etc. More efficient than include for standard file types.",
+              "type": "string"
+            },
+            "head_limit": {
+              "description": "Limit output to first N lines/entries, equivalent to '\''| head -N'\''. Works across all output modes: content (limits output lines), files_with_matches (limits file paths), count (limits count entries). Defaults to 0 (unlimited).",
+              "type": "integer"
+            },
+            "offset": {
+              "description": "Skip first N lines/entries before applying head_limit, equivalent to '\''| tail -n +N | head -N'\''. Works across all output modes. Defaults to 0.",
+              "type": "integer"
+            },
+            "multiline": {
+              "description": "Enable multiline mode where . matches newlines and patterns can span lines (rg -U --multiline-dotall). Default: false.",
+              "type": "boolean"
+            }
+          },
+          "additionalProperties": false,
+          "required": [
+            "pattern"
+          ],
+          "type": "object"
+        }
+      }
+    },
+    {
+      "type": "function",
+      "function": {
+        "name": "execute",
+        "description": "\nExecutes a given command in the sandbox environment with proper handling and security measures.\n\nBefore executing the command, please follow these steps:\n\n1. Directory Verification:\n- If the command will create new directories or files, first use the ls tool to verify the parent directory exists and is the correct location\n- For example, before running \"mkdir foo/bar\", first use ls to check that \"foo\" exists and is the intended parent directory\n\n2. Command Execution:\n- Always quote file paths that contain spaces with double quotes (e.g., cd \"path with spaces/file.txt\")\n- Examples of proper quoting:\n- cd \"/Users/name/My Documents\" (correct)\n- cd /Users/name/My Documents (incorrect - will fail)\n- python \"/path/with spaces/script.py\" (correct)\n- python /path/with spaces/script.py (incorrect - will fail)\n- After ensuring proper quoting, execute the command\n- Capture the output of the command\n\nUsage notes:\n- The command parameter is required\n- Commands run in an isolated sandbox environment\n- Returns combined stdout/stderr output with exit code\n- If the output is very large, it may be truncated\n- VERY IMPORTANT: You MUST avoid using search commands like find and grep. Instead use the grep, glob tools to search. You MUST avoid read tools like cat, head, tail, and use read_file to read files.\n- When issuing multiple commands, use the '\'';'\'' or '\''&&'\'' operator to separate them. DO NOT use newlines (newlines are ok in quoted strings)\n- Use '\''&&'\'' when commands depend on each other (e.g., \"mkdir dir && cd dir\")\n- Use '\'';'\'' only when you need to run commands sequentially but don'\''t care if earlier commands fail\n- Try to maintain your current working directory throughout the session by using absolute paths and avoiding usage of cd\n\nExamples:\nGood examples:\n- execute(command=\"pytest /foo/bar/tests\")\n- execute(command=\"python /path/to/script.py\")\n- execute(command=\"npm install && npm test\")\n\nBad examples (avoid these):\n- execute(command=\"cd /foo/bar && pytest tests\")  # Use absolute path instead\n- execute(command=\"cat file.txt\")  # Use read_file tool instead\n- execute(command=\"find . -name '\''*.py'\''\")  # Use glob tool instead\n- execute(command=\"grep -r '\''pattern'\'' .\")  # Use grep tool instead\n",
+        "parameters": {
+          "properties": {
+            "command": {
+              "type": "string"
+            }
+          },
+          "additionalProperties": false,
+          "required": [
+            "command"
+          ],
+          "type": "object"
+        }
+      }
+    },
+    {
+      "type": "function",
+      "function": {
+        "name": "task",
+        "description": "Launch a new agent to handle complex, multi-step tasks autonomously. \n\nThe Task tool launches specialized agents (subprocesses) that autonomously handle complex tasks. Each agent type has specific capabilities and tools available to it.\n\nAvailable agent types and the tools they have access to:\n- general-purpose: general-purpose agent for researching complex questions, searching for code, and executing multi-step tasks. When you are searching for a keyword or file and are not confident that you will find the right match in the first few tries use this agent to perform the search for you. (Tools: *)\n\n\nWhen using the Task tool, you must specify a subagent_type parameter to select which agent type to use.\n\nWhen NOT to use the Task tool:\n- If you want to read a specific file path, use the Read or Glob tool instead of the Task tool, to find the match more quickly\n- If you are searching for a specific class definition like \"class Foo\", use the Glob tool instead, to find the match more quickly\n- If you are searching for code within a specific file or set of 2-3 files, use the Read tool instead of the Task tool, to find the match more quickly\n- Other tasks that are not related to the agent descriptions above\n\n\nUsage notes:\n- Launch multiple agents concurrently whenever possible, to maximize performance; to do that, use a single message with multiple tool uses\n- When the agent is done, it will return a single message back to you. The result returned by the agent is not visible to the user. To show the user the result, you should send a text message back to the user with a concise summary of the result.\n- Provide clear, detailed prompts so the agent can work autonomously and return exactly the information you need.\n- The agent'\''s outputs should generally be trusted\n- Clearly tell the agent whether you expect it to write code or just to do research (search, file reads, web fetches, etc.), since it is not aware of the user'\''s intent\n- If the agent description mentions that it should be used proactively, then you should try your best to use it without the user having to ask for it first. Use your judgement.\n- If the user specifies that they want you to run agents \"in parallel\", you MUST send a single message with multiple Task tool use content blocks. For example, if you need to launch both a code-reviewer agent and a test-runner agent in parallel, send a single message with both tool calls.\n\nExample usage:\n\n<example_agent_descriptions>\n\"code-reviewer\": use this agent after you are done writing a significant piece of code\n\"greeting-responder\": use this agent when to respond to user greetings with a friendly joke\n</example_agent_description>\n\n<example>\nuser: \"Please write a function that checks if a number is prime\"\nassistant: Sure let me write a function that checks if a number is prime\nassistant: First let me use the Write tool to write a function that checks if a number is prime\nassistant: I'\''m going to use the Write tool to write the following code:\n<code>\nfunction isPrime(n) {\n  if (n <= 1) return false\n  for (let i = 2; i * i <= n; i++) {\n    if (n %!i(MISSING) === 0) return false\n  }\n  return true\n}\n</code>\n<commentary>\nSince a significant piece of code was written and the task was completed, now use the code-reviewer agent to review the code\n</commentary>\nassistant: Now let me use the code-reviewer agent to review the code\nassistant: Uses the Task tool to launch the code-reviewer agent \n</example>\n\n<example>\nuser: \"Hello\"\n<commentary>\nSince the user is greeting, use the greeting-responder agent to respond with a friendly joke\n</commentary>\nassistant: \"I'\''m going to use the Task tool to launch the greeting-responder agent\"\n</example>\n",
+        "parameters": {
+          "properties": {
+            "description": {
+              "type": "string"
+            },
+            "subagent_type": {
+              "type": "string"
+            }
+          },
+          "type": "object"
+        }
+      }
+    },
+    {
+      "type": "function",
+      "function": {
+        "name": "tool_search",
+        "description": "Search for or select deferred tools to make them available for use.\n\nMANDATORY PREREQUISITE - THIS IS A HARD REQUIREMENT\n\nYou MUST use this tool to load deferred tools BEFORE calling them directly.\n\nThis is a BLOCKING REQUIREMENT - deferred tools are NOT available until you load them using this tool. Look for <available-deferred-tools> messages in the conversation for the list of tools you can discover. Both query modes (keyword search and direct selection) load the returned tools — once a tool appears in the results, it is immediately available to call.\n\nWhy this is non-negotiable:\n- Deferred tools are not loaded until discovered via this tool\n- Calling a deferred tool without first loading it will fail\nQuery modes:\n\n1. Keyword search - Use keywords when you'\''re unsure which tool to use or need to discover multiple tools at once:\n  - \"list directory\" - find tools for listing directories\n  - \"notebook jupyter\" - find notebook editing tools\n  - \"slack message\" - find slack messaging tools\n  - Returns up to 5 matching tools ranked by relevance\n  - All returned tools are immediately available to call — no further selection step needed\n2. Direct selection - Use select:<tool_name> when you know the exact tool name:\n  - \"select:mcp__slack__read_channel\"\n  - \"select:NotebookEdit\"\n  - \"select:Read,Edit,Grep\" - load multiple tools at once with comma separation\n  - Returns the named tool(s) if they exist\nIMPORTANT: Both modes load tools equally. Do NOT follow up a keyword search with select: calls for tools already returned — they are already loaded.\n\n3. Required keyword - Prefix with + to require a match:\n  - \"+linear create issue\" - only tools from \"linear\", ranked by \"create\"/\"issue\"\n  - \"+slack send\" - only \"slack\" tools, ranked by \"send\"\n  - Useful when you know the service name but not the exact tool\nCORRECT Usage Patterns:\n\n<example>\nUser: I need to work with slack somehow\nAssistant: Let me search for slack tools.\n[Calls tool_search with query: \"slack\"]\nAssistant: Found several options including mcp__slack__read_channel.\n[Calls mcp__slack__read_channel directly — it was loaded by the keyword search]\n</example>\n\n<example>\nUser: Edit the Jupyter notebook\nAssistant: Let me load the notebook editing tool.\n[Calls tool_search with query: \"select:NotebookEdit\"]\n[Calls NotebookEdit]\n</example>\n\n<example>\nUser: List files in the src directory\nAssistant: I can see mcp__filesystem__list_directory in the available tools. Let me select it.\n[Calls tool_search with query: \"select:mcp__filesystem__list_directory\"]\n[Calls the tool]\n</example>\n\nINCORRECT Usage Patterns - NEVER DO THESE:\n\n<bad-example>\nUser: Read my slack messages\nAssistant: [Directly calls mcp__slack__read_channel without loading it first]\nWRONG - You must load the tool FIRST using this tool\n</bad-example>\n\n<bad-example>\nAssistant: [Calls tool_search with query: \"slack\", gets back mcp__slack__read_channel]\nAssistant: [Calls tool_search with query: \"select:mcp__slack__read_channel\"]\nWRONG - The keyword search already loaded the tool. The select call is redundant.\n</bad-example>",
+        "parameters": {
+          "properties": {
+            "max_results": {
+              "description": "Maximum number of results to return (default: 5)",
+              "type": "integer"
+            },
+            "query": {
+              "description": "Query to find deferred tools. Use \"select:<tool_name>\" for direct selection, or keywords to search.",
+              "type": "string"
+            }
+          },
+          "required": [
+            "query"
+          ],
+          "type": "object"
+        }
+      }
+    },
+    {
+      "type": "function",
+      "function": {
+        "name": "skill",
+        "description": "Execute a skill within the main conversation\n\n<skills_instructions>\nWhen users ask you to perform tasks, check if any of the available skills below can help complete the task more effectively. Skills provide specialized capabilities and domain knowledge.\n\nHow to invoke:\n- Use the exact string inside <name> tag as the skill name (no arguments)\n- Examples:\n  - `skill: \"pdf\"` - invoke the pdf skill\n  - `skill: \"xlsx\"` - invoke the xlsx skill\n  - `skill: \"ms-office-suite:pdf\"` - invoke using fully qualified name\n\nImportant:\n- When a skill is relevant, you must invoke this tool IMMEDIATELY as your first action\n- NEVER just announce or mention a skill in your text response without actually calling this tool\n- This is a BLOCKING REQUIREMENT: invoke the relevant Skill tool BEFORE generating any other response about the task\n- Only use skills listed in <available_skills> below\n- Do not invoke a skill that is already running\n- Skill content may contain relative paths. Convert them to absolute paths using the base directory provided in the tool result\n</skills_instructions>\n\n\n<available_skills>\n<skill>\n<name>\nagent-stock\n</name>\n<description>\n股市 AI 量化交易，用于获取股市实时数据、选股、交易决策、持仓分析、量化交易决策等。\n</description>\n</skill>\n<skill>\n<name>\ndesktop-control\n</name>\n<description>\nControl desktop applications on Windows — launch, close, focus, resize, move windows, simulate keyboard/mouse input, manage processes, control VSCode, read clipboard, and capture screen info. Use when the user wants to interact with any running program, switch windows, type text, press shortcuts, open files in VSCode, manage running processes, or get system display information.\n</description>\n</skill>\n<skill>\n<name>\nhtml-anything-main\n</name>\n<description>\nSubstack / Medium 高级感长文排版, 适合公众号、博客发布\n</description>\n</skill>\n<skill>\n<name>\nlocal-agents-collab\n</name>\n<description>\nUse when the user @mentions or asks to delegate work to local CLI agents (OpenClaw, Hermes, Cursor, Codex, OpenCode, Trae). Guides task formulation and local_agent tool usage — never invoke CLIs directly from shell.\n</description>\n</skill>\n<skill>\n<name>\nnews-summary\n</name>\n<description>\nThis skill should be used when the user asks for news updates, daily briefings, or what'\''s happening in the world. Fetches news from trusted international RSS feeds and can create voice summaries.\n</description>\n</skill>\n<skill>\n<name>\nontology\n</name>\n<description>\nTyped knowledge graph for structured agent memory and composable skills. Use when creating/querying entities (Person, Project, Task, Event, Document), linking related objects, enforcing constraints, planning multi-step actions as graph transformations, or when skills need to share state. Trigger on \"remember\", \"what do I know about\", \"link X to Y\", \"show dependencies\", entity CRUD, or cross-skill data access.\n</description>\n</skill>\n<skill>\n<name>\npeekaboo\n</name>\n<description>\nUse Peekaboo for macOS desktop automation, screenshots, visual UI maps, native accessibility inspection, app/window/menu/dialog control, native app and browser chrome control, browser-page MCP tooling, MCP diagnostics, and Peekaboo repo validation. Use when Codex needs current macOS UI state, direct desktop control, privacy-aware live smoke tests, or changes to the Peekaboo repository.\n</description>\n</skill>\n<skill>\n<name>\nremotion-video-toolkit\n</name>\n<description>\nComplete toolkit for programmatic video creation with Remotion + React. Covers animations, timing, rendering (CLI/Node.js/Lambda/Cloud Run), captions, 3D, charts, text effects, transitions, and media handling. Use when writing Remotion code, building video generation pipelines, or creating data-driven video templates.\n</description>\n</skill>\n<skill>\n<name>\nSelf-Improving + Proactive Agent\n</name>\n<description>\nSelf-reflection + Self-criticism + Self-learning + Self-organizing memory. Agent evaluates its own work, catches mistakes, and improves permanently. Use when (1) a command, tool, API, or operation fails; (2) the user corrects you or rejects your work; (3) you realize your knowledge is outdated or incorrect; (4) you discover a better approach; (5) the user explicitly installs or references the skill for the current task.\n</description>\n</skill>\n<skill>\n<name>\nself-improvement\n</name>\n<description>\nCaptures learnings, errors, and corrections to enable continuous improvement. Use when: (1) A command or operation fails unexpectedly, (2) User corrects Claude ('\''No, that'\''s wrong...'\'', '\''Actually...'\''), (3) User requests a capability that doesn'\''t exist, (4) An external API or tool fails, (5) Claude realizes its knowledge is outdated or incorrect, (6) A better approach is discovered for a recurring task. Also review learnings before major tasks.\n</description>\n</skill>\n</available_skills>\n",
+        "parameters": {
+          "properties": {
+            "skill": {
+              "description": "The skill name (no arguments). E.g., \"pdf\" or \"xlsx\"",
+              "type": "string"
+            }
+          },
+          "required": [
+            "skill"
+          ],
+          "type": "object"
+        }
+      }
+    }
+  ],
+  "model": "qwen3-0.6b",
+  "stream": false,
+  "thinking": true
+}'
+
+
+返回样例结果为：
+{
+	"choices": [
+		{
+			"finish_reason": "stop",
+			"index": 0,
+			"message": {
+				"content": "<think>\nAlright, let's start by summarizing the conversation. The user mentioned browser configurations, local agent settings, and memory management. I need to make sure to include all the relevant points. \n\nFirst, I'll list the files and code sections. The user provided references to browser configurations, local agent settings, and memory management. I should note each of these in the appropriate section. Then, the errors and fixes section should mention any issues or corrections made. \n\nNext, the problem solving section should cover the solutions applied. If there were errors like incorrect file paths or syntax, I need to explain those. Finally, the current work section should summarize the ongoing work on configuration files and memory management. \n\nI need to ensure that all key points are covered in the summary without adding external information. Make sure to follow the structure provided and include all the necessary elements as specified.\n</think>\n\n- <available-deferred-tools>\nbrowser\ngateway_config\nlocal_agent\nmemory_search\n</available-deferred-tools>\n- <all_user_messages>\n你好\n</all_user_messages>\n- **Current Work**  \n- **Summary of current work on configuration files and memory management.**  \n- **Pending Tasks**  \n- \"Review and fix any edge cases in memory pool configuration.\"  \n- **Summary**  \nThe session continues with technical discussions on browser configurations, local agent settings, and memory management. The conversation is progressing as intended.",
+				"role": "assistant"
+			}
+		}
+	],
+	"created": 1783428244,
+	"id": "embedded",
+	"model": "qwen3-0.6b",
+	"object": "chat.completion",
+	"usage": {
+		"completion_tokens": 0,
+		"prompt_tokens": 0,
+		"total_tokens": 0
+	}
+}

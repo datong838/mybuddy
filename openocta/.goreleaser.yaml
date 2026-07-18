@@ -1,0 +1,108 @@
+# GoReleaser 配置：单一二进制（前端+配置已嵌入）、RPM/DEB、ZIP(Windows)、Docker
+# 构建顺序：1) 前端 2) 复制 embed 资源 3) 后端 4) 打包
+# 使用：GITLAB_TOKEN=xxx goreleaser release --clean
+# 或本地：goreleaser release --snapshot --clean --skip=publish
+#
+# macOS Wails .dmg（arm64 + amd64）：
+# - 仅在 macOS 上可构建；设置 GORELEASER_INCLUDE_DMG=1 时运行 scripts/goreleaser-wails-dmg.sh。
+# - release.extra_files 使用 dist-mac/OpenOcta*.dmg（与 deploy/macos/build-app.sh 一致；勿写入 dist/）。
+# - 若需要签名/公证：安装 gon，并设置 OPENOCTA_GON=1 + AC_USERNAME/AC_PASSWORD/AC_TEAM_ID（参见 gon-sign.json）。
+# - 勿使用多个 -f：GoReleaser 只认最后一个配置文件，会丢失 builds 并报「does not contain a main function」。
+
+version: 2
+project_name: openocta
+
+# snapshot 版本不包含 git commit 号，便于安装包/压缩包命名简洁
+snapshot:
+  version_template: "{{ .Version }}-SNAPSHOT"
+
+before:
+  hooks:
+    # 从 git tag 设置版本到 src/.env 和 ui/package.json
+    - bash ./scripts/set-version.sh
+    - cp src/.env src/embed/
+    - make ui
+    - ls src/embed/
+    - bash -c "cd src && go mod download"
+    # 可选：macOS + GORELEASER_INCLUDE_DMG=1 时生成 dist-mac/OpenOcta-*-darwin-{arm64,amd64}.dmg
+    - bash ./scripts/goreleaser-wails-dmg.sh
+
+builds:
+  # Linux 服务端二进制（rpm/deb/tar.gz），Windows/macOS 桌面版由 Wails 构建
+  - id: openocta
+    dir: src
+    main: ./cmd/openocta
+    binary: openocta
+    flags:
+      - -trimpath
+    goos:
+      - linux
+    goarch:
+      - amd64
+      - arm64
+    ldflags:
+      - -s -w
+      - -X github.com/openocta/openocta/pkg/version.Version={{.Version}}
+
+archives:
+  # Linux 压缩包：openocta + 说明文档
+  - id: default
+    wrap_in_directory: true
+    builds:
+      - openocta
+    name_template: "{{ .ProjectName }}_{{ .Version }}_{{ .Os }}_{{ .Arch }}"
+    format: tar.gz
+    files:
+      - none*
+      - src: docs/*
+        dst: docs
+      - src: deploy/dist-README.md
+        dst: README.md
+
+  # 独立说明文档压缩包，输出到 dist 目录
+  - id: docs
+    meta: true
+    name_template: "{{ .ProjectName }}-docs_{{ .Version }}"
+    format: tar.gz
+    wrap_in_directory: true
+    files:
+      - src: docs/*
+        dst: docs
+
+nfpms:
+  - id: openocta
+    package_name: openocta
+    vendor: OpenOcta
+    maintainer: OpenOcta <noreply@openocta.dev>
+    homepage: https://docs.openclaw.ai
+    description: OpenOcta Gateway - Personal AI Assistant control plane
+    formats:
+      - rpm
+      - deb
+    contents:
+      - src: deploy/openocta.service
+        dst: /lib/systemd/system/openocta.service
+      - src: deploy/dist-README.md
+        dst: /usr/share/doc/openocta/README.md
+    scripts:
+      postinstall: deploy/scripts/postinstall.sh
+      postremove: deploy/scripts/postremove.sh
+
+#dockers:
+#  - id: openocta
+#    goos: linux
+#    goarch: amd64
+#    ids:
+#      - openocta
+#    image_templates:
+#      - "openocta/openocta:{{ .Tag }}"
+#      - "openocta/openocta:latest"
+#    dockerfile: deploy/Dockerfile.goreleaser
+
+release:
+  gitlab:
+    owner: "{{ .Env.CI_PROJECT_NAMESPACE }}"
+    name: "{{ .Env.CI_PROJECT_NAME }}"
+  # Wails 打的 DMG（make wails-dmg-all）；无文件时 GoReleaser 仅跳过匹配，不报错
+  extra_files:
+    - glob: ./dist-mac/OpenOcta*.dmg

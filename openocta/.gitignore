@@ -1,0 +1,56 @@
+**/node_modules/
+**/.idea/
+**/dist/
+dist-mac/
+**/.claude-trace/
+./dist
+./src/embed/frontend/
+/src/embed/frontend/
+!./src/embed/frontend/.gitkeep
+./src/embed/config-schema.json
+./src/embed/openocta.json.example
+./ui/.idea/
+./src/.claude/
+./src/.idea/
+./src/.claude-trace/
+# Local dev chromium symlinks (must not point at system Google Chrome)
+./src/chromium/
+./.claude-trace/
+./.idea/
+./openocta
+.DS_Store
+./docs/
+__screenshots__
+./src/build/
+testskills/
+.claude/
+ClAUDE.md
+/src/test
+/tmp
+ui/package-lock.json
+ui/package.json
+
+# Runtime and test data
+.state/
+.playwright-mcp/
+src/.playwright-mcp/
+logs/
+*.log
+*.exe
+*.exe.old
+*.exe~
+openocta
+openocta-launcher
+src/openocta_test.exe
+src/build/bin/
+src/build/windows/
+
+# Test artifacts
+weibo_*.json
+weibo_*.png
+weibo_*.md
+
+# IDE
+.vscode/
+*.swp
+*.swo

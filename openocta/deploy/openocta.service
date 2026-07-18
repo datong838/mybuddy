@@ -1,0 +1,27 @@
+# OpenOcta Gateway systemd 服务
+# 适用于 amd64 / arm64，安装到 /lib/systemd/system/ 后执行:
+#   sudo systemctl daemon-reload
+#   sudo systemctl enable openocta
+#   sudo systemctl start openocta
+
+[Unit]
+Description=OpenOcta Gateway
+Documentation=https://docs.openclaw.ai/gateway
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+ExecStart=/bin/bash -lic "exec /usr/bin/openocta gateway run --port 18900"
+Restart=on-failure
+RestartSec=5
+# 明确运行形态：Linux 下以 service 形式对外提供访问
+Environment=OPENOCTA_RUN_MODE=service
+# 状态目录（可按需覆盖）
+Environment=OPENOCTA_STATE_DIR=/root/.openocta
+# 建议以专用用户运行（按需取消注释并创建用户）
+# User=openocta
+# Group=openocta
+
+[Install]
+WantedBy=multi-user.target

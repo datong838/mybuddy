@@ -1,0 +1,11 @@
+https://openocta.com/pkg/OpenOcta-arm64.dmg
+https://openocta.com/pkg/OpenOcta-amd64.dmg
+https://openocta.com/pkg/OpenOcta-amd64-installer.exe 
+
+
+https://openocta.com/pkg/openocta_linux_amd64.deb
+https://openocta.com/pkg/openocta_linux_amd64.rpm
+https://openocta.com/pkg/openocta_linux_amd64.tar.gz
+https://openocta.com/pkg/openocta_linux_arm64.deb
+https://openocta.com/pkg/openocta_linux_arm64.rpm
+https://openocta.com/pkg/openocta_linux_arm64.tar.gz

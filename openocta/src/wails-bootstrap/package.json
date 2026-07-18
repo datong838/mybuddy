@@ -1,0 +1,7 @@
+{
+  "name": "openocta-wails-bootstrap",
+  "private": true,
+  "scripts": {
+    "build": "echo Bootstrap ready"
+  }
+}

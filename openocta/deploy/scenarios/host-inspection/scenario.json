@@ -1,0 +1,31 @@
+{
+  "id": "host-inspection",
+  "name": "主机巡检场景",
+  "summary": "定期巡检主机 CPU、内存、磁盘与服务状态。",
+  "skills": [
+    {
+      "id": "server-patrol",
+      "name": "Server Patrol",
+      "description": "服务器巡检：主机健康检查与巡检报告生成",
+      "downloadUrl": "https://openocta.com/api/v1/skills/server-patrol/download",
+      "category": "运维"
+    }
+  ],
+  "mcps": [],
+  "employees": [],
+  "env": [],
+  "bundledTools": [
+    {
+      "name": "openssh-clients",
+      "description": "SSH 客户端离线 deb 包占位",
+      "platform": "linux-deb",
+      "relativePath": "bundled/.gitkeep"
+    }
+  ],
+  "quickPrompts": [
+    "对目标主机执行服务器巡检并输出 Markdown 报告",
+    "检查目标主机 CPU、内存、磁盘使用情况",
+    "帮我梳理主机异常排查思路，并给出优先级",
+    "你能告诉我你有哪些技能吗？"
+  ]
+}
