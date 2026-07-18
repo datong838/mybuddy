@@ -1,0 +1,27 @@
+name: Check Markdown links
+
+on:
+  pull_request:
+    branches:
+      - main
+  schedule:
+    - cron: "0 9 * * 1" # At 09:00 on Monday
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  markdown-link-check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
+      - uses: gaurav-nelson/github-action-markdown-link-check@3c3b66f1f7d0900e37b71eca45b63ea9eedfce31 # v1.0.17
+        with:
+          use-verbose-mode: 'yes'
+          folder-path: 'docs/'
+          file-path: './README.md, ./CHANGELOG.md'
+          config-file: '.github/.mlc_config.json'

@@ -1,0 +1,12 @@
+**/.speakeasy/temp/
+**/.speakeasy/logs/
+.env
+.env.local
+.speakeasy/temp/
+.terraform
+terraform-provider-airbyte
+.terraform*
+*.tfstate*
+.DS_Store
+*.tfvars
+.idea
