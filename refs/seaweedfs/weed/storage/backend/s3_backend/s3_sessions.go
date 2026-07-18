@@ -1,0 +1,63 @@
+package s3_backend
+
+import (
+	"fmt"
+	"sync"
+
+	"github.com/aws/aws-sdk-go/aws"
+	"github.com/aws/aws-sdk-go/aws/credentials"
+	"github.com/aws/aws-sdk-go/aws/request"
+	"github.com/aws/aws-sdk-go/aws/session"
+	"github.com/aws/aws-sdk-go/service/s3"
+	"github.com/aws/aws-sdk-go/service/s3/s3iface"
+	"github.com/seaweedfs/seaweedfs/weed/util/version"
+)
+
+var (
+	s3Sessions   = make(map[string]s3iface.S3API)
+	sessionsLock sync.Mutex
+)
+
+func createSession(awsAccessKeyId, awsSecretAccessKey, region, endpoint string, forcePathStyle bool) (s3iface.S3API, error) {
+
+	sessionsLock.Lock()
+	defer sessionsLock.Unlock()
+
+	cacheKey := fmt.Sprintf("%s|%s", region, endpoint)
+	if t, found := s3Sessions[cacheKey]; found {
+		return t, nil
+	}
+
+	config := &aws.Config{
+		Region:                        aws.String(region),
+		Endpoint:                      aws.String(endpoint),
+		S3ForcePathStyle:              aws.Bool(forcePathStyle),
+		S3DisableContentMD5Validation: aws.Bool(true),
+	}
+	if awsAccessKeyId != "" && awsSecretAccessKey != "" {
+		config.Credentials = credentials.NewStaticCredentials(awsAccessKeyId, awsSecretAccessKey, "")
+	}
+
+	sess, err := session.NewSession(config)
+	if err != nil {
+		return nil, fmt.Errorf("create aws session in region %s: %v", region, err)
+	}
+	sess.Handlers.Build.PushBack(func(r *request.Request) {
+		r.HTTPRequest.Header.Set("User-Agent", "SeaweedFS/"+version.VERSION_NUMBER)
+	})
+
+	t := s3.New(sess)
+
+	s3Sessions[cacheKey] = t
+
+	return t, nil
+
+}
+
+func deleteFromS3(sess s3iface.S3API, sourceBucket string, sourceKey string) (err error) {
+	_, err = sess.DeleteObject(&s3.DeleteObjectInput{
+		Bucket: aws.String(sourceBucket),
+		Key:    aws.String(sourceKey),
+	})
+	return err
+}
