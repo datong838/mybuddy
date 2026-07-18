@@ -1,0 +1,2460 @@
+"""
+Connector model for google-ads.
+
+This file is auto-generated from the connector definition at build time.
+DO NOT EDIT MANUALLY - changes will be overwritten on next generation.
+"""
+
+from __future__ import annotations
+
+from airbyte_agent_sdk.types import (
+    Action,
+    AuthConfig,
+    AuthType,
+    ConnectorModel,
+    EndpointDefinition,
+    EntityDefinition,
+)
+from airbyte_agent_sdk.schema.security import (
+    AuthConfigFieldSpec,
+    AuthConfigSpec,
+)
+from airbyte_agent_sdk.schema.extensions import (
+    CacheConfig,
+    CacheEntityConfig,
+    CacheFieldConfig,
+    EntityRelationshipConfig,
+    ScopingParamConfig,
+)
+from airbyte_agent_sdk.schema.base import (
+    ExampleQuestions,
+)
+from airbyte_agent_sdk.schema.components import (
+    PathOverrideConfig,
+)
+from uuid import (
+    UUID,
+)
+
+GoogleAdsConnectorModel: ConnectorModel = ConnectorModel(
+    id=UUID('253487c0-2246-43ba-a21f-5116b20a2c50'),
+    name='google-ads',
+    version='1.0.9',
+    base_url='https://googleads.googleapis.com',
+    auth=AuthConfig(
+        type=AuthType.OAUTH2,
+        config={
+            'header': 'Authorization',
+            'prefix': 'Bearer',
+            'refresh_url': 'https://www.googleapis.com/oauth2/v3/token',
+            'auth_style': 'body',
+            'body_format': 'form',
+            'additional_headers': {'developer-token': '{{ developer_token }}'},
+        },
+        user_config_spec=AuthConfigSpec(
+            title='OAuth2 Authentication',
+            type='object',
+            required=[
+                'client_id',
+                'client_secret',
+                'refresh_token',
+                'developer_token',
+            ],
+            properties={
+                'client_id': AuthConfigFieldSpec(
+                    title='Client ID',
+                    description='OAuth2 client ID from Google Cloud Console',
+                ),
+                'client_secret': AuthConfigFieldSpec(
+                    title='Client Secret',
+                    description='OAuth2 client secret from Google Cloud Console',
+                ),
+                'refresh_token': AuthConfigFieldSpec(
+                    title='Refresh Token',
+                    description='OAuth2 refresh token',
+                ),
+                'developer_token': AuthConfigFieldSpec(
+                    title='Developer Token',
+                    description='Google Ads API developer token',
+                ),
+            },
+            auth_mapping={
+                'refresh_token': '${refresh_token}',
+                'client_id': '${client_id}',
+                'client_secret': '${client_secret}',
+            },
+            replication_auth_key_mapping={
+                'credentials.client_id': 'client_id',
+                'credentials.client_secret': 'client_secret',
+                'credentials.refresh_token': 'refresh_token',
+                'credentials.developer_token': 'developer_token',
+            },
+            additional_headers={'developer-token': '{{ developer_token }}'},
+        ),
+    ),
+    entities=[
+        EntityDefinition(
+            name='accessible_customers',
+            actions=[Action.LIST],
+            endpoints={
+                Action.LIST: EndpointDefinition(
+                    method='GET',
+                    path='/v23/customers:listAccessibleCustomers',
+                    action=Action.LIST,
+                    description='Returns resource names of customers directly accessible by the user authenticating the call. No customer_id is required for this endpoint.',
+                    response_schema={
+                        'type': 'object',
+                        'description': 'List of accessible customer resource names',
+                        'properties': {
+                            'resourceNames': {
+                                'type': 'array',
+                                'items': {
+                                    'type': 'object',
+                                    'description': 'An accessible customer derived from a resource name via x-airbyte-record-transform',
+                                    'properties': {
+                                        'customer_id': {'type': 'string', 'description': 'The customer ID extracted from the resource name'},
+                                        'resource_name': {'type': 'string', 'description': 'Full resource name (e.g., customers/1234567890)'},
+                                    },
+                                },
+                                'description': 'Resource names of accessible customers',
+                            },
+                        },
+                    },
+                    record_extractor='$.resourceNames',
+                    record_transform={'customer_id': "{{ record.value | replace('customers/', '') }}", 'resource_name': '{{ record.value }}'},
+                    no_pagination='Google Ads GET /v23/customers:listAccessibleCustomers returns the full list of customer resource names directly accessible to the authenticated user in a single response; the endpoint exposes no pagination cursor, offset, or next-page token.',
+                    preferred_for_check=True,
+                ),
+            },
+        ),
+        EntityDefinition(
+            name='accounts',
+            stream_name='customer',
+            actions=[Action.LIST],
+            endpoints={
+                Action.LIST: EndpointDefinition(
+                    method='POST',
+                    path='/v23/customers/{customer_id}/googleAds:search',
+                    action=Action.LIST,
+                    description='Retrieves customer account details using GAQL query.',
+                    body_fields=['query', 'pageToken', 'pageSize'],
+                    path_params=['customer_id'],
+                    path_params_schema={
+                        'customer_id': {'type': 'string', 'required': True},
+                    },
+                    request_body_defaults={'query': 'SELECT\n  customer.auto_tagging_enabled,\n  customer.call_reporting_setting.call_conversion_action,\n  customer.call_reporting_setting.call_conversion_reporting_enabled,\n  customer.call_reporting_setting.call_reporting_enabled,\n  customer.conversion_tracking_setting.conversion_tracking_id,\n  customer.conversion_tracking_setting.cross_account_conversion_tracking_id,\n  customer.currency_code,\n  customer.descriptive_name,\n  customer.final_url_suffix,\n  customer.has_partners_badge,\n  customer.id,\n  customer.manager,\n  customer.optimization_score,\n  customer.optimization_score_weight,\n  customer.pay_per_conversion_eligibility_failure_reasons,\n  customer.remarketing_setting.google_global_site_tag,\n  customer.resource_name,\n  customer.test_account,\n  customer.time_zone,\n  customer.tracking_url_template\nFROM customer'},
+                    request_schema={
+                        'type': 'object',
+                        'properties': {
+                            'query': {
+                                'type': 'string',
+                                'description': 'Google Ads Query Language (GAQL) query',
+                                'default': 'SELECT\n  customer.auto_tagging_enabled,\n  customer.call_reporting_setting.call_conversion_action,\n  customer.call_reporting_setting.call_conversion_reporting_enabled,\n  customer.call_reporting_setting.call_reporting_enabled,\n  customer.conversion_tracking_setting.conversion_tracking_id,\n  customer.conversion_tracking_setting.cross_account_conversion_tracking_id,\n  customer.currency_code,\n  customer.descriptive_name,\n  customer.final_url_suffix,\n  customer.has_partners_badge,\n  customer.id,\n  customer.manager,\n  customer.optimization_score,\n  customer.optimization_score_weight,\n  customer.pay_per_conversion_eligibility_failure_reasons,\n  customer.remarketing_setting.google_global_site_tag,\n  customer.resource_name,\n  customer.test_account,\n  customer.time_zone,\n  customer.tracking_url_template\nFROM customer',
+                            },
+                            'pageToken': {'type': 'string', 'description': 'Token for pagination'},
+                            'pageSize': {'type': 'integer', 'description': 'Number of results per page (max 10000)'},
+                        },
+                    },
+                    response_schema={
+                        'type': 'object',
+                        'description': 'Search response containing account data',
+                        'properties': {
+                            'results': {
+                                'type': 'array',
+                                'items': {
+                                    'type': 'object',
+                                    'description': 'Google Ads customer account',
+                                    'properties': {
+                                        'customer': {
+                                            'type': 'object',
+                                            'properties': {
+                                                'autoTaggingEnabled': {'type': 'boolean', 'description': 'Whether auto-tagging is enabled'},
+                                                'callReportingSetting': {
+                                                    'type': 'object',
+                                                    'properties': {
+                                                        'callConversionAction': {'type': 'string'},
+                                                        'callConversionReportingEnabled': {'type': 'boolean'},
+                                                        'callReportingEnabled': {'type': 'boolean'},
+                                                    },
+                                                },
+                                                'conversionTrackingSetting': {
+                                                    'type': 'object',
+                                                    'properties': {
+                                                        'conversionTrackingId': {'type': 'string'},
+                                                        'crossAccountConversionTrackingId': {'type': 'string'},
+                                                    },
+                                                },
+                                                'currencyCode': {'type': 'string', 'description': 'Currency code (e.g., USD)'},
+                                                'descriptiveName': {'type': 'string', 'description': 'Account descriptive name'},
+                                                'finalUrlSuffix': {'type': 'string'},
+                                                'hasPartnersBadge': {'type': 'boolean'},
+                                                'id': {'type': 'string', 'description': 'Customer ID'},
+                                                'manager': {'type': 'boolean', 'description': 'Whether this is a manager account'},
+                                                'optimizationScore': {'type': 'number'},
+                                                'optimizationScoreWeight': {'type': 'number'},
+                                                'payPerConversionEligibilityFailureReasons': {
+                                                    'type': 'array',
+                                                    'items': {'type': 'string'},
+                                                },
+                                                'remarketingSetting': {
+                                                    'type': 'object',
+                                                    'properties': {
+                                                        'googleGlobalSiteTag': {'type': 'string'},
+                                                    },
+                                                },
+                                                'resourceName': {'type': 'string', 'description': 'Resource name of the customer'},
+                                                'testAccount': {'type': 'boolean'},
+                                                'timeZone': {'type': 'string'},
+                                                'trackingUrlTemplate': {'type': 'string'},
+                                            },
+                                        },
+                                    },
+                                    'x-airbyte-entity-name': 'accounts',
+                                    'x-airbyte-stream-name': 'customer',
+                                    'x-airbyte-ai-hints': {
+                                        'summary': 'Google Ads accounts with billing and campaign settings',
+                                        'when_to_use': 'Questions about ad account details or account-level settings',
+                                        'trigger_phrases': ['google ads account', 'ad account', 'account settings'],
+                                        'freshness': 'live',
+                                        'example_questions': ['What Google Ads accounts do I have?'],
+                                        'search_strategy': 'List accessible accounts',
+                                    },
+                                },
+                            },
+                            'nextPageToken': {'type': 'string', 'description': 'Token for retrieving the next page'},
+                            'fieldMask': {'type': 'string', 'description': 'Field mask of requested fields'},
+                            'queryResourceConsumption': {'type': 'string', 'description': 'Resource consumption of the query'},
+                        },
+                    },
+                    record_extractor='$.results',
+                    meta_extractor={'next_page_token': '$.nextPageToken'},
+                ),
+            },
+            entity_schema={
+                'type': 'object',
+                'description': 'Google Ads customer account',
+                'properties': {
+                    'customer': {
+                        'type': 'object',
+                        'properties': {
+                            'autoTaggingEnabled': {'type': 'boolean', 'description': 'Whether auto-tagging is enabled'},
+                            'callReportingSetting': {
+                                'type': 'object',
+                                'properties': {
+                                    'callConversionAction': {'type': 'string'},
+                                    'callConversionReportingEnabled': {'type': 'boolean'},
+                                    'callReportingEnabled': {'type': 'boolean'},
+                                },
+                            },
+                            'conversionTrackingSetting': {
+                                'type': 'object',
+                                'properties': {
+                                    'conversionTrackingId': {'type': 'string'},
+                                    'crossAccountConversionTrackingId': {'type': 'string'},
+                                },
+                            },
+                            'currencyCode': {'type': 'string', 'description': 'Currency code (e.g., USD)'},
+                            'descriptiveName': {'type': 'string', 'description': 'Account descriptive name'},
+                            'finalUrlSuffix': {'type': 'string'},
+                            'hasPartnersBadge': {'type': 'boolean'},
+                            'id': {'type': 'string', 'description': 'Customer ID'},
+                            'manager': {'type': 'boolean', 'description': 'Whether this is a manager account'},
+                            'optimizationScore': {'type': 'number'},
+                            'optimizationScoreWeight': {'type': 'number'},
+                            'payPerConversionEligibilityFailureReasons': {
+                                'type': 'array',
+                                'items': {'type': 'string'},
+                            },
+                            'remarketingSetting': {
+                                'type': 'object',
+                                'properties': {
+                                    'googleGlobalSiteTag': {'type': 'string'},
+                                },
+                            },
+                            'resourceName': {'type': 'string', 'description': 'Resource name of the customer'},
+                            'testAccount': {'type': 'boolean'},
+                            'timeZone': {'type': 'string'},
+                            'trackingUrlTemplate': {'type': 'string'},
+                        },
+                    },
+                },
+                'x-airbyte-entity-name': 'accounts',
+                'x-airbyte-stream-name': 'customer',
+                'x-airbyte-ai-hints': {
+                    'summary': 'Google Ads accounts with billing and campaign settings',
+                    'when_to_use': 'Questions about ad account details or account-level settings',
+                    'trigger_phrases': ['google ads account', 'ad account', 'account settings'],
+                    'freshness': 'live',
+                    'example_questions': ['What Google Ads accounts do I have?'],
+                    'search_strategy': 'List accessible accounts',
+                },
+            },
+            ai_hints={
+                'summary': 'Google Ads accounts with billing and campaign settings',
+                'when_to_use': 'Questions about ad account details or account-level settings',
+                'trigger_phrases': ['google ads account', 'ad account', 'account settings'],
+                'freshness': 'live',
+                'example_questions': ['What Google Ads accounts do I have?'],
+                'search_strategy': 'List accessible accounts',
+            },
+            relationships=[
+                EntityRelationshipConfig(
+                    source_entity='accounts',
+                    target_entity='accessible_customers',
+                    foreign_key='customer_id',
+                    target_key='customer_id',
+                ),
+            ],
+        ),
+        EntityDefinition(
+            name='campaigns',
+            stream_name='campaign',
+            actions=[Action.LIST, Action.UPDATE],
+            endpoints={
+                Action.LIST: EndpointDefinition(
+                    method='POST',
+                    path='/v23/customers/{customer_id}/googleAds:search?entity=campaigns',
+                    path_override=PathOverrideConfig(
+                        path='/v23/customers/{customer_id}/googleAds:search',
+                    ),
+                    action=Action.LIST,
+                    description='Retrieves campaign data using GAQL query.',
+                    body_fields=['query', 'pageToken', 'pageSize'],
+                    path_params=['customer_id'],
+                    path_params_schema={
+                        'customer_id': {'type': 'string', 'required': True},
+                    },
+                    request_body_defaults={'query': 'SELECT\n  campaign.id,\n  campaign.name,\n  campaign.status,\n  campaign.advertising_channel_type,\n  campaign.advertising_channel_sub_type,\n  campaign.bidding_strategy,\n  campaign.bidding_strategy_type,\n  campaign.campaign_budget,\n  campaign_budget.amount_micros,\n  campaign.start_date_time,\n  campaign.end_date_time,\n  campaign.serving_status,\n  campaign.resource_name,\n  campaign.labels,\n  campaign.network_settings.target_google_search,\n  campaign.network_settings.target_search_network,\n  campaign.network_settings.target_content_network,\n  campaign.network_settings.target_partner_search_network\nFROM campaign'},
+                    request_schema={
+                        'type': 'object',
+                        'properties': {
+                            'query': {
+                                'type': 'string',
+                                'description': 'GAQL query for campaigns',
+                                'default': 'SELECT\n  campaign.id,\n  campaign.name,\n  campaign.status,\n  campaign.advertising_channel_type,\n  campaign.advertising_channel_sub_type,\n  campaign.bidding_strategy,\n  campaign.bidding_strategy_type,\n  campaign.campaign_budget,\n  campaign_budget.amount_micros,\n  campaign.start_date_time,\n  campaign.end_date_time,\n  campaign.serving_status,\n  campaign.resource_name,\n  campaign.labels,\n  campaign.network_settings.target_google_search,\n  campaign.network_settings.target_search_network,\n  campaign.network_settings.target_content_network,\n  campaign.network_settings.target_partner_search_network\nFROM campaign',
+                            },
+                            'pageToken': {'type': 'string', 'description': 'Token for pagination'},
+                            'pageSize': {'type': 'integer', 'description': 'Number of results per page (max 10000)'},
+                        },
+                    },
+                    response_schema={
+                        'type': 'object',
+                        'description': 'Search response containing campaign data',
+                        'properties': {
+                            'results': {
+                                'type': 'array',
+                                'items': {
+                                    'type': 'object',
+                                    'description': 'Google Ads campaign',
+                                    'properties': {
+                                        'campaign': {
+                                            'type': 'object',
+                                            'properties': {
+                                                'id': {'type': 'string', 'description': 'Campaign ID'},
+                                                'name': {'type': 'string', 'description': 'Campaign name'},
+                                                'status': {
+                                                    'type': 'string',
+                                                    'enum': [
+                                                        'ENABLED',
+                                                        'PAUSED',
+                                                        'REMOVED',
+                                                        'UNKNOWN',
+                                                        'UNSPECIFIED',
+                                                    ],
+                                                    'description': 'Campaign status',
+                                                },
+                                                'advertisingChannelType': {'type': 'string', 'description': 'Primary channel type'},
+                                                'advertisingChannelSubType': {'type': 'string'},
+                                                'biddingStrategy': {'type': 'string'},
+                                                'biddingStrategyType': {'type': 'string'},
+                                                'campaignBudget': {'type': 'string', 'description': 'Campaign budget resource name'},
+                                                'startDateTime': {'type': 'string', 'description': 'Campaign start date'},
+                                                'endDateTime': {'type': 'string', 'description': 'Campaign end date'},
+                                                'servingStatus': {'type': 'string'},
+                                                'resourceName': {'type': 'string'},
+                                                'labels': {
+                                                    'type': 'array',
+                                                    'items': {'type': 'string'},
+                                                },
+                                                'networkSettings': {
+                                                    'type': 'object',
+                                                    'properties': {
+                                                        'targetGoogleSearch': {'type': 'boolean'},
+                                                        'targetSearchNetwork': {'type': 'boolean'},
+                                                        'targetContentNetwork': {'type': 'boolean'},
+                                                        'targetPartnerSearchNetwork': {'type': 'boolean'},
+                                                    },
+                                                },
+                                            },
+                                        },
+                                        'campaignBudget': {
+                                            'type': 'object',
+                                            'properties': {
+                                                'resourceName': {'type': 'string', 'description': 'Resource name of the campaign budget'},
+                                                'amountMicros': {'type': 'string', 'description': 'Budget amount in micros'},
+                                            },
+                                        },
+                                        'metrics': {
+                                            'type': 'object',
+                                            'properties': {
+                                                'clicks': {'type': 'string'},
+                                                'ctr': {'type': 'number'},
+                                                'conversions': {'type': 'number'},
+                                                'conversionsValue': {'type': 'number'},
+                                                'costMicros': {'type': 'string'},
+                                                'impressions': {'type': 'string'},
+                                                'averageCpc': {'type': 'number'},
+                                                'averageCpm': {'type': 'number'},
+                                                'interactions': {'type': 'string'},
+                                            },
+                                        },
+                                        'segments': {
+                                            'type': 'object',
+                                            'properties': {
+                                                'date': {'type': 'string', 'description': 'Date in YYYY-MM-DD format'},
+                                            },
+                                        },
+                                    },
+                                    'x-airbyte-entity-name': 'campaigns',
+                                    'x-airbyte-stream-name': 'campaign',
+                                    'x-airbyte-ai-hints': {
+                                        'summary': 'Google Ads campaigns with budget, bidding, and performance data',
+                                        'when_to_use': 'Questions about ad campaigns, budgets, or campaign status',
+                                        'trigger_phrases': ['google ads campaign', 'ad campaign', 'campaign budget'],
+                                        'freshness': 'live',
+                                        'example_questions': ['List active Google Ads campaigns', 'What is the budget for a campaign?'],
+                                        'search_strategy': 'Search by name or filter by status',
+                                    },
+                                },
+                            },
+                            'nextPageToken': {'type': 'string'},
+                            'fieldMask': {'type': 'string'},
+                            'queryResourceConsumption': {'type': 'string', 'description': 'Resource consumption of the query'},
+                        },
+                    },
+                    record_extractor='$.results',
+                    meta_extractor={'next_page_token': '$.nextPageToken'},
+                ),
+                Action.UPDATE: EndpointDefinition(
+                    method='POST',
+                    path='/v23/customers/{customer_id}/campaigns:mutate',
+                    action=Action.UPDATE,
+                    description='Updates campaign properties such as status (enable/pause), name, or other mutable fields using the Google Ads CampaignService mutate endpoint.',
+                    body_fields=['operations'],
+                    path_params=['customer_id'],
+                    path_params_schema={
+                        'customer_id': {'type': 'string', 'required': True},
+                    },
+                    request_schema={
+                        'type': 'object',
+                        'description': 'Request to mutate (update) campaigns',
+                        'properties': {
+                            'operations': {
+                                'type': 'array',
+                                'description': 'List of campaign operations to perform',
+                                'items': {
+                                    'type': 'object',
+                                    'properties': {
+                                        'updateMask': {'type': 'string', 'description': 'Comma-separated list of field paths to update (e.g., name,status)'},
+                                        'update': {
+                                            'type': 'object',
+                                            'description': 'Campaign fields to update',
+                                            'properties': {
+                                                'resourceName': {'type': 'string', 'description': 'Resource name of the campaign to update (e.g., customers/1234567890/campaigns/111222333)'},
+                                                'name': {'type': 'string', 'description': 'New campaign name'},
+                                                'status': {
+                                                    'type': 'string',
+                                                    'enum': ['ENABLED', 'PAUSED'],
+                                                    'description': 'Campaign status (ENABLED or PAUSED)',
+                                                },
+                                            },
+                                            'required': ['resourceName'],
+                                        },
+                                    },
+                                },
+                            },
+                        },
+                        'required': ['operations'],
+                    },
+                    response_schema={
+                        'type': 'object',
+                        'description': 'Response from campaign mutate operation',
+                        'properties': {
+                            'results': {
+                                'type': 'array',
+                                'items': {
+                                    'type': 'object',
+                                    'properties': {
+                                        'resourceName': {'type': 'string', 'description': 'Resource name of the mutated campaign'},
+                                    },
+                                },
+                            },
+                        },
+                        'x-airbyte-entity-name': 'campaigns',
+                    },
+                ),
+            },
+            entity_schema={
+                'type': 'object',
+                'description': 'Google Ads campaign',
+                'properties': {
+                    'campaign': {
+                        'type': 'object',
+                        'properties': {
+                            'id': {'type': 'string', 'description': 'Campaign ID'},
+                            'name': {'type': 'string', 'description': 'Campaign name'},
+                            'status': {
+                                'type': 'string',
+                                'enum': [
+                                    'ENABLED',
+                                    'PAUSED',
+                                    'REMOVED',
+                                    'UNKNOWN',
+                                    'UNSPECIFIED',
+                                ],
+                                'description': 'Campaign status',
+                            },
+                            'advertisingChannelType': {'type': 'string', 'description': 'Primary channel type'},
+                            'advertisingChannelSubType': {'type': 'string'},
+                            'biddingStrategy': {'type': 'string'},
+                            'biddingStrategyType': {'type': 'string'},
+                            'campaignBudget': {'type': 'string', 'description': 'Campaign budget resource name'},
+                            'startDateTime': {'type': 'string', 'description': 'Campaign start date'},
+                            'endDateTime': {'type': 'string', 'description': 'Campaign end date'},
+                            'servingStatus': {'type': 'string'},
+                            'resourceName': {'type': 'string'},
+                            'labels': {
+                                'type': 'array',
+                                'items': {'type': 'string'},
+                            },
+                            'networkSettings': {
+                                'type': 'object',
+                                'properties': {
+                                    'targetGoogleSearch': {'type': 'boolean'},
+                                    'targetSearchNetwork': {'type': 'boolean'},
+                                    'targetContentNetwork': {'type': 'boolean'},
+                                    'targetPartnerSearchNetwork': {'type': 'boolean'},
+                                },
+                            },
+                        },
+                    },
+                    'campaignBudget': {
+                        'type': 'object',
+                        'properties': {
+                            'resourceName': {'type': 'string', 'description': 'Resource name of the campaign budget'},
+                            'amountMicros': {'type': 'string', 'description': 'Budget amount in micros'},
+                        },
+                    },
+                    'metrics': {
+                        'type': 'object',
+                        'properties': {
+                            'clicks': {'type': 'string'},
+                            'ctr': {'type': 'number'},
+                            'conversions': {'type': 'number'},
+                            'conversionsValue': {'type': 'number'},
+                            'costMicros': {'type': 'string'},
+                            'impressions': {'type': 'string'},
+                            'averageCpc': {'type': 'number'},
+                            'averageCpm': {'type': 'number'},
+                            'interactions': {'type': 'string'},
+                        },
+                    },
+                    'segments': {
+                        'type': 'object',
+                        'properties': {
+                            'date': {'type': 'string', 'description': 'Date in YYYY-MM-DD format'},
+                        },
+                    },
+                },
+                'x-airbyte-entity-name': 'campaigns',
+                'x-airbyte-stream-name': 'campaign',
+                'x-airbyte-ai-hints': {
+                    'summary': 'Google Ads campaigns with budget, bidding, and performance data',
+                    'when_to_use': 'Questions about ad campaigns, budgets, or campaign status',
+                    'trigger_phrases': ['google ads campaign', 'ad campaign', 'campaign budget'],
+                    'freshness': 'live',
+                    'example_questions': ['List active Google Ads campaigns', 'What is the budget for a campaign?'],
+                    'search_strategy': 'Search by name or filter by status',
+                },
+            },
+            ai_hints={
+                'summary': 'Google Ads campaigns with budget, bidding, and performance data',
+                'when_to_use': 'Questions about ad campaigns, budgets, or campaign status',
+                'trigger_phrases': ['google ads campaign', 'ad campaign', 'campaign budget'],
+                'freshness': 'live',
+                'example_questions': ['List active Google Ads campaigns', 'What is the budget for a campaign?'],
+                'search_strategy': 'Search by name or filter by status',
+            },
+            relationships=[
+                EntityRelationshipConfig(
+                    source_entity='campaigns',
+                    target_entity='accessible_customers',
+                    foreign_key='customer_id',
+                    target_key='customer_id',
+                ),
+            ],
+        ),
+        EntityDefinition(
+            name='ad_groups',
+            stream_name='ad_group',
+            actions=[Action.LIST, Action.UPDATE],
+            endpoints={
+                Action.LIST: EndpointDefinition(
+                    method='POST',
+                    path='/v23/customers/{customer_id}/googleAds:search?entity=ad_groups',
+                    path_override=PathOverrideConfig(
+                        path='/v23/customers/{customer_id}/googleAds:search',
+                    ),
+                    action=Action.LIST,
+                    description='Retrieves ad group data using GAQL query.',
+                    body_fields=['query', 'pageToken', 'pageSize'],
+                    path_params=['customer_id'],
+                    path_params_schema={
+                        'customer_id': {'type': 'string', 'required': True},
+                    },
+                    request_body_defaults={'query': 'SELECT\n  campaign.id,\n  ad_group.id,\n  ad_group.name,\n  ad_group.status,\n  ad_group.type,\n  ad_group.ad_rotation_mode,\n  ad_group.base_ad_group,\n  ad_group.campaign,\n  ad_group.cpc_bid_micros,\n  ad_group.cpm_bid_micros,\n  ad_group.cpv_bid_micros,\n  ad_group.effective_target_cpa_micros,\n  ad_group.effective_target_cpa_source,\n  ad_group.effective_target_roas,\n  ad_group.effective_target_roas_source,\n  ad_group.labels,\n  ad_group.resource_name,\n  ad_group.target_cpa_micros,\n  ad_group.target_roas,\n  ad_group.tracking_url_template\nFROM ad_group'},
+                    request_schema={
+                        'type': 'object',
+                        'properties': {
+                            'query': {
+                                'type': 'string',
+                                'description': 'GAQL query for ad groups',
+                                'default': 'SELECT\n  campaign.id,\n  ad_group.id,\n  ad_group.name,\n  ad_group.status,\n  ad_group.type,\n  ad_group.ad_rotation_mode,\n  ad_group.base_ad_group,\n  ad_group.campaign,\n  ad_group.cpc_bid_micros,\n  ad_group.cpm_bid_micros,\n  ad_group.cpv_bid_micros,\n  ad_group.effective_target_cpa_micros,\n  ad_group.effective_target_cpa_source,\n  ad_group.effective_target_roas,\n  ad_group.effective_target_roas_source,\n  ad_group.labels,\n  ad_group.resource_name,\n  ad_group.target_cpa_micros,\n  ad_group.target_roas,\n  ad_group.tracking_url_template\nFROM ad_group',
+                            },
+                            'pageToken': {'type': 'string', 'description': 'Token for pagination'},
+                            'pageSize': {'type': 'integer', 'description': 'Number of results per page (max 10000)'},
+                        },
+                    },
+                    response_schema={
+                        'type': 'object',
+                        'description': 'Search response containing ad group data',
+                        'properties': {
+                            'results': {
+                                'type': 'array',
+                                'items': {
+                                    'type': 'object',
+                                    'description': 'Google Ads ad group',
+                                    'properties': {
+                                        'campaign': {
+                                            'type': 'object',
+                                            'properties': {
+                                                'id': {'type': 'string', 'description': 'Parent campaign ID'},
+                                                'resourceName': {'type': 'string', 'description': 'Parent campaign resource name'},
+                                            },
+                                        },
+                                        'adGroup': {
+                                            'type': 'object',
+                                            'properties': {
+                                                'id': {'type': 'string', 'description': 'Ad group ID'},
+                                                'name': {'type': 'string', 'description': 'Ad group name'},
+                                                'status': {
+                                                    'type': 'string',
+                                                    'enum': [
+                                                        'ENABLED',
+                                                        'PAUSED',
+                                                        'REMOVED',
+                                                        'UNKNOWN',
+                                                        'UNSPECIFIED',
+                                                    ],
+                                                },
+                                                'type': {'type': 'string'},
+                                                'adRotationMode': {'type': 'string'},
+                                                'baseAdGroup': {'type': 'string'},
+                                                'campaign': {'type': 'string', 'description': 'Parent campaign resource name'},
+                                                'cpcBidMicros': {'type': 'string'},
+                                                'cpmBidMicros': {'type': 'string'},
+                                                'cpvBidMicros': {'type': 'string'},
+                                                'effectiveTargetCpaMicros': {'type': 'string'},
+                                                'effectiveTargetCpaSource': {'type': 'string'},
+                                                'effectiveTargetRoas': {'type': 'number'},
+                                                'effectiveTargetRoasSource': {'type': 'string'},
+                                                'labels': {
+                                                    'type': 'array',
+                                                    'items': {'type': 'string'},
+                                                },
+                                                'resourceName': {'type': 'string'},
+                                                'targetCpaMicros': {'type': 'string'},
+                                                'targetRoas': {'type': 'number'},
+                                                'trackingUrlTemplate': {'type': 'string'},
+                                            },
+                                        },
+                                        'metrics': {
+                                            'type': 'object',
+                                            'properties': {
+                                                'costMicros': {'type': 'string'},
+                                            },
+                                        },
+                                        'segments': {
+                                            'type': 'object',
+                                            'properties': {
+                                                'date': {'type': 'string'},
+                                            },
+                                        },
+                                    },
+                                    'x-airbyte-entity-name': 'ad_groups',
+                                    'x-airbyte-stream-name': 'ad_group',
+                                    'x-airbyte-ai-hints': {
+                                        'summary': 'Ad groups organizing ads and keywords within campaigns',
+                                        'when_to_use': 'Questions about ad group configuration or keyword grouping',
+                                        'trigger_phrases': ['ad group', 'keyword group'],
+                                        'freshness': 'live',
+                                        'example_questions': ['What ad groups are in this campaign?'],
+                                        'search_strategy': 'Filter by campaign',
+                                    },
+                                },
+                            },
+                            'nextPageToken': {'type': 'string'},
+                            'fieldMask': {'type': 'string'},
+                            'queryResourceConsumption': {'type': 'string', 'description': 'Resource consumption of the query'},
+                        },
+                    },
+                    record_extractor='$.results',
+                    meta_extractor={'next_page_token': '$.nextPageToken'},
+                ),
+                Action.UPDATE: EndpointDefinition(
+                    method='POST',
+                    path='/v23/customers/{customer_id}/adGroups:mutate',
+                    action=Action.UPDATE,
+                    description='Updates ad group properties such as status (enable/pause), name, or bid amounts using the Google Ads AdGroupService mutate endpoint.',
+                    body_fields=['operations'],
+                    path_params=['customer_id'],
+                    path_params_schema={
+                        'customer_id': {'type': 'string', 'required': True},
+                    },
+                    request_schema={
+                        'type': 'object',
+                        'description': 'Request to mutate (update) ad groups',
+                        'properties': {
+                            'operations': {
+                                'type': 'array',
+                                'description': 'List of ad group operations to perform',
+                                'items': {
+                                    'type': 'object',
+                                    'properties': {
+                                        'updateMask': {'type': 'string', 'description': 'Comma-separated list of field paths to update (e.g., name,status,cpcBidMicros)'},
+                                        'update': {
+                                            'type': 'object',
+                                            'description': 'Ad group fields to update',
+                                            'properties': {
+                                                'resourceName': {'type': 'string', 'description': 'Resource name of the ad group to update (e.g., customers/1234567890/adGroups/111222333)'},
+                                                'name': {'type': 'string', 'description': 'New ad group name'},
+                                                'status': {
+                                                    'type': 'string',
+                                                    'enum': ['ENABLED', 'PAUSED'],
+                                                    'description': 'Ad group status (ENABLED or PAUSED)',
+                                                },
+                                                'cpcBidMicros': {'type': 'string', 'description': 'CPC bid amount in micros (1,000,000 micros = 1 currency unit)'},
+                                            },
+                                            'required': ['resourceName'],
+                                        },
+                                    },
+                                },
+                            },
+                        },
+                        'required': ['operations'],
+                    },
+                    response_schema={
+                        'type': 'object',
+                        'description': 'Response from ad group mutate operation',
+                        'properties': {
+                            'results': {
+                                'type': 'array',
+                                'items': {
+                                    'type': 'object',
+                                    'properties': {
+                                        'resourceName': {'type': 'string', 'description': 'Resource name of the mutated ad group'},
+                                    },
+                                },
+                            },
+                        },
+                        'x-airbyte-entity-name': 'ad_groups',
+                    },
+                ),
+            },
+            entity_schema={
+                'type': 'object',
+                'description': 'Google Ads ad group',
+                'properties': {
+                    'campaign': {
+                        'type': 'object',
+                        'properties': {
+                            'id': {'type': 'string', 'description': 'Parent campaign ID'},
+                            'resourceName': {'type': 'string', 'description': 'Parent campaign resource name'},
+                        },
+                    },
+                    'adGroup': {
+                        'type': 'object',
+                        'properties': {
+                            'id': {'type': 'string', 'description': 'Ad group ID'},
+                            'name': {'type': 'string', 'description': 'Ad group name'},
+                            'status': {
+                                'type': 'string',
+                                'enum': [
+                                    'ENABLED',
+                                    'PAUSED',
+                                    'REMOVED',
+                                    'UNKNOWN',
+                                    'UNSPECIFIED',
+                                ],
+                            },
+                            'type': {'type': 'string'},
+                            'adRotationMode': {'type': 'string'},
+                            'baseAdGroup': {'type': 'string'},
+                            'campaign': {'type': 'string', 'description': 'Parent campaign resource name'},
+                            'cpcBidMicros': {'type': 'string'},
+                            'cpmBidMicros': {'type': 'string'},
+                            'cpvBidMicros': {'type': 'string'},
+                            'effectiveTargetCpaMicros': {'type': 'string'},
+                            'effectiveTargetCpaSource': {'type': 'string'},
+                            'effectiveTargetRoas': {'type': 'number'},
+                            'effectiveTargetRoasSource': {'type': 'string'},
+                            'labels': {
+                                'type': 'array',
+                                'items': {'type': 'string'},
+                            },
+                            'resourceName': {'type': 'string'},
+                            'targetCpaMicros': {'type': 'string'},
+                            'targetRoas': {'type': 'number'},
+                            'trackingUrlTemplate': {'type': 'string'},
+                        },
+                    },
+                    'metrics': {
+                        'type': 'object',
+                        'properties': {
+                            'costMicros': {'type': 'string'},
+                        },
+                    },
+                    'segments': {
+                        'type': 'object',
+                        'properties': {
+                            'date': {'type': 'string'},
+                        },
+                    },
+                },
+                'x-airbyte-entity-name': 'ad_groups',
+                'x-airbyte-stream-name': 'ad_group',
+                'x-airbyte-ai-hints': {
+                    'summary': 'Ad groups organizing ads and keywords within campaigns',
+                    'when_to_use': 'Questions about ad group configuration or keyword grouping',
+                    'trigger_phrases': ['ad group', 'keyword group'],
+                    'freshness': 'live',
+                    'example_questions': ['What ad groups are in this campaign?'],
+                    'search_strategy': 'Filter by campaign',
+                },
+            },
+            ai_hints={
+                'summary': 'Ad groups organizing ads and keywords within campaigns',
+                'when_to_use': 'Questions about ad group configuration or keyword grouping',
+                'trigger_phrases': ['ad group', 'keyword group'],
+                'freshness': 'live',
+                'example_questions': ['What ad groups are in this campaign?'],
+                'search_strategy': 'Filter by campaign',
+            },
+            relationships=[
+                EntityRelationshipConfig(
+                    source_entity='ad_groups',
+                    target_entity='accessible_customers',
+                    foreign_key='customer_id',
+                    target_key='customer_id',
+                ),
+            ],
+        ),
+        EntityDefinition(
+            name='ad_group_ads',
+            stream_name='ad_group_ad',
+            actions=[Action.LIST],
+            endpoints={
+                Action.LIST: EndpointDefinition(
+                    method='POST',
+                    path='/v23/customers/{customer_id}/googleAds:search?entity=ad_group_ads',
+                    path_override=PathOverrideConfig(
+                        path='/v23/customers/{customer_id}/googleAds:search',
+                    ),
+                    action=Action.LIST,
+                    description='Retrieves ad group ad data using GAQL query.',
+                    body_fields=['query', 'pageToken', 'pageSize'],
+                    path_params=['customer_id'],
+                    path_params_schema={
+                        'customer_id': {'type': 'string', 'required': True},
+                    },
+                    request_body_defaults={'query': 'SELECT\n  ad_group.id,\n  ad_group_ad.ad.id,\n  ad_group_ad.ad.name,\n  ad_group_ad.ad.type,\n  ad_group_ad.status,\n  ad_group_ad.ad_strength,\n  ad_group_ad.ad.display_url,\n  ad_group_ad.ad.final_urls,\n  ad_group_ad.ad.final_mobile_urls,\n  ad_group_ad.ad.final_url_suffix,\n  ad_group_ad.ad.tracking_url_template,\n  ad_group_ad.ad.resource_name,\n  ad_group_ad.ad_group,\n  ad_group_ad.resource_name,\n  ad_group_ad.labels,\n  ad_group_ad.policy_summary.approval_status,\n  ad_group_ad.policy_summary.review_status\nFROM ad_group_ad'},
+                    request_schema={
+                        'type': 'object',
+                        'properties': {
+                            'query': {
+                                'type': 'string',
+                                'description': 'GAQL query for ad group ads',
+                                'default': 'SELECT\n  ad_group.id,\n  ad_group_ad.ad.id,\n  ad_group_ad.ad.name,\n  ad_group_ad.ad.type,\n  ad_group_ad.status,\n  ad_group_ad.ad_strength,\n  ad_group_ad.ad.display_url,\n  ad_group_ad.ad.final_urls,\n  ad_group_ad.ad.final_mobile_urls,\n  ad_group_ad.ad.final_url_suffix,\n  ad_group_ad.ad.tracking_url_template,\n  ad_group_ad.ad.resource_name,\n  ad_group_ad.ad_group,\n  ad_group_ad.resource_name,\n  ad_group_ad.labels,\n  ad_group_ad.policy_summary.approval_status,\n  ad_group_ad.policy_summary.review_status\nFROM ad_group_ad',
+                            },
+                            'pageToken': {'type': 'string', 'description': 'Token for pagination'},
+                            'pageSize': {'type': 'integer', 'description': 'Number of results per page (max 10000)'},
+                        },
+                    },
+                    response_schema={
+                        'type': 'object',
+                        'description': 'Search response containing ad group ad data',
+                        'properties': {
+                            'results': {
+                                'type': 'array',
+                                'items': {
+                                    'type': 'object',
+                                    'description': 'Google Ads ad group ad',
+                                    'properties': {
+                                        'adGroup': {
+                                            'type': 'object',
+                                            'properties': {
+                                                'id': {'type': 'string', 'description': 'Parent ad group ID'},
+                                                'resourceName': {'type': 'string', 'description': 'Parent ad group resource name'},
+                                            },
+                                        },
+                                        'adGroupAd': {
+                                            'type': 'object',
+                                            'properties': {
+                                                'ad': {
+                                                    'type': 'object',
+                                                    'properties': {
+                                                        'id': {'type': 'string', 'description': 'Ad ID'},
+                                                        'name': {'type': 'string'},
+                                                        'type': {'type': 'string'},
+                                                        'displayUrl': {'type': 'string'},
+                                                        'finalUrls': {
+                                                            'type': 'array',
+                                                            'items': {'type': 'string'},
+                                                        },
+                                                        'finalMobileUrls': {
+                                                            'type': 'array',
+                                                            'items': {'type': 'string'},
+                                                        },
+                                                        'finalUrlSuffix': {'type': 'string'},
+                                                        'trackingUrlTemplate': {'type': 'string'},
+                                                        'resourceName': {'type': 'string'},
+                                                    },
+                                                },
+                                                'status': {
+                                                    'type': 'string',
+                                                    'enum': [
+                                                        'ENABLED',
+                                                        'PAUSED',
+                                                        'REMOVED',
+                                                        'UNKNOWN',
+                                                        'UNSPECIFIED',
+                                                    ],
+                                                },
+                                                'adStrength': {'type': 'string'},
+                                                'adGroup': {'type': 'string'},
+                                                'resourceName': {'type': 'string'},
+                                                'labels': {
+                                                    'type': 'array',
+                                                    'items': {'type': 'string'},
+                                                },
+                                                'policySummary': {
+                                                    'type': 'object',
+                                                    'properties': {
+                                                        'approvalStatus': {'type': 'string'},
+                                                        'reviewStatus': {'type': 'string'},
+                                                    },
+                                                },
+                                            },
+                                        },
+                                        'segments': {
+                                            'type': 'object',
+                                            'properties': {
+                                                'date': {'type': 'string'},
+                                            },
+                                        },
+                                    },
+                                    'x-airbyte-entity-name': 'ad_group_ads',
+                                    'x-airbyte-stream-name': 'ad_group_ad',
+                                    'x-airbyte-ai-hints': {
+                                        'summary': 'Individual ads within Google Ads ad groups',
+                                        'when_to_use': 'Questions about specific ad content or ad-level status',
+                                        'trigger_phrases': ['google ad', 'ad copy', 'ad status'],
+                                        'freshness': 'live',
+                                        'example_questions': ['Show ads in this ad group'],
+                                        'search_strategy': 'Filter by ad group or campaign',
+                                    },
+                                },
+                            },
+                            'nextPageToken': {'type': 'string'},
+                            'fieldMask': {'type': 'string'},
+                            'queryResourceConsumption': {'type': 'string', 'description': 'Resource consumption of the query'},
+                        },
+                    },
+                    record_extractor='$.results',
+                    meta_extractor={'next_page_token': '$.nextPageToken'},
+                ),
+            },
+            entity_schema={
+                'type': 'object',
+                'description': 'Google Ads ad group ad',
+                'properties': {
+                    'adGroup': {
+                        'type': 'object',
+                        'properties': {
+                            'id': {'type': 'string', 'description': 'Parent ad group ID'},
+                            'resourceName': {'type': 'string', 'description': 'Parent ad group resource name'},
+                        },
+                    },
+                    'adGroupAd': {
+                        'type': 'object',
+                        'properties': {
+                            'ad': {
+                                'type': 'object',
+                                'properties': {
+                                    'id': {'type': 'string', 'description': 'Ad ID'},
+                                    'name': {'type': 'string'},
+                                    'type': {'type': 'string'},
+                                    'displayUrl': {'type': 'string'},
+                                    'finalUrls': {
+                                        'type': 'array',
+                                        'items': {'type': 'string'},
+                                    },
+                                    'finalMobileUrls': {
+                                        'type': 'array',
+                                        'items': {'type': 'string'},
+                                    },
+                                    'finalUrlSuffix': {'type': 'string'},
+                                    'trackingUrlTemplate': {'type': 'string'},
+                                    'resourceName': {'type': 'string'},
+                                },
+                            },
+                            'status': {
+                                'type': 'string',
+                                'enum': [
+                                    'ENABLED',
+                                    'PAUSED',
+                                    'REMOVED',
+                                    'UNKNOWN',
+                                    'UNSPECIFIED',
+                                ],
+                            },
+                            'adStrength': {'type': 'string'},
+                            'adGroup': {'type': 'string'},
+                            'resourceName': {'type': 'string'},
+                            'labels': {
+                                'type': 'array',
+                                'items': {'type': 'string'},
+                            },
+                            'policySummary': {
+                                'type': 'object',
+                                'properties': {
+                                    'approvalStatus': {'type': 'string'},
+                                    'reviewStatus': {'type': 'string'},
+                                },
+                            },
+                        },
+                    },
+                    'segments': {
+                        'type': 'object',
+                        'properties': {
+                            'date': {'type': 'string'},
+                        },
+                    },
+                },
+                'x-airbyte-entity-name': 'ad_group_ads',
+                'x-airbyte-stream-name': 'ad_group_ad',
+                'x-airbyte-ai-hints': {
+                    'summary': 'Individual ads within Google Ads ad groups',
+                    'when_to_use': 'Questions about specific ad content or ad-level status',
+                    'trigger_phrases': ['google ad', 'ad copy', 'ad status'],
+                    'freshness': 'live',
+                    'example_questions': ['Show ads in this ad group'],
+                    'search_strategy': 'Filter by ad group or campaign',
+                },
+            },
+            ai_hints={
+                'summary': 'Individual ads within Google Ads ad groups',
+                'when_to_use': 'Questions about specific ad content or ad-level status',
+                'trigger_phrases': ['google ad', 'ad copy', 'ad status'],
+                'freshness': 'live',
+                'example_questions': ['Show ads in this ad group'],
+                'search_strategy': 'Filter by ad group or campaign',
+            },
+            relationships=[
+                EntityRelationshipConfig(
+                    source_entity='ad_group_ads',
+                    target_entity='accessible_customers',
+                    foreign_key='customer_id',
+                    target_key='customer_id',
+                ),
+            ],
+        ),
+        EntityDefinition(
+            name='campaign_labels',
+            stream_name='campaign_label',
+            actions=[Action.LIST, Action.CREATE],
+            endpoints={
+                Action.LIST: EndpointDefinition(
+                    method='POST',
+                    path='/v23/customers/{customer_id}/googleAds:search?entity=campaign_labels',
+                    path_override=PathOverrideConfig(
+                        path='/v23/customers/{customer_id}/googleAds:search',
+                    ),
+                    action=Action.LIST,
+                    description='Retrieves campaign label associations using GAQL query.',
+                    body_fields=['query', 'pageToken', 'pageSize'],
+                    path_params=['customer_id'],
+                    path_params_schema={
+                        'customer_id': {'type': 'string', 'required': True},
+                    },
+                    request_body_defaults={'query': 'SELECT\n  campaign.id,\n  campaign_label.campaign,\n  campaign_label.label,\n  campaign_label.resource_name,\n  label.id,\n  label.name,\n  label.resource_name\nFROM campaign_label'},
+                    request_schema={
+                        'type': 'object',
+                        'properties': {
+                            'query': {
+                                'type': 'string',
+                                'description': 'GAQL query for campaign labels',
+                                'default': 'SELECT\n  campaign.id,\n  campaign_label.campaign,\n  campaign_label.label,\n  campaign_label.resource_name,\n  label.id,\n  label.name,\n  label.resource_name\nFROM campaign_label',
+                            },
+                            'pageToken': {'type': 'string', 'description': 'Token for pagination'},
+                            'pageSize': {'type': 'integer', 'description': 'Number of results per page (max 10000)'},
+                        },
+                    },
+                    response_schema={
+                        'type': 'object',
+                        'description': 'Search response containing campaign label data',
+                        'properties': {
+                            'results': {
+                                'type': 'array',
+                                'items': {
+                                    'type': 'object',
+                                    'description': 'Campaign label association',
+                                    'properties': {
+                                        'campaign': {
+                                            'type': 'object',
+                                            'properties': {
+                                                'id': {'type': 'string'},
+                                            },
+                                        },
+                                        'campaignLabel': {
+                                            'type': 'object',
+                                            'properties': {
+                                                'campaign': {'type': 'string'},
+                                                'label': {'type': 'string'},
+                                                'resourceName': {'type': 'string'},
+                                            },
+                                        },
+                                        'label': {
+                                            'type': 'object',
+                                            'properties': {
+                                                'id': {'type': 'string'},
+                                                'name': {'type': 'string'},
+                                                'resourceName': {'type': 'string'},
+                                            },
+                                        },
+                                    },
+                                    'x-airbyte-entity-name': 'campaign_labels',
+                                    'x-airbyte-stream-name': 'campaign_label',
+                                    'x-airbyte-ai-hints': {
+                                        'summary': 'Labels applied to Google Ads campaigns for organization',
+                                        'when_to_use': 'Questions about campaign labeling or categorization',
+                                        'trigger_phrases': ['campaign label', 'campaign tag'],
+                                        'freshness': 'live',
+                                        'example_questions': ['What labels are on this campaign?'],
+                                        'search_strategy': 'Filter by campaign',
+                                    },
+                                },
+                            },
+                            'nextPageToken': {'type': 'string'},
+                            'fieldMask': {'type': 'string'},
+                            'queryResourceConsumption': {'type': 'string', 'description': 'Resource consumption of the query'},
+                        },
+                    },
+                    record_extractor='$.results',
+                    meta_extractor={'next_page_token': '$.nextPageToken'},
+                ),
+                Action.CREATE: EndpointDefinition(
+                    method='POST',
+                    path='/v23/customers/{customer_id}/campaignLabels:mutate',
+                    action=Action.CREATE,
+                    description='Creates a campaign-label association, applying an existing label to a campaign for organization and filtering.',
+                    body_fields=['operations'],
+                    path_params=['customer_id'],
+                    path_params_schema={
+                        'customer_id': {'type': 'string', 'required': True},
+                    },
+                    request_schema={
+                        'type': 'object',
+                        'description': 'Request to create campaign-label associations',
+                        'properties': {
+                            'operations': {
+                                'type': 'array',
+                                'description': 'List of campaign label operations to perform',
+                                'items': {
+                                    'type': 'object',
+                                    'properties': {
+                                        'create': {
+                                            'type': 'object',
+                                            'description': 'Campaign label association to create',
+                                            'properties': {
+                                                'campaign': {'type': 'string', 'description': 'Resource name of the campaign (e.g., customers/1234567890/campaigns/111222333)'},
+                                                'label': {'type': 'string', 'description': 'Resource name of the label (e.g., customers/1234567890/labels/444555666)'},
+                                            },
+                                            'required': ['campaign', 'label'],
+                                        },
+                                    },
+                                },
+                            },
+                        },
+                        'required': ['operations'],
+                    },
+                    response_schema={
+                        'type': 'object',
+                        'description': 'Response from campaign label mutate operation',
+                        'properties': {
+                            'results': {
+                                'type': 'array',
+                                'items': {
+                                    'type': 'object',
+                                    'properties': {
+                                        'resourceName': {'type': 'string', 'description': 'Resource name of the created campaign label association'},
+                                    },
+                                },
+                            },
+                        },
+                        'x-airbyte-entity-name': 'campaign_labels',
+                    },
+                ),
+            },
+            entity_schema={
+                'type': 'object',
+                'description': 'Campaign label association',
+                'properties': {
+                    'campaign': {
+                        'type': 'object',
+                        'properties': {
+                            'id': {'type': 'string'},
+                        },
+                    },
+                    'campaignLabel': {
+                        'type': 'object',
+                        'properties': {
+                            'campaign': {'type': 'string'},
+                            'label': {'type': 'string'},
+                            'resourceName': {'type': 'string'},
+                        },
+                    },
+                    'label': {
+                        'type': 'object',
+                        'properties': {
+                            'id': {'type': 'string'},
+                            'name': {'type': 'string'},
+                            'resourceName': {'type': 'string'},
+                        },
+                    },
+                },
+                'x-airbyte-entity-name': 'campaign_labels',
+                'x-airbyte-stream-name': 'campaign_label',
+                'x-airbyte-ai-hints': {
+                    'summary': 'Labels applied to Google Ads campaigns for organization',
+                    'when_to_use': 'Questions about campaign labeling or categorization',
+                    'trigger_phrases': ['campaign label', 'campaign tag'],
+                    'freshness': 'live',
+                    'example_questions': ['What labels are on this campaign?'],
+                    'search_strategy': 'Filter by campaign',
+                },
+            },
+            ai_hints={
+                'summary': 'Labels applied to Google Ads campaigns for organization',
+                'when_to_use': 'Questions about campaign labeling or categorization',
+                'trigger_phrases': ['campaign label', 'campaign tag'],
+                'freshness': 'live',
+                'example_questions': ['What labels are on this campaign?'],
+                'search_strategy': 'Filter by campaign',
+            },
+            relationships=[
+                EntityRelationshipConfig(
+                    source_entity='campaign_labels',
+                    target_entity='accessible_customers',
+                    foreign_key='customer_id',
+                    target_key='customer_id',
+                ),
+            ],
+        ),
+        EntityDefinition(
+            name='ad_group_labels',
+            stream_name='ad_group_label',
+            actions=[Action.LIST, Action.CREATE],
+            endpoints={
+                Action.LIST: EndpointDefinition(
+                    method='POST',
+                    path='/v23/customers/{customer_id}/googleAds:search?entity=ad_group_labels',
+                    path_override=PathOverrideConfig(
+                        path='/v23/customers/{customer_id}/googleAds:search',
+                    ),
+                    action=Action.LIST,
+                    description='Retrieves ad group label associations using GAQL query.',
+                    body_fields=['query', 'pageToken', 'pageSize'],
+                    path_params=['customer_id'],
+                    path_params_schema={
+                        'customer_id': {'type': 'string', 'required': True},
+                    },
+                    request_body_defaults={'query': 'SELECT\n  ad_group.id,\n  ad_group_label.ad_group,\n  ad_group_label.label,\n  ad_group_label.resource_name,\n  label.id,\n  label.name,\n  label.resource_name\nFROM ad_group_label'},
+                    request_schema={
+                        'type': 'object',
+                        'properties': {
+                            'query': {
+                                'type': 'string',
+                                'description': 'GAQL query for ad group labels',
+                                'default': 'SELECT\n  ad_group.id,\n  ad_group_label.ad_group,\n  ad_group_label.label,\n  ad_group_label.resource_name,\n  label.id,\n  label.name,\n  label.resource_name\nFROM ad_group_label',
+                            },
+                            'pageToken': {'type': 'string', 'description': 'Token for pagination'},
+                            'pageSize': {'type': 'integer', 'description': 'Number of results per page (max 10000)'},
+                        },
+                    },
+                    response_schema={
+                        'type': 'object',
+                        'description': 'Search response containing ad group label data',
+                        'properties': {
+                            'results': {
+                                'type': 'array',
+                                'items': {
+                                    'type': 'object',
+                                    'description': 'Ad group label association',
+                                    'properties': {
+                                        'adGroup': {
+                                            'type': 'object',
+                                            'properties': {
+                                                'id': {'type': 'string'},
+                                            },
+                                        },
+                                        'adGroupLabel': {
+                                            'type': 'object',
+                                            'properties': {
+                                                'adGroup': {'type': 'string'},
+                                                'label': {'type': 'string'},
+                                                'resourceName': {'type': 'string'},
+                                            },
+                                        },
+                                        'label': {
+                                            'type': 'object',
+                                            'properties': {
+                                                'id': {'type': 'string'},
+                                                'name': {'type': 'string'},
+                                                'resourceName': {'type': 'string'},
+                                            },
+                                        },
+                                    },
+                                    'x-airbyte-entity-name': 'ad_group_labels',
+                                    'x-airbyte-stream-name': 'ad_group_label',
+                                    'x-airbyte-ai-hints': {
+                                        'summary': 'Labels applied to ad groups for organization',
+                                        'when_to_use': 'Questions about ad group labeling',
+                                        'trigger_phrases': ['ad group label', 'group tag'],
+                                        'freshness': 'live',
+                                        'example_questions': ['What labels are on this ad group?'],
+                                        'search_strategy': 'Filter by ad group',
+                                    },
+                                },
+                            },
+                            'nextPageToken': {'type': 'string'},
+                            'fieldMask': {'type': 'string'},
+                            'queryResourceConsumption': {'type': 'string', 'description': 'Resource consumption of the query'},
+                        },
+                    },
+                    record_extractor='$.results',
+                    meta_extractor={'next_page_token': '$.nextPageToken'},
+                ),
+                Action.CREATE: EndpointDefinition(
+                    method='POST',
+                    path='/v23/customers/{customer_id}/adGroupLabels:mutate',
+                    action=Action.CREATE,
+                    description='Creates an ad group-label association, applying an existing label to an ad group for organization and filtering.',
+                    body_fields=['operations'],
+                    path_params=['customer_id'],
+                    path_params_schema={
+                        'customer_id': {'type': 'string', 'required': True},
+                    },
+                    request_schema={
+                        'type': 'object',
+                        'description': 'Request to create ad group-label associations',
+                        'properties': {
+                            'operations': {
+                                'type': 'array',
+                                'description': 'List of ad group label operations to perform',
+                                'items': {
+                                    'type': 'object',
+                                    'properties': {
+                                        'create': {
+                                            'type': 'object',
+                                            'description': 'Ad group label association to create',
+                                            'properties': {
+                                                'adGroup': {'type': 'string', 'description': 'Resource name of the ad group (e.g., customers/1234567890/adGroups/111222333)'},
+                                                'label': {'type': 'string', 'description': 'Resource name of the label (e.g., customers/1234567890/labels/444555666)'},
+                                            },
+                                            'required': ['adGroup', 'label'],
+                                        },
+                                    },
+                                },
+                            },
+                        },
+                        'required': ['operations'],
+                    },
+                    response_schema={
+                        'type': 'object',
+                        'description': 'Response from ad group label mutate operation',
+                        'properties': {
+                            'results': {
+                                'type': 'array',
+                                'items': {
+                                    'type': 'object',
+                                    'properties': {
+                                        'resourceName': {'type': 'string', 'description': 'Resource name of the created ad group label association'},
+                                    },
+                                },
+                            },
+                        },
+                        'x-airbyte-entity-name': 'ad_group_labels',
+                    },
+                ),
+            },
+            entity_schema={
+                'type': 'object',
+                'description': 'Ad group label association',
+                'properties': {
+                    'adGroup': {
+                        'type': 'object',
+                        'properties': {
+                            'id': {'type': 'string'},
+                        },
+                    },
+                    'adGroupLabel': {
+                        'type': 'object',
+                        'properties': {
+                            'adGroup': {'type': 'string'},
+                            'label': {'type': 'string'},
+                            'resourceName': {'type': 'string'},
+                        },
+                    },
+                    'label': {
+                        'type': 'object',
+                        'properties': {
+                            'id': {'type': 'string'},
+                            'name': {'type': 'string'},
+                            'resourceName': {'type': 'string'},
+                        },
+                    },
+                },
+                'x-airbyte-entity-name': 'ad_group_labels',
+                'x-airbyte-stream-name': 'ad_group_label',
+                'x-airbyte-ai-hints': {
+                    'summary': 'Labels applied to ad groups for organization',
+                    'when_to_use': 'Questions about ad group labeling',
+                    'trigger_phrases': ['ad group label', 'group tag'],
+                    'freshness': 'live',
+                    'example_questions': ['What labels are on this ad group?'],
+                    'search_strategy': 'Filter by ad group',
+                },
+            },
+            ai_hints={
+                'summary': 'Labels applied to ad groups for organization',
+                'when_to_use': 'Questions about ad group labeling',
+                'trigger_phrases': ['ad group label', 'group tag'],
+                'freshness': 'live',
+                'example_questions': ['What labels are on this ad group?'],
+                'search_strategy': 'Filter by ad group',
+            },
+            relationships=[
+                EntityRelationshipConfig(
+                    source_entity='ad_group_labels',
+                    target_entity='accessible_customers',
+                    foreign_key='customer_id',
+                    target_key='customer_id',
+                ),
+            ],
+        ),
+        EntityDefinition(
+            name='ad_group_ad_labels',
+            stream_name='ad_group_ad_label',
+            actions=[Action.LIST],
+            endpoints={
+                Action.LIST: EndpointDefinition(
+                    method='POST',
+                    path='/v23/customers/{customer_id}/googleAds:search?entity=ad_group_ad_labels',
+                    path_override=PathOverrideConfig(
+                        path='/v23/customers/{customer_id}/googleAds:search',
+                    ),
+                    action=Action.LIST,
+                    description='Retrieves ad group ad label associations using GAQL query.',
+                    body_fields=['query', 'pageToken', 'pageSize'],
+                    path_params=['customer_id'],
+                    path_params_schema={
+                        'customer_id': {'type': 'string', 'required': True},
+                    },
+                    request_body_defaults={'query': 'SELECT\n  ad_group_ad.ad.id,\n  ad_group_ad_label.ad_group_ad,\n  ad_group_ad_label.label,\n  ad_group_ad_label.resource_name,\n  label.id,\n  label.name,\n  label.resource_name\nFROM ad_group_ad_label'},
+                    request_schema={
+                        'type': 'object',
+                        'properties': {
+                            'query': {
+                                'type': 'string',
+                                'description': 'GAQL query for ad group ad labels',
+                                'default': 'SELECT\n  ad_group_ad.ad.id,\n  ad_group_ad_label.ad_group_ad,\n  ad_group_ad_label.label,\n  ad_group_ad_label.resource_name,\n  label.id,\n  label.name,\n  label.resource_name\nFROM ad_group_ad_label',
+                            },
+                            'pageToken': {'type': 'string', 'description': 'Token for pagination'},
+                            'pageSize': {'type': 'integer', 'description': 'Number of results per page (max 10000)'},
+                        },
+                    },
+                    response_schema={
+                        'type': 'object',
+                        'description': 'Search response containing ad group ad label data',
+                        'properties': {
+                            'results': {
+                                'type': 'array',
+                                'items': {
+                                    'type': 'object',
+                                    'description': 'Ad group ad label association',
+                                    'properties': {
+                                        'adGroupAd': {
+                                            'type': 'object',
+                                            'properties': {
+                                                'ad': {
+                                                    'type': 'object',
+                                                    'properties': {
+                                                        'id': {'type': 'string'},
+                                                    },
+                                                },
+                                            },
+                                        },
+                                        'adGroupAdLabel': {
+                                            'type': 'object',
+                                            'properties': {
+                                                'adGroupAd': {'type': 'string'},
+                                                'label': {'type': 'string'},
+                                                'resourceName': {'type': 'string'},
+                                            },
+                                        },
+                                        'label': {
+                                            'type': 'object',
+                                            'properties': {
+                                                'id': {'type': 'string'},
+                                                'name': {'type': 'string'},
+                                                'resourceName': {'type': 'string'},
+                                            },
+                                        },
+                                    },
+                                    'x-airbyte-entity-name': 'ad_group_ad_labels',
+                                    'x-airbyte-stream-name': 'ad_group_ad_label',
+                                    'x-airbyte-ai-hints': {
+                                        'summary': 'Labels applied to individual ads',
+                                        'when_to_use': 'Questions about ad-level labeling',
+                                        'trigger_phrases': ['ad label'],
+                                        'freshness': 'live',
+                                        'example_questions': ['What labels are on this ad?'],
+                                        'search_strategy': 'Filter by ad',
+                                    },
+                                },
+                            },
+                            'nextPageToken': {'type': 'string'},
+                            'fieldMask': {'type': 'string'},
+                            'queryResourceConsumption': {'type': 'string', 'description': 'Resource consumption of the query'},
+                        },
+                    },
+                    record_extractor='$.results',
+                    meta_extractor={'next_page_token': '$.nextPageToken'},
+                ),
+            },
+            entity_schema={
+                'type': 'object',
+                'description': 'Ad group ad label association',
+                'properties': {
+                    'adGroupAd': {
+                        'type': 'object',
+                        'properties': {
+                            'ad': {
+                                'type': 'object',
+                                'properties': {
+                                    'id': {'type': 'string'},
+                                },
+                            },
+                        },
+                    },
+                    'adGroupAdLabel': {
+                        'type': 'object',
+                        'properties': {
+                            'adGroupAd': {'type': 'string'},
+                            'label': {'type': 'string'},
+                            'resourceName': {'type': 'string'},
+                        },
+                    },
+                    'label': {
+                        'type': 'object',
+                        'properties': {
+                            'id': {'type': 'string'},
+                            'name': {'type': 'string'},
+                            'resourceName': {'type': 'string'},
+                        },
+                    },
+                },
+                'x-airbyte-entity-name': 'ad_group_ad_labels',
+                'x-airbyte-stream-name': 'ad_group_ad_label',
+                'x-airbyte-ai-hints': {
+                    'summary': 'Labels applied to individual ads',
+                    'when_to_use': 'Questions about ad-level labeling',
+                    'trigger_phrases': ['ad label'],
+                    'freshness': 'live',
+                    'example_questions': ['What labels are on this ad?'],
+                    'search_strategy': 'Filter by ad',
+                },
+            },
+            ai_hints={
+                'summary': 'Labels applied to individual ads',
+                'when_to_use': 'Questions about ad-level labeling',
+                'trigger_phrases': ['ad label'],
+                'freshness': 'live',
+                'example_questions': ['What labels are on this ad?'],
+                'search_strategy': 'Filter by ad',
+            },
+            relationships=[
+                EntityRelationshipConfig(
+                    source_entity='ad_group_ad_labels',
+                    target_entity='accessible_customers',
+                    foreign_key='customer_id',
+                    target_key='customer_id',
+                ),
+            ],
+        ),
+        EntityDefinition(
+            name='labels',
+            actions=[Action.CREATE],
+            endpoints={
+                Action.CREATE: EndpointDefinition(
+                    method='POST',
+                    path='/v23/customers/{customer_id}/labels:mutate',
+                    action=Action.CREATE,
+                    description='Creates a new label that can be applied to campaigns, ad groups, or ads for organization and reporting purposes.',
+                    body_fields=['operations'],
+                    path_params=['customer_id'],
+                    path_params_schema={
+                        'customer_id': {'type': 'string', 'required': True},
+                    },
+                    request_schema={
+                        'type': 'object',
+                        'description': 'Request to create labels',
+                        'properties': {
+                            'operations': {
+                                'type': 'array',
+                                'description': 'List of label operations to perform',
+                                'items': {
+                                    'type': 'object',
+                                    'properties': {
+                                        'create': {
+                                            'type': 'object',
+                                            'description': 'Label to create',
+                                            'properties': {
+                                                'name': {'type': 'string', 'description': 'Name for the new label'},
+                                                'description': {'type': 'string', 'description': 'Description for the label'},
+                                                'textLabel': {
+                                                    'type': 'object',
+                                                    'description': 'Text label styling',
+                                                    'properties': {
+                                                        'backgroundColor': {'type': 'string', 'description': 'Background color in hex format (e.g., #FF0000)'},
+                                                        'description': {'type': 'string', 'description': 'Description of the text label'},
+                                                    },
+                                                },
+                                            },
+                                            'required': ['name'],
+                                        },
+                                    },
+                                },
+                            },
+                        },
+                        'required': ['operations'],
+                    },
+                    response_schema={
+                        'type': 'object',
+                        'description': 'Response from label mutate operation',
+                        'properties': {
+                            'results': {
+                                'type': 'array',
+                                'items': {
+                                    'type': 'object',
+                                    'properties': {
+                                        'resourceName': {'type': 'string', 'description': 'Resource name of the created label'},
+                                    },
+                                },
+                            },
+                        },
+                        'x-airbyte-entity-name': 'labels',
+                    },
+                ),
+            },
+            entity_schema={
+                'type': 'object',
+                'description': 'Response from label mutate operation',
+                'properties': {
+                    'results': {
+                        'type': 'array',
+                        'items': {
+                            'type': 'object',
+                            'properties': {
+                                'resourceName': {'type': 'string', 'description': 'Resource name of the created label'},
+                            },
+                        },
+                    },
+                },
+                'x-airbyte-entity-name': 'labels',
+            },
+            relationships=[
+                EntityRelationshipConfig(
+                    source_entity='labels',
+                    target_entity='accessible_customers',
+                    foreign_key='customer_id',
+                    target_key='customer_id',
+                ),
+            ],
+        ),
+    ],
+    context_store=CacheConfig(
+        entities=[
+            CacheEntityConfig(
+                entity='accounts',
+                suggested=True,
+                x_airbyte_name='customer',
+                fields=[
+                    CacheFieldConfig(
+                        name='customer.auto_tagging_enabled',
+                        type=['null', 'boolean'],
+                        description='Whether auto-tagging is enabled for the account',
+                    ),
+                    CacheFieldConfig(
+                        name='customer.call_reporting_setting.call_conversion_action',
+                        type=['null', 'string'],
+                        description='Call conversion action resource name',
+                    ),
+                    CacheFieldConfig(
+                        name='customer.call_reporting_setting.call_conversion_reporting_enabled',
+                        type=['null', 'boolean'],
+                        description='Whether call conversion reporting is enabled',
+                    ),
+                    CacheFieldConfig(
+                        name='customer.call_reporting_setting.call_reporting_enabled',
+                        type=['null', 'boolean'],
+                        description='Whether call reporting is enabled',
+                    ),
+                    CacheFieldConfig(
+                        name='customer.conversion_tracking_setting.conversion_tracking_id',
+                        type=['null', 'integer'],
+                        description='Conversion tracking ID',
+                    ),
+                    CacheFieldConfig(
+                        name='customer.conversion_tracking_setting.cross_account_conversion_tracking_id',
+                        type=['null', 'integer'],
+                        description='Cross-account conversion tracking ID',
+                    ),
+                    CacheFieldConfig(
+                        name='customer.currency_code',
+                        type=['null', 'string'],
+                        description='Currency code for the account (e.g., USD)',
+                    ),
+                    CacheFieldConfig(
+                        name='customer.descriptive_name',
+                        type=['null', 'string'],
+                        description='Descriptive name of the customer account',
+                    ),
+                    CacheFieldConfig(
+                        name='customer.final_url_suffix',
+                        type=['null', 'string'],
+                        description='URL suffix appended to final URLs',
+                    ),
+                    CacheFieldConfig(
+                        name='customer.has_partners_badge',
+                        type=['null', 'boolean'],
+                        description='Whether the account has a Google Partners badge',
+                    ),
+                    CacheFieldConfig(
+                        name='customer.id',
+                        type=['null', 'integer'],
+                        description='Unique customer account ID',
+                    ),
+                    CacheFieldConfig(
+                        name='customer.manager',
+                        type=['null', 'boolean'],
+                        description='Whether this is a manager (MCC) account',
+                    ),
+                    CacheFieldConfig(
+                        name='customer.optimization_score',
+                        type=['null', 'number'],
+                        description='Optimization score for the account (0.0 to 1.0)',
+                    ),
+                    CacheFieldConfig(
+                        name='customer.optimization_score_weight',
+                        type=['null', 'number'],
+                        description='Weight of the optimization score',
+                    ),
+                    CacheFieldConfig(
+                        name='customer.pay_per_conversion_eligibility_failure_reasons',
+                        type=['null', 'array'],
+                        description='Reasons why pay-per-conversion is not eligible',
+                    ),
+                    CacheFieldConfig(
+                        name='customer.remarketing_setting.google_global_site_tag',
+                        type=['null', 'string'],
+                        description='Google global site tag snippet',
+                    ),
+                    CacheFieldConfig(
+                        name='customer.resource_name',
+                        type=['null', 'string'],
+                        description='Resource name of the customer',
+                    ),
+                    CacheFieldConfig(
+                        name='customer.test_account',
+                        type=['null', 'boolean'],
+                        description='Whether this is a test account',
+                    ),
+                    CacheFieldConfig(
+                        name='customer.time_zone',
+                        type=['null', 'string'],
+                        description='Time zone of the account',
+                    ),
+                    CacheFieldConfig(
+                        name='customer.tracking_url_template',
+                        type=['null', 'string'],
+                        description='Tracking URL template for the account',
+                    ),
+                    CacheFieldConfig(
+                        name='segments.date',
+                        type=['null', 'string'],
+                        description='Date segment for the report row',
+                    ),
+                ],
+            ),
+            CacheEntityConfig(
+                entity='campaigns',
+                suggested=True,
+                x_airbyte_name='campaign',
+                fields=[
+                    CacheFieldConfig(
+                        name='campaign.id',
+                        type=['null', 'integer'],
+                        description='Campaign ID',
+                    ),
+                    CacheFieldConfig(
+                        name='campaign.name',
+                        type=['null', 'string'],
+                        description='Campaign name',
+                    ),
+                    CacheFieldConfig(
+                        name='campaign.status',
+                        type=['null', 'string'],
+                        description='Campaign status (ENABLED, PAUSED, REMOVED)',
+                    ),
+                    CacheFieldConfig(
+                        name='campaign.advertising_channel_type',
+                        type=['null', 'string'],
+                        description='Advertising channel type (SEARCH, DISPLAY, etc.)',
+                    ),
+                    CacheFieldConfig(
+                        name='campaign.advertising_channel_sub_type',
+                        type=['null', 'string'],
+                        description='Advertising channel sub-type',
+                    ),
+                    CacheFieldConfig(
+                        name='campaign.bidding_strategy',
+                        type=['null', 'string'],
+                        description='Bidding strategy resource name',
+                    ),
+                    CacheFieldConfig(
+                        name='campaign.bidding_strategy_type',
+                        type=['null', 'string'],
+                        description='Bidding strategy type',
+                    ),
+                    CacheFieldConfig(
+                        name='campaign.campaign_budget',
+                        type=['null', 'string'],
+                        description='Campaign budget resource name',
+                    ),
+                    CacheFieldConfig(
+                        name='campaign_budget.amount_micros',
+                        type=['null', 'integer'],
+                        description='Campaign budget amount in micros',
+                    ),
+                    CacheFieldConfig(
+                        name='campaign.start_date_time',
+                        type=['null', 'string'],
+                        description='Campaign start date',
+                    ),
+                    CacheFieldConfig(
+                        name='campaign.end_date_time',
+                        type=['null', 'string'],
+                        description='Campaign end date',
+                    ),
+                    CacheFieldConfig(
+                        name='campaign.serving_status',
+                        type=['null', 'string'],
+                        description='Campaign serving status',
+                    ),
+                    CacheFieldConfig(
+                        name='campaign.resource_name',
+                        type=['null', 'string'],
+                        description='Resource name of the campaign',
+                    ),
+                    CacheFieldConfig(
+                        name='campaign.labels',
+                        type=['null', 'array'],
+                        description='Labels applied to the campaign',
+                    ),
+                    CacheFieldConfig(
+                        name='campaign.network_settings.target_google_search',
+                        type=['null', 'boolean'],
+                        description='Whether targeting Google Search',
+                    ),
+                    CacheFieldConfig(
+                        name='campaign.network_settings.target_search_network',
+                        type=['null', 'boolean'],
+                        description='Whether targeting search network',
+                    ),
+                    CacheFieldConfig(
+                        name='campaign.network_settings.target_content_network',
+                        type=['null', 'boolean'],
+                        description='Whether targeting content network',
+                    ),
+                    CacheFieldConfig(
+                        name='campaign.network_settings.target_partner_search_network',
+                        type=['null', 'boolean'],
+                        description='Whether targeting partner search network',
+                    ),
+                    CacheFieldConfig(
+                        name='metrics.clicks',
+                        type=['null', 'integer'],
+                        description='Number of clicks',
+                    ),
+                    CacheFieldConfig(
+                        name='metrics.ctr',
+                        type=['null', 'number'],
+                        description='Click-through rate',
+                    ),
+                    CacheFieldConfig(
+                        name='metrics.conversions',
+                        type=['null', 'number'],
+                        description='Number of conversions',
+                    ),
+                    CacheFieldConfig(
+                        name='metrics.conversions_value',
+                        type=['null', 'number'],
+                        description='Total conversions value',
+                    ),
+                    CacheFieldConfig(
+                        name='metrics.cost_micros',
+                        type=['null', 'integer'],
+                        description='Cost in micros',
+                    ),
+                    CacheFieldConfig(
+                        name='metrics.impressions',
+                        type=['null', 'integer'],
+                        description='Number of impressions',
+                    ),
+                    CacheFieldConfig(
+                        name='metrics.average_cpc',
+                        type=['null', 'number'],
+                        description='Average cost per click',
+                    ),
+                    CacheFieldConfig(
+                        name='metrics.average_cpm',
+                        type=['null', 'number'],
+                        description='Average cost per thousand impressions',
+                    ),
+                    CacheFieldConfig(
+                        name='metrics.interactions',
+                        type=['null', 'integer'],
+                        description='Number of interactions',
+                    ),
+                    CacheFieldConfig(
+                        name='segments.date',
+                        type=['null', 'string'],
+                        description='Date segment for the report row',
+                    ),
+                    CacheFieldConfig(
+                        name='segments.hour',
+                        type=['null', 'integer'],
+                        description='Hour segment',
+                    ),
+                    CacheFieldConfig(
+                        name='segments.ad_network_type',
+                        type=['null', 'string'],
+                        description='Ad network type segment',
+                    ),
+                ],
+            ),
+            CacheEntityConfig(
+                entity='ad_groups',
+                suggested=True,
+                x_airbyte_name='ad_group',
+                fields=[
+                    CacheFieldConfig(
+                        name='campaign.id',
+                        type=['null', 'integer'],
+                        description='Parent campaign ID',
+                    ),
+                    CacheFieldConfig(
+                        name='ad_group.id',
+                        type=['null', 'integer'],
+                        description='Ad group ID',
+                    ),
+                    CacheFieldConfig(
+                        name='ad_group.name',
+                        type=['null', 'string'],
+                        description='Ad group name',
+                    ),
+                    CacheFieldConfig(
+                        name='ad_group.status',
+                        type=['null', 'string'],
+                        description='Ad group status (ENABLED, PAUSED, REMOVED)',
+                    ),
+                    CacheFieldConfig(
+                        name='ad_group.type',
+                        type=['null', 'string'],
+                        description='Ad group type',
+                    ),
+                    CacheFieldConfig(
+                        name='ad_group.ad_rotation_mode',
+                        type=['null', 'string'],
+                        description='Ad rotation mode',
+                    ),
+                    CacheFieldConfig(
+                        name='ad_group.base_ad_group',
+                        type=['null', 'string'],
+                        description='Base ad group resource name',
+                    ),
+                    CacheFieldConfig(
+                        name='ad_group.campaign',
+                        type=['null', 'string'],
+                        description='Parent campaign resource name',
+                    ),
+                    CacheFieldConfig(
+                        name='ad_group.cpc_bid_micros',
+                        type=['null', 'integer'],
+                        description='CPC bid in micros',
+                    ),
+                    CacheFieldConfig(
+                        name='ad_group.cpm_bid_micros',
+                        type=['null', 'integer'],
+                        description='CPM bid in micros',
+                    ),
+                    CacheFieldConfig(
+                        name='ad_group.cpv_bid_micros',
+                        type=['null', 'integer'],
+                        description='CPV bid in micros',
+                    ),
+                    CacheFieldConfig(
+                        name='ad_group.effective_target_cpa_micros',
+                        type=['null', 'integer'],
+                        description='Effective target CPA in micros',
+                    ),
+                    CacheFieldConfig(
+                        name='ad_group.effective_target_cpa_source',
+                        type=['null', 'string'],
+                        description='Source of the effective target CPA',
+                    ),
+                    CacheFieldConfig(
+                        name='ad_group.effective_target_roas',
+                        type=['null', 'number'],
+                        description='Effective target ROAS',
+                    ),
+                    CacheFieldConfig(
+                        name='ad_group.effective_target_roas_source',
+                        type=['null', 'string'],
+                        description='Source of the effective target ROAS',
+                    ),
+                    CacheFieldConfig(
+                        name='ad_group.labels',
+                        type=['null', 'array'],
+                        description='Labels applied to the ad group',
+                    ),
+                    CacheFieldConfig(
+                        name='ad_group.resource_name',
+                        type=['null', 'string'],
+                        description='Resource name of the ad group',
+                    ),
+                    CacheFieldConfig(
+                        name='ad_group.target_cpa_micros',
+                        type=['null', 'integer'],
+                        description='Target CPA in micros',
+                    ),
+                    CacheFieldConfig(
+                        name='ad_group.target_roas',
+                        type=['null', 'number'],
+                        description='Target ROAS',
+                    ),
+                    CacheFieldConfig(
+                        name='ad_group.tracking_url_template',
+                        type=['null', 'string'],
+                        description='Tracking URL template',
+                    ),
+                    CacheFieldConfig(
+                        name='metrics.cost_micros',
+                        type=['null', 'integer'],
+                        description='Cost in micros',
+                    ),
+                    CacheFieldConfig(
+                        name='segments.date',
+                        type=['null', 'string'],
+                        description='Date segment for the report row',
+                    ),
+                ],
+            ),
+            CacheEntityConfig(
+                entity='ad_group_ads',
+                suggested=True,
+                x_airbyte_name='ad_group_ad',
+                fields=[
+                    CacheFieldConfig(
+                        name='ad_group.id',
+                        type=['null', 'integer'],
+                        description='Parent ad group ID',
+                    ),
+                    CacheFieldConfig(
+                        name='ad_group_ad.ad.id',
+                        type=['null', 'integer'],
+                        description='Ad ID',
+                    ),
+                    CacheFieldConfig(
+                        name='ad_group_ad.ad.name',
+                        type=['null', 'string'],
+                        description='Ad name',
+                    ),
+                    CacheFieldConfig(
+                        name='ad_group_ad.ad.type',
+                        type=['null', 'string'],
+                        description='Ad type',
+                    ),
+                    CacheFieldConfig(
+                        name='ad_group_ad.status',
+                        type=['null', 'string'],
+                        description='Ad group ad status (ENABLED, PAUSED, REMOVED)',
+                    ),
+                    CacheFieldConfig(
+                        name='ad_group_ad.ad_strength',
+                        type=['null', 'string'],
+                        description='Ad strength rating',
+                    ),
+                    CacheFieldConfig(
+                        name='ad_group_ad.ad.display_url',
+                        type=['null', 'string'],
+                        description='Display URL of the ad',
+                    ),
+                    CacheFieldConfig(
+                        name='ad_group_ad.ad.final_urls',
+                        type=['null', 'array'],
+                        description='Final URLs for the ad',
+                    ),
+                    CacheFieldConfig(
+                        name='ad_group_ad.ad.final_mobile_urls',
+                        type=['null', 'array'],
+                        description='Final mobile URLs for the ad',
+                    ),
+                    CacheFieldConfig(
+                        name='ad_group_ad.ad.final_url_suffix',
+                        type=['null', 'string'],
+                        description='Final URL suffix',
+                    ),
+                    CacheFieldConfig(
+                        name='ad_group_ad.ad.tracking_url_template',
+                        type=['null', 'string'],
+                        description='Tracking URL template',
+                    ),
+                    CacheFieldConfig(
+                        name='ad_group_ad.ad.resource_name',
+                        type=['null', 'string'],
+                        description='Resource name of the ad',
+                    ),
+                    CacheFieldConfig(
+                        name='ad_group_ad.ad_group',
+                        type=['null', 'string'],
+                        description='Ad group resource name',
+                    ),
+                    CacheFieldConfig(
+                        name='ad_group_ad.resource_name',
+                        type=['null', 'string'],
+                        description='Resource name of the ad group ad',
+                    ),
+                    CacheFieldConfig(
+                        name='ad_group_ad.labels',
+                        type=['null', 'array'],
+                        description='Labels applied to the ad group ad',
+                    ),
+                    CacheFieldConfig(
+                        name='ad_group_ad.policy_summary.approval_status',
+                        type=['null', 'string'],
+                        description='Policy approval status',
+                    ),
+                    CacheFieldConfig(
+                        name='ad_group_ad.policy_summary.review_status',
+                        type=['null', 'string'],
+                        description='Policy review status',
+                    ),
+                    CacheFieldConfig(
+                        name='segments.date',
+                        type=['null', 'string'],
+                        description='Date segment for the report row',
+                    ),
+                ],
+            ),
+            CacheEntityConfig(
+                entity='campaign_labels',
+                suggested=True,
+                x_airbyte_name='campaign_label',
+                fields=[
+                    CacheFieldConfig(
+                        name='campaign.id',
+                        type=['null', 'integer'],
+                        description='Campaign ID',
+                    ),
+                    CacheFieldConfig(
+                        name='campaign_label.resource_name',
+                        type=['null', 'string'],
+                        description='Resource name of the campaign label',
+                    ),
+                    CacheFieldConfig(
+                        name='label.id',
+                        type=['null', 'integer'],
+                        description='Label ID',
+                    ),
+                    CacheFieldConfig(
+                        name='label.name',
+                        type=['null', 'string'],
+                        description='Label name',
+                    ),
+                    CacheFieldConfig(
+                        name='label.resource_name',
+                        type=['null', 'string'],
+                        description='Resource name of the label',
+                    ),
+                ],
+            ),
+            CacheEntityConfig(
+                entity='ad_group_labels',
+                suggested=True,
+                x_airbyte_name='ad_group_label',
+                fields=[
+                    CacheFieldConfig(
+                        name='ad_group.id',
+                        type=['null', 'integer'],
+                        description='Ad group ID',
+                    ),
+                    CacheFieldConfig(
+                        name='ad_group_label.resource_name',
+                        type=['null', 'string'],
+                        description='Resource name of the ad group label',
+                    ),
+                    CacheFieldConfig(
+                        name='label.id',
+                        type=['null', 'integer'],
+                        description='Label ID',
+                    ),
+                    CacheFieldConfig(
+                        name='label.name',
+                        type=['null', 'string'],
+                        description='Label name',
+                    ),
+                    CacheFieldConfig(
+                        name='label.resource_name',
+                        type=['null', 'string'],
+                        description='Resource name of the label',
+                    ),
+                ],
+            ),
+            CacheEntityConfig(
+                entity='ad_group_ad_labels',
+                suggested=True,
+                x_airbyte_name='ad_group_ad_label',
+                fields=[
+                    CacheFieldConfig(
+                        name='ad_group_ad.ad.id',
+                        type=['null', 'integer'],
+                        description='Ad ID',
+                    ),
+                    CacheFieldConfig(
+                        name='ad_group_ad_label.resource_name',
+                        type=['null', 'string'],
+                        description='Resource name of the ad group ad label',
+                    ),
+                    CacheFieldConfig(
+                        name='label.id',
+                        type=['null', 'integer'],
+                        description='Label ID',
+                    ),
+                    CacheFieldConfig(
+                        name='label.name',
+                        type=['null', 'string'],
+                        description='Label name',
+                    ),
+                    CacheFieldConfig(
+                        name='label.resource_name',
+                        type=['null', 'string'],
+                        description='Resource name of the label',
+                    ),
+                ],
+            ),
+        ],
+    ),
+    search_field_paths={
+        'accounts': [
+            'customer.auto_tagging_enabled',
+            'customer.call_reporting_setting.call_conversion_action',
+            'customer.call_reporting_setting.call_conversion_reporting_enabled',
+            'customer.call_reporting_setting.call_reporting_enabled',
+            'customer.conversion_tracking_setting.conversion_tracking_id',
+            'customer.conversion_tracking_setting.cross_account_conversion_tracking_id',
+            'customer.currency_code',
+            'customer.descriptive_name',
+            'customer.final_url_suffix',
+            'customer.has_partners_badge',
+            'customer.id',
+            'customer.manager',
+            'customer.optimization_score',
+            'customer.optimization_score_weight',
+            'customer.pay_per_conversion_eligibility_failure_reasons',
+            'customer.pay_per_conversion_eligibility_failure_reasons[]',
+            'customer.remarketing_setting.google_global_site_tag',
+            'customer.resource_name',
+            'customer.test_account',
+            'customer.time_zone',
+            'customer.tracking_url_template',
+            'segments.date',
+        ],
+        'campaigns': [
+            'campaign.id',
+            'campaign.name',
+            'campaign.status',
+            'campaign.advertising_channel_type',
+            'campaign.advertising_channel_sub_type',
+            'campaign.bidding_strategy',
+            'campaign.bidding_strategy_type',
+            'campaign.campaign_budget',
+            'campaign_budget.amount_micros',
+            'campaign.start_date_time',
+            'campaign.end_date_time',
+            'campaign.serving_status',
+            'campaign.resource_name',
+            'campaign.labels',
+            'campaign.labels[]',
+            'campaign.network_settings.target_google_search',
+            'campaign.network_settings.target_search_network',
+            'campaign.network_settings.target_content_network',
+            'campaign.network_settings.target_partner_search_network',
+            'metrics.clicks',
+            'metrics.ctr',
+            'metrics.conversions',
+            'metrics.conversions_value',
+            'metrics.cost_micros',
+            'metrics.impressions',
+            'metrics.average_cpc',
+            'metrics.average_cpm',
+            'metrics.interactions',
+            'segments.date',
+            'segments.hour',
+            'segments.ad_network_type',
+        ],
+        'ad_groups': [
+            'campaign.id',
+            'ad_group.id',
+            'ad_group.name',
+            'ad_group.status',
+            'ad_group.type',
+            'ad_group.ad_rotation_mode',
+            'ad_group.base_ad_group',
+            'ad_group.campaign',
+            'ad_group.cpc_bid_micros',
+            'ad_group.cpm_bid_micros',
+            'ad_group.cpv_bid_micros',
+            'ad_group.effective_target_cpa_micros',
+            'ad_group.effective_target_cpa_source',
+            'ad_group.effective_target_roas',
+            'ad_group.effective_target_roas_source',
+            'ad_group.labels',
+            'ad_group.labels[]',
+            'ad_group.resource_name',
+            'ad_group.target_cpa_micros',
+            'ad_group.target_roas',
+            'ad_group.tracking_url_template',
+            'metrics.cost_micros',
+            'segments.date',
+        ],
+        'ad_group_ads': [
+            'ad_group.id',
+            'ad_group_ad.ad.id',
+            'ad_group_ad.ad.name',
+            'ad_group_ad.ad.type',
+            'ad_group_ad.status',
+            'ad_group_ad.ad_strength',
+            'ad_group_ad.ad.display_url',
+            'ad_group_ad.ad.final_urls',
+            'ad_group_ad.ad.final_urls[]',
+            'ad_group_ad.ad.final_mobile_urls',
+            'ad_group_ad.ad.final_mobile_urls[]',
+            'ad_group_ad.ad.final_url_suffix',
+            'ad_group_ad.ad.tracking_url_template',
+            'ad_group_ad.ad.resource_name',
+            'ad_group_ad.ad_group',
+            'ad_group_ad.resource_name',
+            'ad_group_ad.labels',
+            'ad_group_ad.labels[]',
+            'ad_group_ad.policy_summary.approval_status',
+            'ad_group_ad.policy_summary.review_status',
+            'segments.date',
+        ],
+        'campaign_labels': [
+            'campaign.id',
+            'campaign_label.resource_name',
+            'label.id',
+            'label.name',
+            'label.resource_name',
+        ],
+        'ad_group_labels': [
+            'ad_group.id',
+            'ad_group_label.resource_name',
+            'label.id',
+            'label.name',
+            'label.resource_name',
+        ],
+        'ad_group_ad_labels': [
+            'ad_group_ad.ad.id',
+            'ad_group_ad_label.resource_name',
+            'label.id',
+            'label.name',
+            'label.resource_name',
+        ],
+    },
+    example_questions=ExampleQuestions(
+        direct=[
+            'List all accessible Google Ads customer accounts',
+            'Show me all campaigns and their statuses',
+            'List all ad groups across my campaigns',
+            'What ads are running in my ad groups?',
+            'Show me campaign labels',
+            'List all ad group labels',
+            'What labels are applied to my ads?',
+            "Pause campaign 'Summer Sale 2025'",
+            "Enable the ad group 'Brand Keywords'",
+            "Create a label called 'High Priority'",
+            "Apply the 'Q4 Campaigns' label to my search campaign",
+            "Update the name of campaign 123456 to 'Winter Promo'",
+        ],
+        context_store_search=[
+            'Which campaigns have the highest cost this month?',
+            'Show me all paused campaigns',
+            'Find ad groups with the most impressions',
+            'What are my top performing ads by click-through rate?',
+            'Show campaigns with budget over $100 per day',
+        ],
+        search=[
+            'Which campaigns have the highest cost this month?',
+            'Show me all paused campaigns',
+            'Find ad groups with the most impressions',
+            'What are my top performing ads by click-through rate?',
+            'Show campaigns with budget over $100 per day',
+        ],
+        unsupported=[
+            'Create a new campaign',
+            'Delete an ad',
+            'Delete a campaign',
+            'Delete a label',
+        ],
+    ),
+    scoping=[
+        ScopingParamConfig(
+            param='customer_id',
+            config_key='customer_id',
+        ),
+    ],
+)

@@ -1,0 +1,3930 @@
+"""
+Connector model for greenhouse.
+
+This file is auto-generated from the connector definition at build time.
+DO NOT EDIT MANUALLY - changes will be overwritten on next generation.
+"""
+
+from __future__ import annotations
+
+from airbyte_agent_sdk.types import (
+    Action,
+    AuthConfig,
+    AuthType,
+    ConnectorModel,
+    EndpointDefinition,
+    EntityDefinition,
+)
+from airbyte_agent_sdk.schema.security import (
+    AuthConfigFieldSpec,
+    AuthConfigSpec,
+)
+from airbyte_agent_sdk.schema.extensions import (
+    CacheConfig,
+    CacheEntityConfig,
+    CacheFieldConfig,
+    CacheFieldProperty,
+)
+from airbyte_agent_sdk.schema.base import (
+    ExampleQuestions,
+)
+from airbyte_agent_sdk.schema.components import (
+    PathOverrideConfig,
+)
+from uuid import (
+    UUID,
+)
+
+GreenhouseConnectorModel: ConnectorModel = ConnectorModel(
+    id=UUID('59f1e50a-331f-4f09-b3e8-2e8d4d355f44'),
+    name='greenhouse',
+    version='0.1.8',
+    base_url='https://harvest.greenhouse.io/v1',
+    auth=AuthConfig(
+        type=AuthType.BASIC,
+        user_config_spec=AuthConfigSpec(
+            title='Harvest API Key Authentication',
+            type='object',
+            required=['api_key'],
+            properties={
+                'api_key': AuthConfigFieldSpec(
+                    title='Harvest API Key',
+                    description='Your Greenhouse Harvest API Key from the Dev Center',
+                ),
+            },
+            auth_mapping={'username': '${api_key}', 'password': ''},
+            replication_auth_key_mapping={'api_key': 'api_key'},
+        ),
+    ),
+    entities=[
+        EntityDefinition(
+            name='candidates',
+            stream_name='candidates',
+            actions=[Action.LIST, Action.GET],
+            endpoints={
+                Action.LIST: EndpointDefinition(
+                    method='GET',
+                    path='/candidates',
+                    action=Action.LIST,
+                    description='Returns a paginated list of all candidates in the organization',
+                    query_params=['per_page', 'page'],
+                    query_params_schema={
+                        'per_page': {
+                            'type': 'integer',
+                            'required': False,
+                            'default': 100,
+                            'minimum': 1,
+                            'maximum': 500,
+                        },
+                        'page': {
+                            'type': 'integer',
+                            'required': False,
+                            'default': 1,
+                            'minimum': 1,
+                        },
+                    },
+                    response_schema={
+                        'type': 'array',
+                        'items': {
+                            'type': 'object',
+                            'description': 'Greenhouse candidate object',
+                            'properties': {
+                                'id': {'type': 'integer', 'description': 'Unique candidate identifier'},
+                                'first_name': {'type': 'string', 'description': "Candidate's first name"},
+                                'last_name': {'type': 'string', 'description': "Candidate's last name"},
+                                'company': {
+                                    'type': ['string', 'null'],
+                                    'description': "Candidate's current company",
+                                },
+                                'title': {
+                                    'type': ['string', 'null'],
+                                    'description': "Candidate's current title",
+                                },
+                                'created_at': {
+                                    'type': 'string',
+                                    'format': 'date-time',
+                                    'description': 'When the candidate was created',
+                                },
+                                'updated_at': {
+                                    'type': 'string',
+                                    'format': 'date-time',
+                                    'description': 'When the candidate was last updated',
+                                },
+                                'last_activity': {
+                                    'type': 'string',
+                                    'format': 'date-time',
+                                    'description': 'When the last activity occurred',
+                                },
+                                'is_private': {'type': 'boolean', 'description': 'Whether the candidate is private'},
+                                'photo_url': {
+                                    'type': ['string', 'null'],
+                                    'description': "URL to candidate's photo",
+                                },
+                                'attachments': {
+                                    'type': 'array',
+                                    'items': {
+                                        'type': 'object',
+                                        'description': 'File attachment (resume, cover letter, etc.)',
+                                        'properties': {
+                                            'filename': {'type': 'string', 'description': 'Name of the attached file'},
+                                            'url': {
+                                                'type': 'string',
+                                                'format': 'uri',
+                                                'description': 'Temporary signed AWS S3 URL to download the file.\nThis URL expires within 7 days - download immediately after retrieval.\n',
+                                            },
+                                            'type': {
+                                                'type': 'string',
+                                                'enum': [
+                                                    'resume',
+                                                    'cover_letter',
+                                                    'admin_only',
+                                                    'take_home_test',
+                                                    'offer_packet',
+                                                    'offer_letter',
+                                                    'signed_offer_letter',
+                                                    'other',
+                                                ],
+                                                'description': 'Type of attachment',
+                                            },
+                                            'created_at': {
+                                                'type': 'string',
+                                                'format': 'date-time',
+                                                'description': 'When the attachment was uploaded',
+                                            },
+                                        },
+                                    },
+                                    'description': 'Candidate attachments (resumes, cover letters, etc.)',
+                                },
+                                'application_ids': {
+                                    'type': 'array',
+                                    'items': {'type': 'integer'},
+                                    'description': "IDs of candidate's applications",
+                                },
+                                'phone_numbers': {
+                                    'type': 'array',
+                                    'items': {'type': 'object'},
+                                    'description': 'Candidate phone numbers',
+                                },
+                                'addresses': {
+                                    'type': 'array',
+                                    'items': {'type': 'object'},
+                                    'description': 'Candidate addresses',
+                                },
+                                'email_addresses': {
+                                    'type': 'array',
+                                    'items': {'type': 'object'},
+                                    'description': 'Candidate email addresses',
+                                },
+                                'website_addresses': {
+                                    'type': 'array',
+                                    'items': {'type': 'object'},
+                                    'description': 'Candidate website addresses',
+                                },
+                                'social_media_addresses': {
+                                    'type': 'array',
+                                    'items': {'type': 'object'},
+                                    'description': 'Candidate social media addresses',
+                                },
+                                'recruiter': {
+                                    'type': ['object', 'null'],
+                                    'description': 'Recruiter information',
+                                },
+                                'coordinator': {
+                                    'type': ['object', 'null'],
+                                    'description': 'Coordinator information',
+                                },
+                                'can_email': {'type': 'boolean', 'description': 'Whether the candidate can be emailed'},
+                                'tags': {
+                                    'type': 'array',
+                                    'items': {'type': 'string'},
+                                    'description': 'Candidate tags',
+                                },
+                                'custom_fields': {'type': 'object', 'description': 'Custom field values'},
+                            },
+                            'x-airbyte-entity-name': 'candidates',
+                            'x-airbyte-stream-name': 'candidates',
+                            'x-airbyte-ai-hints': {
+                                'summary': 'Job candidates with application history and contact details',
+                                'when_to_use': 'Looking up candidate information or hiring pipeline data',
+                                'trigger_phrases': ['greenhouse candidate', 'applicant', 'who applied'],
+                                'freshness': 'live',
+                                'example_questions': ['Find a candidate in Greenhouse', 'List recent candidates'],
+                                'search_strategy': 'Search by name or email',
+                            },
+                        },
+                    },
+                    meta_extractor={'next': '@link.next'},
+                    preferred_for_check=True,
+                ),
+                Action.GET: EndpointDefinition(
+                    method='GET',
+                    path='/candidates/{id}',
+                    action=Action.GET,
+                    description='Get a single candidate by ID',
+                    path_params=['id'],
+                    path_params_schema={
+                        'id': {'type': 'integer', 'required': True},
+                    },
+                    response_schema={
+                        'type': 'object',
+                        'description': 'Greenhouse candidate object',
+                        'properties': {
+                            'id': {'type': 'integer', 'description': 'Unique candidate identifier'},
+                            'first_name': {'type': 'string', 'description': "Candidate's first name"},
+                            'last_name': {'type': 'string', 'description': "Candidate's last name"},
+                            'company': {
+                                'type': ['string', 'null'],
+                                'description': "Candidate's current company",
+                            },
+                            'title': {
+                                'type': ['string', 'null'],
+                                'description': "Candidate's current title",
+                            },
+                            'created_at': {
+                                'type': 'string',
+                                'format': 'date-time',
+                                'description': 'When the candidate was created',
+                            },
+                            'updated_at': {
+                                'type': 'string',
+                                'format': 'date-time',
+                                'description': 'When the candidate was last updated',
+                            },
+                            'last_activity': {
+                                'type': 'string',
+                                'format': 'date-time',
+                                'description': 'When the last activity occurred',
+                            },
+                            'is_private': {'type': 'boolean', 'description': 'Whether the candidate is private'},
+                            'photo_url': {
+                                'type': ['string', 'null'],
+                                'description': "URL to candidate's photo",
+                            },
+                            'attachments': {
+                                'type': 'array',
+                                'items': {
+                                    'type': 'object',
+                                    'description': 'File attachment (resume, cover letter, etc.)',
+                                    'properties': {
+                                        'filename': {'type': 'string', 'description': 'Name of the attached file'},
+                                        'url': {
+                                            'type': 'string',
+                                            'format': 'uri',
+                                            'description': 'Temporary signed AWS S3 URL to download the file.\nThis URL expires within 7 days - download immediately after retrieval.\n',
+                                        },
+                                        'type': {
+                                            'type': 'string',
+                                            'enum': [
+                                                'resume',
+                                                'cover_letter',
+                                                'admin_only',
+                                                'take_home_test',
+                                                'offer_packet',
+                                                'offer_letter',
+                                                'signed_offer_letter',
+                                                'other',
+                                            ],
+                                            'description': 'Type of attachment',
+                                        },
+                                        'created_at': {
+                                            'type': 'string',
+                                            'format': 'date-time',
+                                            'description': 'When the attachment was uploaded',
+                                        },
+                                    },
+                                },
+                                'description': 'Candidate attachments (resumes, cover letters, etc.)',
+                            },
+                            'application_ids': {
+                                'type': 'array',
+                                'items': {'type': 'integer'},
+                                'description': "IDs of candidate's applications",
+                            },
+                            'phone_numbers': {
+                                'type': 'array',
+                                'items': {'type': 'object'},
+                                'description': 'Candidate phone numbers',
+                            },
+                            'addresses': {
+                                'type': 'array',
+                                'items': {'type': 'object'},
+                                'description': 'Candidate addresses',
+                            },
+                            'email_addresses': {
+                                'type': 'array',
+                                'items': {'type': 'object'},
+                                'description': 'Candidate email addresses',
+                            },
+                            'website_addresses': {
+                                'type': 'array',
+                                'items': {'type': 'object'},
+                                'description': 'Candidate website addresses',
+                            },
+                            'social_media_addresses': {
+                                'type': 'array',
+                                'items': {'type': 'object'},
+                                'description': 'Candidate social media addresses',
+                            },
+                            'recruiter': {
+                                'type': ['object', 'null'],
+                                'description': 'Recruiter information',
+                            },
+                            'coordinator': {
+                                'type': ['object', 'null'],
+                                'description': 'Coordinator information',
+                            },
+                            'can_email': {'type': 'boolean', 'description': 'Whether the candidate can be emailed'},
+                            'tags': {
+                                'type': 'array',
+                                'items': {'type': 'string'},
+                                'description': 'Candidate tags',
+                            },
+                            'custom_fields': {'type': 'object', 'description': 'Custom field values'},
+                        },
+                        'x-airbyte-entity-name': 'candidates',
+                        'x-airbyte-stream-name': 'candidates',
+                        'x-airbyte-ai-hints': {
+                            'summary': 'Job candidates with application history and contact details',
+                            'when_to_use': 'Looking up candidate information or hiring pipeline data',
+                            'trigger_phrases': ['greenhouse candidate', 'applicant', 'who applied'],
+                            'freshness': 'live',
+                            'example_questions': ['Find a candidate in Greenhouse', 'List recent candidates'],
+                            'search_strategy': 'Search by name or email',
+                        },
+                    },
+                ),
+            },
+            entity_schema={
+                'type': 'object',
+                'description': 'Greenhouse candidate object',
+                'properties': {
+                    'id': {'type': 'integer', 'description': 'Unique candidate identifier'},
+                    'first_name': {'type': 'string', 'description': "Candidate's first name"},
+                    'last_name': {'type': 'string', 'description': "Candidate's last name"},
+                    'company': {
+                        'type': ['string', 'null'],
+                        'description': "Candidate's current company",
+                    },
+                    'title': {
+                        'type': ['string', 'null'],
+                        'description': "Candidate's current title",
+                    },
+                    'created_at': {
+                        'type': 'string',
+                        'format': 'date-time',
+                        'description': 'When the candidate was created',
+                    },
+                    'updated_at': {
+                        'type': 'string',
+                        'format': 'date-time',
+                        'description': 'When the candidate was last updated',
+                    },
+                    'last_activity': {
+                        'type': 'string',
+                        'format': 'date-time',
+                        'description': 'When the last activity occurred',
+                    },
+                    'is_private': {'type': 'boolean', 'description': 'Whether the candidate is private'},
+                    'photo_url': {
+                        'type': ['string', 'null'],
+                        'description': "URL to candidate's photo",
+                    },
+                    'attachments': {
+                        'type': 'array',
+                        'items': {'$ref': '#/components/schemas/Attachment'},
+                        'description': 'Candidate attachments (resumes, cover letters, etc.)',
+                    },
+                    'application_ids': {
+                        'type': 'array',
+                        'items': {'type': 'integer'},
+                        'description': "IDs of candidate's applications",
+                    },
+                    'phone_numbers': {
+                        'type': 'array',
+                        'items': {'type': 'object'},
+                        'description': 'Candidate phone numbers',
+                    },
+                    'addresses': {
+                        'type': 'array',
+                        'items': {'type': 'object'},
+                        'description': 'Candidate addresses',
+                    },
+                    'email_addresses': {
+                        'type': 'array',
+                        'items': {'type': 'object'},
+                        'description': 'Candidate email addresses',
+                    },
+                    'website_addresses': {
+                        'type': 'array',
+                        'items': {'type': 'object'},
+                        'description': 'Candidate website addresses',
+                    },
+                    'social_media_addresses': {
+                        'type': 'array',
+                        'items': {'type': 'object'},
+                        'description': 'Candidate social media addresses',
+                    },
+                    'recruiter': {
+                        'type': ['object', 'null'],
+                        'description': 'Recruiter information',
+                    },
+                    'coordinator': {
+                        'type': ['object', 'null'],
+                        'description': 'Coordinator information',
+                    },
+                    'can_email': {'type': 'boolean', 'description': 'Whether the candidate can be emailed'},
+                    'tags': {
+                        'type': 'array',
+                        'items': {'type': 'string'},
+                        'description': 'Candidate tags',
+                    },
+                    'custom_fields': {'type': 'object', 'description': 'Custom field values'},
+                },
+                'x-airbyte-entity-name': 'candidates',
+                'x-airbyte-stream-name': 'candidates',
+                'x-airbyte-ai-hints': {
+                    'summary': 'Job candidates with application history and contact details',
+                    'when_to_use': 'Looking up candidate information or hiring pipeline data',
+                    'trigger_phrases': ['greenhouse candidate', 'applicant', 'who applied'],
+                    'freshness': 'live',
+                    'example_questions': ['Find a candidate in Greenhouse', 'List recent candidates'],
+                    'search_strategy': 'Search by name or email',
+                },
+            },
+            ai_hints={
+                'summary': 'Job candidates with application history and contact details',
+                'when_to_use': 'Looking up candidate information or hiring pipeline data',
+                'trigger_phrases': ['greenhouse candidate', 'applicant', 'who applied'],
+                'freshness': 'live',
+                'example_questions': ['Find a candidate in Greenhouse', 'List recent candidates'],
+                'search_strategy': 'Search by name or email',
+            },
+        ),
+        EntityDefinition(
+            name='applications',
+            stream_name='applications',
+            actions=[Action.LIST, Action.GET],
+            endpoints={
+                Action.LIST: EndpointDefinition(
+                    method='GET',
+                    path='/applications',
+                    action=Action.LIST,
+                    description='Returns a paginated list of all applications',
+                    query_params=[
+                        'per_page',
+                        'page',
+                        'created_before',
+                        'created_after',
+                        'last_activity_after',
+                        'job_id',
+                        'status',
+                    ],
+                    query_params_schema={
+                        'per_page': {
+                            'type': 'integer',
+                            'required': False,
+                            'default': 100,
+                            'minimum': 1,
+                            'maximum': 500,
+                        },
+                        'page': {
+                            'type': 'integer',
+                            'required': False,
+                            'default': 1,
+                            'minimum': 1,
+                        },
+                        'created_before': {
+                            'type': 'string',
+                            'required': False,
+                            'format': 'date-time',
+                        },
+                        'created_after': {
+                            'type': 'string',
+                            'required': False,
+                            'format': 'date-time',
+                        },
+                        'last_activity_after': {
+                            'type': 'string',
+                            'required': False,
+                            'format': 'date-time',
+                        },
+                        'job_id': {'type': 'integer', 'required': False},
+                        'status': {
+                            'type': 'string',
+                            'required': False,
+                            'enum': ['active', 'rejected', 'hired'],
+                        },
+                    },
+                    response_schema={
+                        'type': 'array',
+                        'items': {
+                            'type': 'object',
+                            'description': 'Greenhouse application object',
+                            'properties': {
+                                'id': {'type': 'integer', 'description': 'Unique application identifier'},
+                                'candidate_id': {'type': 'integer', 'description': 'ID of the associated candidate'},
+                                'prospect': {'type': 'boolean', 'description': 'Whether this is a prospect application'},
+                                'applied_at': {
+                                    'type': 'string',
+                                    'format': 'date-time',
+                                    'description': 'When the application was submitted',
+                                },
+                                'rejected_at': {
+                                    'type': ['string', 'null'],
+                                    'format': 'date-time',
+                                    'description': 'When the application was rejected',
+                                },
+                                'last_activity_at': {
+                                    'type': 'string',
+                                    'format': 'date-time',
+                                    'description': 'When the last activity occurred',
+                                },
+                                'location': {
+                                    'type': ['object', 'null'],
+                                    'description': 'Application location',
+                                },
+                                'source': {'type': 'object', 'description': 'Application source'},
+                                'credited_to': {'type': 'object', 'description': 'User credited with the application'},
+                                'rejection_reason': {
+                                    'type': ['object', 'null'],
+                                    'description': 'Rejection reason if rejected',
+                                },
+                                'rejection_details': {
+                                    'type': ['object', 'null'],
+                                    'description': 'Additional rejection details',
+                                },
+                                'jobs': {
+                                    'type': 'array',
+                                    'items': {'type': 'object'},
+                                    'description': 'Jobs associated with the application',
+                                },
+                                'job_post_id': {
+                                    'type': ['integer', 'null'],
+                                    'description': 'ID of the job post',
+                                },
+                                'status': {'type': 'string', 'description': 'Application status'},
+                                'current_stage': {
+                                    'type': ['object', 'null'],
+                                    'description': 'Current stage of the application',
+                                },
+                                'answers': {
+                                    'type': 'array',
+                                    'items': {'type': 'object'},
+                                    'description': 'Application question answers',
+                                },
+                                'prospective_office': {
+                                    'type': ['object', 'null'],
+                                    'description': 'Prospective office',
+                                },
+                                'prospective_department': {
+                                    'type': ['object', 'null'],
+                                    'description': 'Prospective department',
+                                },
+                                'prospect_detail': {'type': 'object', 'description': 'Prospect details'},
+                                'attachments': {
+                                    'type': 'array',
+                                    'items': {
+                                        'type': 'object',
+                                        'description': 'File attachment (resume, cover letter, etc.)',
+                                        'properties': {
+                                            'filename': {'type': 'string', 'description': 'Name of the attached file'},
+                                            'url': {
+                                                'type': 'string',
+                                                'format': 'uri',
+                                                'description': 'Temporary signed AWS S3 URL to download the file.\nThis URL expires within 7 days - download immediately after retrieval.\n',
+                                            },
+                                            'type': {
+                                                'type': 'string',
+                                                'enum': [
+                                                    'resume',
+                                                    'cover_letter',
+                                                    'admin_only',
+                                                    'take_home_test',
+                                                    'offer_packet',
+                                                    'offer_letter',
+                                                    'signed_offer_letter',
+                                                    'other',
+                                                ],
+                                                'description': 'Type of attachment',
+                                            },
+                                            'created_at': {
+                                                'type': 'string',
+                                                'format': 'date-time',
+                                                'description': 'When the attachment was uploaded',
+                                            },
+                                        },
+                                    },
+                                    'description': 'Application attachments (resumes, cover letters, etc.)',
+                                },
+                                'custom_fields': {'type': 'object', 'description': 'Custom field values'},
+                            },
+                            'x-airbyte-entity-name': 'applications',
+                            'x-airbyte-stream-name': 'applications',
+                            'x-airbyte-ai-hints': {
+                                'summary': 'Job applications with stage, status, and interview details',
+                                'when_to_use': 'Questions about application status or hiring pipeline progress',
+                                'trigger_phrases': ['application status', 'hiring stage', 'interview status'],
+                                'freshness': 'live',
+                                'example_questions': ['What stage is an application in?'],
+                                'search_strategy': 'Filter by candidate, job, or status',
+                            },
+                        },
+                    },
+                    meta_extractor={'next': '@link.next'},
+                ),
+                Action.GET: EndpointDefinition(
+                    method='GET',
+                    path='/applications/{id}',
+                    action=Action.GET,
+                    description='Get a single application by ID',
+                    path_params=['id'],
+                    path_params_schema={
+                        'id': {'type': 'integer', 'required': True},
+                    },
+                    response_schema={
+                        'type': 'object',
+                        'description': 'Greenhouse application object',
+                        'properties': {
+                            'id': {'type': 'integer', 'description': 'Unique application identifier'},
+                            'candidate_id': {'type': 'integer', 'description': 'ID of the associated candidate'},
+                            'prospect': {'type': 'boolean', 'description': 'Whether this is a prospect application'},
+                            'applied_at': {
+                                'type': 'string',
+                                'format': 'date-time',
+                                'description': 'When the application was submitted',
+                            },
+                            'rejected_at': {
+                                'type': ['string', 'null'],
+                                'format': 'date-time',
+                                'description': 'When the application was rejected',
+                            },
+                            'last_activity_at': {
+                                'type': 'string',
+                                'format': 'date-time',
+                                'description': 'When the last activity occurred',
+                            },
+                            'location': {
+                                'type': ['object', 'null'],
+                                'description': 'Application location',
+                            },
+                            'source': {'type': 'object', 'description': 'Application source'},
+                            'credited_to': {'type': 'object', 'description': 'User credited with the application'},
+                            'rejection_reason': {
+                                'type': ['object', 'null'],
+                                'description': 'Rejection reason if rejected',
+                            },
+                            'rejection_details': {
+                                'type': ['object', 'null'],
+                                'description': 'Additional rejection details',
+                            },
+                            'jobs': {
+                                'type': 'array',
+                                'items': {'type': 'object'},
+                                'description': 'Jobs associated with the application',
+                            },
+                            'job_post_id': {
+                                'type': ['integer', 'null'],
+                                'description': 'ID of the job post',
+                            },
+                            'status': {'type': 'string', 'description': 'Application status'},
+                            'current_stage': {
+                                'type': ['object', 'null'],
+                                'description': 'Current stage of the application',
+                            },
+                            'answers': {
+                                'type': 'array',
+                                'items': {'type': 'object'},
+                                'description': 'Application question answers',
+                            },
+                            'prospective_office': {
+                                'type': ['object', 'null'],
+                                'description': 'Prospective office',
+                            },
+                            'prospective_department': {
+                                'type': ['object', 'null'],
+                                'description': 'Prospective department',
+                            },
+                            'prospect_detail': {'type': 'object', 'description': 'Prospect details'},
+                            'attachments': {
+                                'type': 'array',
+                                'items': {
+                                    'type': 'object',
+                                    'description': 'File attachment (resume, cover letter, etc.)',
+                                    'properties': {
+                                        'filename': {'type': 'string', 'description': 'Name of the attached file'},
+                                        'url': {
+                                            'type': 'string',
+                                            'format': 'uri',
+                                            'description': 'Temporary signed AWS S3 URL to download the file.\nThis URL expires within 7 days - download immediately after retrieval.\n',
+                                        },
+                                        'type': {
+                                            'type': 'string',
+                                            'enum': [
+                                                'resume',
+                                                'cover_letter',
+                                                'admin_only',
+                                                'take_home_test',
+                                                'offer_packet',
+                                                'offer_letter',
+                                                'signed_offer_letter',
+                                                'other',
+                                            ],
+                                            'description': 'Type of attachment',
+                                        },
+                                        'created_at': {
+                                            'type': 'string',
+                                            'format': 'date-time',
+                                            'description': 'When the attachment was uploaded',
+                                        },
+                                    },
+                                },
+                                'description': 'Application attachments (resumes, cover letters, etc.)',
+                            },
+                            'custom_fields': {'type': 'object', 'description': 'Custom field values'},
+                        },
+                        'x-airbyte-entity-name': 'applications',
+                        'x-airbyte-stream-name': 'applications',
+                        'x-airbyte-ai-hints': {
+                            'summary': 'Job applications with stage, status, and interview details',
+                            'when_to_use': 'Questions about application status or hiring pipeline progress',
+                            'trigger_phrases': ['application status', 'hiring stage', 'interview status'],
+                            'freshness': 'live',
+                            'example_questions': ['What stage is an application in?'],
+                            'search_strategy': 'Filter by candidate, job, or status',
+                        },
+                    },
+                ),
+            },
+            entity_schema={
+                'type': 'object',
+                'description': 'Greenhouse application object',
+                'properties': {
+                    'id': {'type': 'integer', 'description': 'Unique application identifier'},
+                    'candidate_id': {'type': 'integer', 'description': 'ID of the associated candidate'},
+                    'prospect': {'type': 'boolean', 'description': 'Whether this is a prospect application'},
+                    'applied_at': {
+                        'type': 'string',
+                        'format': 'date-time',
+                        'description': 'When the application was submitted',
+                    },
+                    'rejected_at': {
+                        'type': ['string', 'null'],
+                        'format': 'date-time',
+                        'description': 'When the application was rejected',
+                    },
+                    'last_activity_at': {
+                        'type': 'string',
+                        'format': 'date-time',
+                        'description': 'When the last activity occurred',
+                    },
+                    'location': {
+                        'type': ['object', 'null'],
+                        'description': 'Application location',
+                    },
+                    'source': {'type': 'object', 'description': 'Application source'},
+                    'credited_to': {'type': 'object', 'description': 'User credited with the application'},
+                    'rejection_reason': {
+                        'type': ['object', 'null'],
+                        'description': 'Rejection reason if rejected',
+                    },
+                    'rejection_details': {
+                        'type': ['object', 'null'],
+                        'description': 'Additional rejection details',
+                    },
+                    'jobs': {
+                        'type': 'array',
+                        'items': {'type': 'object'},
+                        'description': 'Jobs associated with the application',
+                    },
+                    'job_post_id': {
+                        'type': ['integer', 'null'],
+                        'description': 'ID of the job post',
+                    },
+                    'status': {'type': 'string', 'description': 'Application status'},
+                    'current_stage': {
+                        'type': ['object', 'null'],
+                        'description': 'Current stage of the application',
+                    },
+                    'answers': {
+                        'type': 'array',
+                        'items': {'type': 'object'},
+                        'description': 'Application question answers',
+                    },
+                    'prospective_office': {
+                        'type': ['object', 'null'],
+                        'description': 'Prospective office',
+                    },
+                    'prospective_department': {
+                        'type': ['object', 'null'],
+                        'description': 'Prospective department',
+                    },
+                    'prospect_detail': {'type': 'object', 'description': 'Prospect details'},
+                    'attachments': {
+                        'type': 'array',
+                        'items': {'$ref': '#/components/schemas/Attachment'},
+                        'description': 'Application attachments (resumes, cover letters, etc.)',
+                    },
+                    'custom_fields': {'type': 'object', 'description': 'Custom field values'},
+                },
+                'x-airbyte-entity-name': 'applications',
+                'x-airbyte-stream-name': 'applications',
+                'x-airbyte-ai-hints': {
+                    'summary': 'Job applications with stage, status, and interview details',
+                    'when_to_use': 'Questions about application status or hiring pipeline progress',
+                    'trigger_phrases': ['application status', 'hiring stage', 'interview status'],
+                    'freshness': 'live',
+                    'example_questions': ['What stage is an application in?'],
+                    'search_strategy': 'Filter by candidate, job, or status',
+                },
+            },
+            ai_hints={
+                'summary': 'Job applications with stage, status, and interview details',
+                'when_to_use': 'Questions about application status or hiring pipeline progress',
+                'trigger_phrases': ['application status', 'hiring stage', 'interview status'],
+                'freshness': 'live',
+                'example_questions': ['What stage is an application in?'],
+                'search_strategy': 'Filter by candidate, job, or status',
+            },
+        ),
+        EntityDefinition(
+            name='jobs',
+            stream_name='jobs',
+            actions=[Action.LIST, Action.GET],
+            endpoints={
+                Action.LIST: EndpointDefinition(
+                    method='GET',
+                    path='/jobs',
+                    action=Action.LIST,
+                    description='Returns a paginated list of all jobs in the organization',
+                    query_params=['per_page', 'page'],
+                    query_params_schema={
+                        'per_page': {
+                            'type': 'integer',
+                            'required': False,
+                            'default': 100,
+                            'minimum': 1,
+                            'maximum': 500,
+                        },
+                        'page': {
+                            'type': 'integer',
+                            'required': False,
+                            'default': 1,
+                            'minimum': 1,
+                        },
+                    },
+                    response_schema={
+                        'type': 'array',
+                        'items': {
+                            'type': 'object',
+                            'description': 'Greenhouse job object',
+                            'properties': {
+                                'id': {'type': 'integer', 'description': 'Unique job identifier'},
+                                'name': {'type': 'string', 'description': 'Job name'},
+                                'requisition_id': {
+                                    'type': ['string', 'null'],
+                                    'description': 'Job requisition ID',
+                                },
+                                'notes': {
+                                    'type': ['string', 'null'],
+                                    'description': 'Job notes',
+                                },
+                                'confidential': {'type': 'boolean', 'description': 'Whether the job is confidential'},
+                                'status': {'type': 'string', 'description': 'Job status'},
+                                'created_at': {
+                                    'type': 'string',
+                                    'format': 'date-time',
+                                    'description': 'When the job was created',
+                                },
+                                'opened_at': {
+                                    'type': 'string',
+                                    'format': 'date-time',
+                                    'description': 'When the job was opened',
+                                },
+                                'closed_at': {
+                                    'type': ['string', 'null'],
+                                    'format': 'date-time',
+                                    'description': 'When the job was closed',
+                                },
+                                'updated_at': {
+                                    'type': 'string',
+                                    'format': 'date-time',
+                                    'description': 'When the job was last updated',
+                                },
+                                'departments': {
+                                    'type': 'array',
+                                    'items': {
+                                        'type': ['object', 'null'],
+                                    },
+                                    'description': 'Departments associated with the job',
+                                },
+                                'offices': {
+                                    'type': 'array',
+                                    'items': {'type': 'object'},
+                                    'description': 'Offices associated with the job',
+                                },
+                                'custom_fields': {'type': 'object', 'description': 'Custom field values'},
+                                'hiring_team': {'type': 'object', 'description': 'Hiring team information'},
+                                'openings': {
+                                    'type': 'array',
+                                    'items': {'type': 'object'},
+                                    'description': 'Job openings',
+                                },
+                            },
+                            'x-airbyte-entity-name': 'jobs',
+                            'x-airbyte-stream-name': 'jobs',
+                            'x-airbyte-ai-hints': {
+                                'summary': 'Job positions with status, department, and hiring plan',
+                                'when_to_use': 'Questions about open positions or job details',
+                                'trigger_phrases': ['greenhouse job', 'open position', 'job opening'],
+                                'freshness': 'live',
+                                'example_questions': ['What jobs are open in Greenhouse?'],
+                                'search_strategy': 'Search by title or filter by department and status',
+                            },
+                        },
+                    },
+                    meta_extractor={'next': '@link.next'},
+                ),
+                Action.GET: EndpointDefinition(
+                    method='GET',
+                    path='/jobs/{id}',
+                    action=Action.GET,
+                    description='Get a single job by ID',
+                    path_params=['id'],
+                    path_params_schema={
+                        'id': {'type': 'integer', 'required': True},
+                    },
+                    response_schema={
+                        'type': 'object',
+                        'description': 'Greenhouse job object',
+                        'properties': {
+                            'id': {'type': 'integer', 'description': 'Unique job identifier'},
+                            'name': {'type': 'string', 'description': 'Job name'},
+                            'requisition_id': {
+                                'type': ['string', 'null'],
+                                'description': 'Job requisition ID',
+                            },
+                            'notes': {
+                                'type': ['string', 'null'],
+                                'description': 'Job notes',
+                            },
+                            'confidential': {'type': 'boolean', 'description': 'Whether the job is confidential'},
+                            'status': {'type': 'string', 'description': 'Job status'},
+                            'created_at': {
+                                'type': 'string',
+                                'format': 'date-time',
+                                'description': 'When the job was created',
+                            },
+                            'opened_at': {
+                                'type': 'string',
+                                'format': 'date-time',
+                                'description': 'When the job was opened',
+                            },
+                            'closed_at': {
+                                'type': ['string', 'null'],
+                                'format': 'date-time',
+                                'description': 'When the job was closed',
+                            },
+                            'updated_at': {
+                                'type': 'string',
+                                'format': 'date-time',
+                                'description': 'When the job was last updated',
+                            },
+                            'departments': {
+                                'type': 'array',
+                                'items': {
+                                    'type': ['object', 'null'],
+                                },
+                                'description': 'Departments associated with the job',
+                            },
+                            'offices': {
+                                'type': 'array',
+                                'items': {'type': 'object'},
+                                'description': 'Offices associated with the job',
+                            },
+                            'custom_fields': {'type': 'object', 'description': 'Custom field values'},
+                            'hiring_team': {'type': 'object', 'description': 'Hiring team information'},
+                            'openings': {
+                                'type': 'array',
+                                'items': {'type': 'object'},
+                                'description': 'Job openings',
+                            },
+                        },
+                        'x-airbyte-entity-name': 'jobs',
+                        'x-airbyte-stream-name': 'jobs',
+                        'x-airbyte-ai-hints': {
+                            'summary': 'Job positions with status, department, and hiring plan',
+                            'when_to_use': 'Questions about open positions or job details',
+                            'trigger_phrases': ['greenhouse job', 'open position', 'job opening'],
+                            'freshness': 'live',
+                            'example_questions': ['What jobs are open in Greenhouse?'],
+                            'search_strategy': 'Search by title or filter by department and status',
+                        },
+                    },
+                ),
+            },
+            entity_schema={
+                'type': 'object',
+                'description': 'Greenhouse job object',
+                'properties': {
+                    'id': {'type': 'integer', 'description': 'Unique job identifier'},
+                    'name': {'type': 'string', 'description': 'Job name'},
+                    'requisition_id': {
+                        'type': ['string', 'null'],
+                        'description': 'Job requisition ID',
+                    },
+                    'notes': {
+                        'type': ['string', 'null'],
+                        'description': 'Job notes',
+                    },
+                    'confidential': {'type': 'boolean', 'description': 'Whether the job is confidential'},
+                    'status': {'type': 'string', 'description': 'Job status'},
+                    'created_at': {
+                        'type': 'string',
+                        'format': 'date-time',
+                        'description': 'When the job was created',
+                    },
+                    'opened_at': {
+                        'type': 'string',
+                        'format': 'date-time',
+                        'description': 'When the job was opened',
+                    },
+                    'closed_at': {
+                        'type': ['string', 'null'],
+                        'format': 'date-time',
+                        'description': 'When the job was closed',
+                    },
+                    'updated_at': {
+                        'type': 'string',
+                        'format': 'date-time',
+                        'description': 'When the job was last updated',
+                    },
+                    'departments': {
+                        'type': 'array',
+                        'items': {
+                            'type': ['object', 'null'],
+                        },
+                        'description': 'Departments associated with the job',
+                    },
+                    'offices': {
+                        'type': 'array',
+                        'items': {'type': 'object'},
+                        'description': 'Offices associated with the job',
+                    },
+                    'custom_fields': {'type': 'object', 'description': 'Custom field values'},
+                    'hiring_team': {'type': 'object', 'description': 'Hiring team information'},
+                    'openings': {
+                        'type': 'array',
+                        'items': {'type': 'object'},
+                        'description': 'Job openings',
+                    },
+                },
+                'x-airbyte-entity-name': 'jobs',
+                'x-airbyte-stream-name': 'jobs',
+                'x-airbyte-ai-hints': {
+                    'summary': 'Job positions with status, department, and hiring plan',
+                    'when_to_use': 'Questions about open positions or job details',
+                    'trigger_phrases': ['greenhouse job', 'open position', 'job opening'],
+                    'freshness': 'live',
+                    'example_questions': ['What jobs are open in Greenhouse?'],
+                    'search_strategy': 'Search by title or filter by department and status',
+                },
+            },
+            ai_hints={
+                'summary': 'Job positions with status, department, and hiring plan',
+                'when_to_use': 'Questions about open positions or job details',
+                'trigger_phrases': ['greenhouse job', 'open position', 'job opening'],
+                'freshness': 'live',
+                'example_questions': ['What jobs are open in Greenhouse?'],
+                'search_strategy': 'Search by title or filter by department and status',
+            },
+        ),
+        EntityDefinition(
+            name='offers',
+            stream_name='offers',
+            actions=[Action.LIST, Action.GET],
+            endpoints={
+                Action.LIST: EndpointDefinition(
+                    method='GET',
+                    path='/offers',
+                    action=Action.LIST,
+                    description='Returns a paginated list of all offers',
+                    query_params=[
+                        'per_page',
+                        'page',
+                        'created_before',
+                        'created_after',
+                        'resolved_after',
+                    ],
+                    query_params_schema={
+                        'per_page': {
+                            'type': 'integer',
+                            'required': False,
+                            'default': 100,
+                            'minimum': 1,
+                            'maximum': 500,
+                        },
+                        'page': {
+                            'type': 'integer',
+                            'required': False,
+                            'default': 1,
+                            'minimum': 1,
+                        },
+                        'created_before': {
+                            'type': 'string',
+                            'required': False,
+                            'format': 'date-time',
+                        },
+                        'created_after': {
+                            'type': 'string',
+                            'required': False,
+                            'format': 'date-time',
+                        },
+                        'resolved_after': {
+                            'type': 'string',
+                            'required': False,
+                            'format': 'date-time',
+                        },
+                    },
+                    response_schema={
+                        'type': 'array',
+                        'items': {
+                            'type': 'object',
+                            'description': 'Greenhouse offer object',
+                            'properties': {
+                                'id': {'type': 'integer', 'description': 'Unique offer identifier'},
+                                'version': {'type': 'integer', 'description': 'Offer version number'},
+                                'application_id': {'type': 'integer', 'description': 'Associated application ID'},
+                                'job_id': {'type': 'integer', 'description': 'Associated job ID'},
+                                'candidate_id': {'type': 'integer', 'description': 'Associated candidate ID'},
+                                'opening': {
+                                    'type': ['object', 'null'],
+                                    'description': 'Associated job opening',
+                                },
+                                'created_at': {
+                                    'type': 'string',
+                                    'format': 'date-time',
+                                    'description': 'When the offer was created',
+                                },
+                                'updated_at': {
+                                    'type': 'string',
+                                    'format': 'date-time',
+                                    'description': 'When the offer was last updated',
+                                },
+                                'sent_at': {
+                                    'type': ['string', 'null'],
+                                    'format': 'date-time',
+                                    'description': 'When the offer was sent',
+                                },
+                                'resolved_at': {
+                                    'type': ['string', 'null'],
+                                    'format': 'date-time',
+                                    'description': 'When the offer was resolved',
+                                },
+                                'starts_at': {
+                                    'type': ['string', 'null'],
+                                    'description': 'Employment start date',
+                                },
+                                'status': {'type': 'string', 'description': 'Offer status'},
+                                'custom_fields': {'type': 'object', 'description': 'Custom field values'},
+                            },
+                            'x-airbyte-entity-name': 'offers',
+                            'x-airbyte-stream-name': 'offers',
+                            'x-airbyte-ai-hints': {
+                                'summary': 'Job offers extended to candidates with terms and status',
+                                'when_to_use': 'Questions about offers made or offer status',
+                                'trigger_phrases': ['offer', 'job offer', 'offer status'],
+                                'freshness': 'live',
+                                'example_questions': ['Show pending offers'],
+                                'search_strategy': 'Filter by candidate or status',
+                            },
+                        },
+                    },
+                    meta_extractor={'next': '@link.next'},
+                ),
+                Action.GET: EndpointDefinition(
+                    method='GET',
+                    path='/offers/{id}',
+                    action=Action.GET,
+                    description='Get a single offer by ID',
+                    path_params=['id'],
+                    path_params_schema={
+                        'id': {'type': 'integer', 'required': True},
+                    },
+                    response_schema={
+                        'type': 'object',
+                        'description': 'Greenhouse offer object',
+                        'properties': {
+                            'id': {'type': 'integer', 'description': 'Unique offer identifier'},
+                            'version': {'type': 'integer', 'description': 'Offer version number'},
+                            'application_id': {'type': 'integer', 'description': 'Associated application ID'},
+                            'job_id': {'type': 'integer', 'description': 'Associated job ID'},
+                            'candidate_id': {'type': 'integer', 'description': 'Associated candidate ID'},
+                            'opening': {
+                                'type': ['object', 'null'],
+                                'description': 'Associated job opening',
+                            },
+                            'created_at': {
+                                'type': 'string',
+                                'format': 'date-time',
+                                'description': 'When the offer was created',
+                            },
+                            'updated_at': {
+                                'type': 'string',
+                                'format': 'date-time',
+                                'description': 'When the offer was last updated',
+                            },
+                            'sent_at': {
+                                'type': ['string', 'null'],
+                                'format': 'date-time',
+                                'description': 'When the offer was sent',
+                            },
+                            'resolved_at': {
+                                'type': ['string', 'null'],
+                                'format': 'date-time',
+                                'description': 'When the offer was resolved',
+                            },
+                            'starts_at': {
+                                'type': ['string', 'null'],
+                                'description': 'Employment start date',
+                            },
+                            'status': {'type': 'string', 'description': 'Offer status'},
+                            'custom_fields': {'type': 'object', 'description': 'Custom field values'},
+                        },
+                        'x-airbyte-entity-name': 'offers',
+                        'x-airbyte-stream-name': 'offers',
+                        'x-airbyte-ai-hints': {
+                            'summary': 'Job offers extended to candidates with terms and status',
+                            'when_to_use': 'Questions about offers made or offer status',
+                            'trigger_phrases': ['offer', 'job offer', 'offer status'],
+                            'freshness': 'live',
+                            'example_questions': ['Show pending offers'],
+                            'search_strategy': 'Filter by candidate or status',
+                        },
+                    },
+                    untested=True,
+                ),
+            },
+            entity_schema={
+                'type': 'object',
+                'description': 'Greenhouse offer object',
+                'properties': {
+                    'id': {'type': 'integer', 'description': 'Unique offer identifier'},
+                    'version': {'type': 'integer', 'description': 'Offer version number'},
+                    'application_id': {'type': 'integer', 'description': 'Associated application ID'},
+                    'job_id': {'type': 'integer', 'description': 'Associated job ID'},
+                    'candidate_id': {'type': 'integer', 'description': 'Associated candidate ID'},
+                    'opening': {
+                        'type': ['object', 'null'],
+                        'description': 'Associated job opening',
+                    },
+                    'created_at': {
+                        'type': 'string',
+                        'format': 'date-time',
+                        'description': 'When the offer was created',
+                    },
+                    'updated_at': {
+                        'type': 'string',
+                        'format': 'date-time',
+                        'description': 'When the offer was last updated',
+                    },
+                    'sent_at': {
+                        'type': ['string', 'null'],
+                        'format': 'date-time',
+                        'description': 'When the offer was sent',
+                    },
+                    'resolved_at': {
+                        'type': ['string', 'null'],
+                        'format': 'date-time',
+                        'description': 'When the offer was resolved',
+                    },
+                    'starts_at': {
+                        'type': ['string', 'null'],
+                        'description': 'Employment start date',
+                    },
+                    'status': {'type': 'string', 'description': 'Offer status'},
+                    'custom_fields': {'type': 'object', 'description': 'Custom field values'},
+                },
+                'x-airbyte-entity-name': 'offers',
+                'x-airbyte-stream-name': 'offers',
+                'x-airbyte-ai-hints': {
+                    'summary': 'Job offers extended to candidates with terms and status',
+                    'when_to_use': 'Questions about offers made or offer status',
+                    'trigger_phrases': ['offer', 'job offer', 'offer status'],
+                    'freshness': 'live',
+                    'example_questions': ['Show pending offers'],
+                    'search_strategy': 'Filter by candidate or status',
+                },
+            },
+            ai_hints={
+                'summary': 'Job offers extended to candidates with terms and status',
+                'when_to_use': 'Questions about offers made or offer status',
+                'trigger_phrases': ['offer', 'job offer', 'offer status'],
+                'freshness': 'live',
+                'example_questions': ['Show pending offers'],
+                'search_strategy': 'Filter by candidate or status',
+            },
+        ),
+        EntityDefinition(
+            name='users',
+            stream_name='users',
+            actions=[Action.LIST, Action.GET],
+            endpoints={
+                Action.LIST: EndpointDefinition(
+                    method='GET',
+                    path='/users',
+                    action=Action.LIST,
+                    description='Returns a paginated list of all users',
+                    query_params=[
+                        'per_page',
+                        'page',
+                        'created_before',
+                        'created_after',
+                        'updated_before',
+                        'updated_after',
+                    ],
+                    query_params_schema={
+                        'per_page': {
+                            'type': 'integer',
+                            'required': False,
+                            'default': 100,
+                            'minimum': 1,
+                            'maximum': 500,
+                        },
+                        'page': {
+                            'type': 'integer',
+                            'required': False,
+                            'default': 1,
+                            'minimum': 1,
+                        },
+                        'created_before': {
+                            'type': 'string',
+                            'required': False,
+                            'format': 'date-time',
+                        },
+                        'created_after': {
+                            'type': 'string',
+                            'required': False,
+                            'format': 'date-time',
+                        },
+                        'updated_before': {
+                            'type': 'string',
+                            'required': False,
+                            'format': 'date-time',
+                        },
+                        'updated_after': {
+                            'type': 'string',
+                            'required': False,
+                            'format': 'date-time',
+                        },
+                    },
+                    response_schema={
+                        'type': 'array',
+                        'items': {
+                            'type': 'object',
+                            'description': 'Greenhouse user object',
+                            'properties': {
+                                'id': {'type': 'integer', 'description': 'Unique user identifier'},
+                                'name': {'type': 'string', 'description': "User's full name"},
+                                'first_name': {'type': 'string', 'description': "User's first name"},
+                                'last_name': {'type': 'string', 'description': "User's last name"},
+                                'primary_email_address': {
+                                    'type': 'string',
+                                    'format': 'email',
+                                    'description': "User's primary email address",
+                                },
+                                'updated_at': {
+                                    'type': 'string',
+                                    'format': 'date-time',
+                                    'description': 'When the user was last updated',
+                                },
+                                'created_at': {
+                                    'type': 'string',
+                                    'format': 'date-time',
+                                    'description': 'When the user was created',
+                                },
+                                'disabled': {'type': 'boolean', 'description': 'Whether the user is disabled'},
+                                'site_admin': {'type': 'boolean', 'description': 'Whether the user is a site admin'},
+                                'emails': {
+                                    'type': 'array',
+                                    'items': {'type': 'string'},
+                                    'description': 'All user email addresses',
+                                },
+                                'employee_id': {
+                                    'type': ['string', 'null'],
+                                    'description': 'Employee ID',
+                                },
+                                'linked_candidate_ids': {
+                                    'type': 'array',
+                                    'items': {'type': 'integer'},
+                                    'description': 'IDs of linked candidates',
+                                },
+                                'offices': {
+                                    'type': 'array',
+                                    'items': {'type': 'object'},
+                                    'description': 'Associated offices',
+                                },
+                                'departments': {
+                                    'type': 'array',
+                                    'items': {'type': 'object'},
+                                    'description': 'Associated departments',
+                                },
+                            },
+                            'x-airbyte-entity-name': 'users',
+                            'x-airbyte-stream-name': 'users',
+                            'x-airbyte-ai-hints': {
+                                'summary': 'Greenhouse users (recruiters, coordinators, hiring managers)',
+                                'when_to_use': 'Looking up recruiter or hiring team details',
+                                'trigger_phrases': ['greenhouse user', 'recruiter', 'hiring manager'],
+                                'freshness': 'live',
+                                'example_questions': ['Who are the recruiters in Greenhouse?'],
+                                'search_strategy': 'Search by name or email',
+                            },
+                        },
+                    },
+                    meta_extractor={'next': '@link.next'},
+                ),
+                Action.GET: EndpointDefinition(
+                    method='GET',
+                    path='/users/{id}',
+                    action=Action.GET,
+                    description='Get a single user by ID',
+                    path_params=['id'],
+                    path_params_schema={
+                        'id': {'type': 'integer', 'required': True},
+                    },
+                    response_schema={
+                        'type': 'object',
+                        'description': 'Greenhouse user object',
+                        'properties': {
+                            'id': {'type': 'integer', 'description': 'Unique user identifier'},
+                            'name': {'type': 'string', 'description': "User's full name"},
+                            'first_name': {'type': 'string', 'description': "User's first name"},
+                            'last_name': {'type': 'string', 'description': "User's last name"},
+                            'primary_email_address': {
+                                'type': 'string',
+                                'format': 'email',
+                                'description': "User's primary email address",
+                            },
+                            'updated_at': {
+                                'type': 'string',
+                                'format': 'date-time',
+                                'description': 'When the user was last updated',
+                            },
+                            'created_at': {
+                                'type': 'string',
+                                'format': 'date-time',
+                                'description': 'When the user was created',
+                            },
+                            'disabled': {'type': 'boolean', 'description': 'Whether the user is disabled'},
+                            'site_admin': {'type': 'boolean', 'description': 'Whether the user is a site admin'},
+                            'emails': {
+                                'type': 'array',
+                                'items': {'type': 'string'},
+                                'description': 'All user email addresses',
+                            },
+                            'employee_id': {
+                                'type': ['string', 'null'],
+                                'description': 'Employee ID',
+                            },
+                            'linked_candidate_ids': {
+                                'type': 'array',
+                                'items': {'type': 'integer'},
+                                'description': 'IDs of linked candidates',
+                            },
+                            'offices': {
+                                'type': 'array',
+                                'items': {'type': 'object'},
+                                'description': 'Associated offices',
+                            },
+                            'departments': {
+                                'type': 'array',
+                                'items': {'type': 'object'},
+                                'description': 'Associated departments',
+                            },
+                        },
+                        'x-airbyte-entity-name': 'users',
+                        'x-airbyte-stream-name': 'users',
+                        'x-airbyte-ai-hints': {
+                            'summary': 'Greenhouse users (recruiters, coordinators, hiring managers)',
+                            'when_to_use': 'Looking up recruiter or hiring team details',
+                            'trigger_phrases': ['greenhouse user', 'recruiter', 'hiring manager'],
+                            'freshness': 'live',
+                            'example_questions': ['Who are the recruiters in Greenhouse?'],
+                            'search_strategy': 'Search by name or email',
+                        },
+                    },
+                ),
+            },
+            entity_schema={
+                'type': 'object',
+                'description': 'Greenhouse user object',
+                'properties': {
+                    'id': {'type': 'integer', 'description': 'Unique user identifier'},
+                    'name': {'type': 'string', 'description': "User's full name"},
+                    'first_name': {'type': 'string', 'description': "User's first name"},
+                    'last_name': {'type': 'string', 'description': "User's last name"},
+                    'primary_email_address': {
+                        'type': 'string',
+                        'format': 'email',
+                        'description': "User's primary email address",
+                    },
+                    'updated_at': {
+                        'type': 'string',
+                        'format': 'date-time',
+                        'description': 'When the user was last updated',
+                    },
+                    'created_at': {
+                        'type': 'string',
+                        'format': 'date-time',
+                        'description': 'When the user was created',
+                    },
+                    'disabled': {'type': 'boolean', 'description': 'Whether the user is disabled'},
+                    'site_admin': {'type': 'boolean', 'description': 'Whether the user is a site admin'},
+                    'emails': {
+                        'type': 'array',
+                        'items': {'type': 'string'},
+                        'description': 'All user email addresses',
+                    },
+                    'employee_id': {
+                        'type': ['string', 'null'],
+                        'description': 'Employee ID',
+                    },
+                    'linked_candidate_ids': {
+                        'type': 'array',
+                        'items': {'type': 'integer'},
+                        'description': 'IDs of linked candidates',
+                    },
+                    'offices': {
+                        'type': 'array',
+                        'items': {'type': 'object'},
+                        'description': 'Associated offices',
+                    },
+                    'departments': {
+                        'type': 'array',
+                        'items': {'type': 'object'},
+                        'description': 'Associated departments',
+                    },
+                },
+                'x-airbyte-entity-name': 'users',
+                'x-airbyte-stream-name': 'users',
+                'x-airbyte-ai-hints': {
+                    'summary': 'Greenhouse users (recruiters, coordinators, hiring managers)',
+                    'when_to_use': 'Looking up recruiter or hiring team details',
+                    'trigger_phrases': ['greenhouse user', 'recruiter', 'hiring manager'],
+                    'freshness': 'live',
+                    'example_questions': ['Who are the recruiters in Greenhouse?'],
+                    'search_strategy': 'Search by name or email',
+                },
+            },
+            ai_hints={
+                'summary': 'Greenhouse users (recruiters, coordinators, hiring managers)',
+                'when_to_use': 'Looking up recruiter or hiring team details',
+                'trigger_phrases': ['greenhouse user', 'recruiter', 'hiring manager'],
+                'freshness': 'live',
+                'example_questions': ['Who are the recruiters in Greenhouse?'],
+                'search_strategy': 'Search by name or email',
+            },
+        ),
+        EntityDefinition(
+            name='departments',
+            stream_name='departments',
+            actions=[Action.LIST, Action.GET],
+            endpoints={
+                Action.LIST: EndpointDefinition(
+                    method='GET',
+                    path='/departments',
+                    action=Action.LIST,
+                    description='Returns a paginated list of all departments',
+                    query_params=['per_page', 'page'],
+                    query_params_schema={
+                        'per_page': {
+                            'type': 'integer',
+                            'required': False,
+                            'default': 100,
+                            'minimum': 1,
+                            'maximum': 500,
+                        },
+                        'page': {
+                            'type': 'integer',
+                            'required': False,
+                            'default': 1,
+                            'minimum': 1,
+                        },
+                    },
+                    response_schema={
+                        'type': 'array',
+                        'items': {
+                            'type': 'object',
+                            'description': 'Greenhouse department object',
+                            'properties': {
+                                'id': {'type': 'integer', 'description': 'Unique department identifier'},
+                                'name': {'type': 'string', 'description': 'Department name'},
+                                'parent_id': {
+                                    'type': ['integer', 'null'],
+                                    'description': 'Parent department ID',
+                                },
+                                'parent_department_external_id': {
+                                    'type': ['string', 'null'],
+                                    'description': 'Parent department external ID',
+                                },
+                                'child_ids': {
+                                    'type': 'array',
+                                    'items': {'type': 'integer'},
+                                    'description': 'Child department IDs',
+                                },
+                                'child_department_external_ids': {
+                                    'type': 'array',
+                                    'items': {'type': 'string'},
+                                    'description': 'Child department external IDs',
+                                },
+                                'external_id': {
+                                    'type': ['string', 'null'],
+                                    'description': 'External ID',
+                                },
+                            },
+                            'x-airbyte-entity-name': 'departments',
+                            'x-airbyte-stream-name': 'departments',
+                            'x-airbyte-ai-hints': {
+                                'summary': 'Departments in the organization for job categorization',
+                                'when_to_use': 'Questions about department structure or hiring by department',
+                                'trigger_phrases': ['department', 'hiring department'],
+                                'freshness': 'static',
+                                'example_questions': ['What departments are in Greenhouse?'],
+                                'search_strategy': 'Search by name',
+                            },
+                        },
+                    },
+                    meta_extractor={'next': '@link.next'},
+                ),
+                Action.GET: EndpointDefinition(
+                    method='GET',
+                    path='/departments/{id}',
+                    action=Action.GET,
+                    description='Get a single department by ID',
+                    path_params=['id'],
+                    path_params_schema={
+                        'id': {'type': 'integer', 'required': True},
+                    },
+                    response_schema={
+                        'type': 'object',
+                        'description': 'Greenhouse department object',
+                        'properties': {
+                            'id': {'type': 'integer', 'description': 'Unique department identifier'},
+                            'name': {'type': 'string', 'description': 'Department name'},
+                            'parent_id': {
+                                'type': ['integer', 'null'],
+                                'description': 'Parent department ID',
+                            },
+                            'parent_department_external_id': {
+                                'type': ['string', 'null'],
+                                'description': 'Parent department external ID',
+                            },
+                            'child_ids': {
+                                'type': 'array',
+                                'items': {'type': 'integer'},
+                                'description': 'Child department IDs',
+                            },
+                            'child_department_external_ids': {
+                                'type': 'array',
+                                'items': {'type': 'string'},
+                                'description': 'Child department external IDs',
+                            },
+                            'external_id': {
+                                'type': ['string', 'null'],
+                                'description': 'External ID',
+                            },
+                        },
+                        'x-airbyte-entity-name': 'departments',
+                        'x-airbyte-stream-name': 'departments',
+                        'x-airbyte-ai-hints': {
+                            'summary': 'Departments in the organization for job categorization',
+                            'when_to_use': 'Questions about department structure or hiring by department',
+                            'trigger_phrases': ['department', 'hiring department'],
+                            'freshness': 'static',
+                            'example_questions': ['What departments are in Greenhouse?'],
+                            'search_strategy': 'Search by name',
+                        },
+                    },
+                ),
+            },
+            entity_schema={
+                'type': 'object',
+                'description': 'Greenhouse department object',
+                'properties': {
+                    'id': {'type': 'integer', 'description': 'Unique department identifier'},
+                    'name': {'type': 'string', 'description': 'Department name'},
+                    'parent_id': {
+                        'type': ['integer', 'null'],
+                        'description': 'Parent department ID',
+                    },
+                    'parent_department_external_id': {
+                        'type': ['string', 'null'],
+                        'description': 'Parent department external ID',
+                    },
+                    'child_ids': {
+                        'type': 'array',
+                        'items': {'type': 'integer'},
+                        'description': 'Child department IDs',
+                    },
+                    'child_department_external_ids': {
+                        'type': 'array',
+                        'items': {'type': 'string'},
+                        'description': 'Child department external IDs',
+                    },
+                    'external_id': {
+                        'type': ['string', 'null'],
+                        'description': 'External ID',
+                    },
+                },
+                'x-airbyte-entity-name': 'departments',
+                'x-airbyte-stream-name': 'departments',
+                'x-airbyte-ai-hints': {
+                    'summary': 'Departments in the organization for job categorization',
+                    'when_to_use': 'Questions about department structure or hiring by department',
+                    'trigger_phrases': ['department', 'hiring department'],
+                    'freshness': 'static',
+                    'example_questions': ['What departments are in Greenhouse?'],
+                    'search_strategy': 'Search by name',
+                },
+            },
+            ai_hints={
+                'summary': 'Departments in the organization for job categorization',
+                'when_to_use': 'Questions about department structure or hiring by department',
+                'trigger_phrases': ['department', 'hiring department'],
+                'freshness': 'static',
+                'example_questions': ['What departments are in Greenhouse?'],
+                'search_strategy': 'Search by name',
+            },
+        ),
+        EntityDefinition(
+            name='offices',
+            stream_name='offices',
+            actions=[Action.LIST, Action.GET],
+            endpoints={
+                Action.LIST: EndpointDefinition(
+                    method='GET',
+                    path='/offices',
+                    action=Action.LIST,
+                    description='Returns a paginated list of all offices',
+                    query_params=['per_page', 'page'],
+                    query_params_schema={
+                        'per_page': {
+                            'type': 'integer',
+                            'required': False,
+                            'default': 100,
+                            'minimum': 1,
+                            'maximum': 500,
+                        },
+                        'page': {
+                            'type': 'integer',
+                            'required': False,
+                            'default': 1,
+                            'minimum': 1,
+                        },
+                    },
+                    response_schema={
+                        'type': 'array',
+                        'items': {
+                            'type': 'object',
+                            'description': 'Greenhouse office object',
+                            'properties': {
+                                'id': {'type': 'integer', 'description': 'Unique office identifier'},
+                                'name': {'type': 'string', 'description': 'Office name'},
+                                'location': {
+                                    'type': ['object', 'null'],
+                                    'description': 'Office location details',
+                                },
+                                'primary_contact_user_id': {
+                                    'type': ['integer', 'null'],
+                                    'description': 'Primary contact user ID',
+                                },
+                                'parent_id': {
+                                    'type': ['integer', 'null'],
+                                    'description': 'Parent office ID',
+                                },
+                                'parent_office_external_id': {
+                                    'type': ['string', 'null'],
+                                    'description': 'Parent office external ID',
+                                },
+                                'child_ids': {
+                                    'type': 'array',
+                                    'items': {'type': 'integer'},
+                                    'description': 'Child office IDs',
+                                },
+                                'child_office_external_ids': {
+                                    'type': 'array',
+                                    'items': {'type': 'string'},
+                                    'description': 'Child office external IDs',
+                                },
+                                'external_id': {
+                                    'type': ['string', 'null'],
+                                    'description': 'External ID',
+                                },
+                            },
+                            'x-airbyte-entity-name': 'offices',
+                            'x-airbyte-stream-name': 'offices',
+                            'x-airbyte-ai-hints': {
+                                'summary': 'Office locations for job postings and hiring',
+                                'when_to_use': 'Questions about office locations or where roles are based',
+                                'trigger_phrases': ['office', 'office location', 'job location'],
+                                'freshness': 'static',
+                                'example_questions': ['What office locations are configured?'],
+                                'search_strategy': 'Search by name',
+                            },
+                        },
+                    },
+                    meta_extractor={'next': '@link.next'},
+                ),
+                Action.GET: EndpointDefinition(
+                    method='GET',
+                    path='/offices/{id}',
+                    action=Action.GET,
+                    description='Get a single office by ID',
+                    path_params=['id'],
+                    path_params_schema={
+                        'id': {'type': 'integer', 'required': True},
+                    },
+                    response_schema={
+                        'type': 'object',
+                        'description': 'Greenhouse office object',
+                        'properties': {
+                            'id': {'type': 'integer', 'description': 'Unique office identifier'},
+                            'name': {'type': 'string', 'description': 'Office name'},
+                            'location': {
+                                'type': ['object', 'null'],
+                                'description': 'Office location details',
+                            },
+                            'primary_contact_user_id': {
+                                'type': ['integer', 'null'],
+                                'description': 'Primary contact user ID',
+                            },
+                            'parent_id': {
+                                'type': ['integer', 'null'],
+                                'description': 'Parent office ID',
+                            },
+                            'parent_office_external_id': {
+                                'type': ['string', 'null'],
+                                'description': 'Parent office external ID',
+                            },
+                            'child_ids': {
+                                'type': 'array',
+                                'items': {'type': 'integer'},
+                                'description': 'Child office IDs',
+                            },
+                            'child_office_external_ids': {
+                                'type': 'array',
+                                'items': {'type': 'string'},
+                                'description': 'Child office external IDs',
+                            },
+                            'external_id': {
+                                'type': ['string', 'null'],
+                                'description': 'External ID',
+                            },
+                        },
+                        'x-airbyte-entity-name': 'offices',
+                        'x-airbyte-stream-name': 'offices',
+                        'x-airbyte-ai-hints': {
+                            'summary': 'Office locations for job postings and hiring',
+                            'when_to_use': 'Questions about office locations or where roles are based',
+                            'trigger_phrases': ['office', 'office location', 'job location'],
+                            'freshness': 'static',
+                            'example_questions': ['What office locations are configured?'],
+                            'search_strategy': 'Search by name',
+                        },
+                    },
+                ),
+            },
+            entity_schema={
+                'type': 'object',
+                'description': 'Greenhouse office object',
+                'properties': {
+                    'id': {'type': 'integer', 'description': 'Unique office identifier'},
+                    'name': {'type': 'string', 'description': 'Office name'},
+                    'location': {
+                        'type': ['object', 'null'],
+                        'description': 'Office location details',
+                    },
+                    'primary_contact_user_id': {
+                        'type': ['integer', 'null'],
+                        'description': 'Primary contact user ID',
+                    },
+                    'parent_id': {
+                        'type': ['integer', 'null'],
+                        'description': 'Parent office ID',
+                    },
+                    'parent_office_external_id': {
+                        'type': ['string', 'null'],
+                        'description': 'Parent office external ID',
+                    },
+                    'child_ids': {
+                        'type': 'array',
+                        'items': {'type': 'integer'},
+                        'description': 'Child office IDs',
+                    },
+                    'child_office_external_ids': {
+                        'type': 'array',
+                        'items': {'type': 'string'},
+                        'description': 'Child office external IDs',
+                    },
+                    'external_id': {
+                        'type': ['string', 'null'],
+                        'description': 'External ID',
+                    },
+                },
+                'x-airbyte-entity-name': 'offices',
+                'x-airbyte-stream-name': 'offices',
+                'x-airbyte-ai-hints': {
+                    'summary': 'Office locations for job postings and hiring',
+                    'when_to_use': 'Questions about office locations or where roles are based',
+                    'trigger_phrases': ['office', 'office location', 'job location'],
+                    'freshness': 'static',
+                    'example_questions': ['What office locations are configured?'],
+                    'search_strategy': 'Search by name',
+                },
+            },
+            ai_hints={
+                'summary': 'Office locations for job postings and hiring',
+                'when_to_use': 'Questions about office locations or where roles are based',
+                'trigger_phrases': ['office', 'office location', 'job location'],
+                'freshness': 'static',
+                'example_questions': ['What office locations are configured?'],
+                'search_strategy': 'Search by name',
+            },
+        ),
+        EntityDefinition(
+            name='job_posts',
+            stream_name='job_posts',
+            actions=[Action.LIST, Action.GET],
+            endpoints={
+                Action.LIST: EndpointDefinition(
+                    method='GET',
+                    path='/job_posts',
+                    action=Action.LIST,
+                    description='Returns a paginated list of all job posts',
+                    query_params=[
+                        'per_page',
+                        'page',
+                        'live',
+                        'active',
+                    ],
+                    query_params_schema={
+                        'per_page': {
+                            'type': 'integer',
+                            'required': False,
+                            'default': 100,
+                            'minimum': 1,
+                            'maximum': 500,
+                        },
+                        'page': {
+                            'type': 'integer',
+                            'required': False,
+                            'default': 1,
+                            'minimum': 1,
+                        },
+                        'live': {'type': 'boolean', 'required': False},
+                        'active': {'type': 'boolean', 'required': False},
+                    },
+                    response_schema={
+                        'type': 'array',
+                        'items': {
+                            'type': 'object',
+                            'description': 'Greenhouse job post object',
+                            'properties': {
+                                'id': {'type': 'integer', 'description': 'Unique job post identifier'},
+                                'title': {'type': 'string', 'description': 'Job post title'},
+                                'location': {
+                                    'type': ['object', 'null'],
+                                    'description': 'Job post location',
+                                },
+                                'internal': {'type': 'boolean', 'description': 'Whether this is an internal job post'},
+                                'external': {'type': 'boolean', 'description': 'Whether this is an external job post'},
+                                'active': {'type': 'boolean', 'description': 'Whether the job post is active'},
+                                'live': {'type': 'boolean', 'description': 'Whether the job post is live'},
+                                'first_published_at': {
+                                    'type': ['string', 'null'],
+                                    'format': 'date-time',
+                                    'description': 'When the job post was first published',
+                                },
+                                'job_id': {'type': 'integer', 'description': 'Associated job ID'},
+                                'content': {
+                                    'type': ['string', 'null'],
+                                    'description': 'Job post content/description',
+                                },
+                                'internal_content': {
+                                    'type': ['string', 'null'],
+                                    'description': 'Internal job post content',
+                                },
+                                'updated_at': {
+                                    'type': 'string',
+                                    'format': 'date-time',
+                                    'description': 'When the job post was last updated',
+                                },
+                                'created_at': {
+                                    'type': 'string',
+                                    'format': 'date-time',
+                                    'description': 'When the job post was created',
+                                },
+                                'demographic_question_set_id': {
+                                    'type': ['integer', 'null'],
+                                    'description': 'Demographic question set ID',
+                                },
+                                'questions': {
+                                    'type': 'array',
+                                    'items': {'type': 'object'},
+                                    'description': 'Application questions',
+                                },
+                            },
+                            'x-airbyte-entity-name': 'job_posts',
+                            'x-airbyte-stream-name': 'job_posts',
+                            'x-airbyte-ai-hints': {
+                                'summary': 'Published job postings visible on the careers page',
+                                'when_to_use': 'Questions about live job postings or careers page content',
+                                'trigger_phrases': ['job post', 'careers page', 'published job'],
+                                'freshness': 'live',
+                                'example_questions': ['What jobs are posted on the careers page?'],
+                                'search_strategy': 'Search by title',
+                            },
+                        },
+                    },
+                    meta_extractor={'next': '@link.next'},
+                ),
+                Action.GET: EndpointDefinition(
+                    method='GET',
+                    path='/job_posts/{id}',
+                    action=Action.GET,
+                    description='Get a single job post by ID',
+                    path_params=['id'],
+                    path_params_schema={
+                        'id': {'type': 'integer', 'required': True},
+                    },
+                    response_schema={
+                        'type': 'object',
+                        'description': 'Greenhouse job post object',
+                        'properties': {
+                            'id': {'type': 'integer', 'description': 'Unique job post identifier'},
+                            'title': {'type': 'string', 'description': 'Job post title'},
+                            'location': {
+                                'type': ['object', 'null'],
+                                'description': 'Job post location',
+                            },
+                            'internal': {'type': 'boolean', 'description': 'Whether this is an internal job post'},
+                            'external': {'type': 'boolean', 'description': 'Whether this is an external job post'},
+                            'active': {'type': 'boolean', 'description': 'Whether the job post is active'},
+                            'live': {'type': 'boolean', 'description': 'Whether the job post is live'},
+                            'first_published_at': {
+                                'type': ['string', 'null'],
+                                'format': 'date-time',
+                                'description': 'When the job post was first published',
+                            },
+                            'job_id': {'type': 'integer', 'description': 'Associated job ID'},
+                            'content': {
+                                'type': ['string', 'null'],
+                                'description': 'Job post content/description',
+                            },
+                            'internal_content': {
+                                'type': ['string', 'null'],
+                                'description': 'Internal job post content',
+                            },
+                            'updated_at': {
+                                'type': 'string',
+                                'format': 'date-time',
+                                'description': 'When the job post was last updated',
+                            },
+                            'created_at': {
+                                'type': 'string',
+                                'format': 'date-time',
+                                'description': 'When the job post was created',
+                            },
+                            'demographic_question_set_id': {
+                                'type': ['integer', 'null'],
+                                'description': 'Demographic question set ID',
+                            },
+                            'questions': {
+                                'type': 'array',
+                                'items': {'type': 'object'},
+                                'description': 'Application questions',
+                            },
+                        },
+                        'x-airbyte-entity-name': 'job_posts',
+                        'x-airbyte-stream-name': 'job_posts',
+                        'x-airbyte-ai-hints': {
+                            'summary': 'Published job postings visible on the careers page',
+                            'when_to_use': 'Questions about live job postings or careers page content',
+                            'trigger_phrases': ['job post', 'careers page', 'published job'],
+                            'freshness': 'live',
+                            'example_questions': ['What jobs are posted on the careers page?'],
+                            'search_strategy': 'Search by title',
+                        },
+                    },
+                    untested=True,
+                ),
+            },
+            entity_schema={
+                'type': 'object',
+                'description': 'Greenhouse job post object',
+                'properties': {
+                    'id': {'type': 'integer', 'description': 'Unique job post identifier'},
+                    'title': {'type': 'string', 'description': 'Job post title'},
+                    'location': {
+                        'type': ['object', 'null'],
+                        'description': 'Job post location',
+                    },
+                    'internal': {'type': 'boolean', 'description': 'Whether this is an internal job post'},
+                    'external': {'type': 'boolean', 'description': 'Whether this is an external job post'},
+                    'active': {'type': 'boolean', 'description': 'Whether the job post is active'},
+                    'live': {'type': 'boolean', 'description': 'Whether the job post is live'},
+                    'first_published_at': {
+                        'type': ['string', 'null'],
+                        'format': 'date-time',
+                        'description': 'When the job post was first published',
+                    },
+                    'job_id': {'type': 'integer', 'description': 'Associated job ID'},
+                    'content': {
+                        'type': ['string', 'null'],
+                        'description': 'Job post content/description',
+                    },
+                    'internal_content': {
+                        'type': ['string', 'null'],
+                        'description': 'Internal job post content',
+                    },
+                    'updated_at': {
+                        'type': 'string',
+                        'format': 'date-time',
+                        'description': 'When the job post was last updated',
+                    },
+                    'created_at': {
+                        'type': 'string',
+                        'format': 'date-time',
+                        'description': 'When the job post was created',
+                    },
+                    'demographic_question_set_id': {
+                        'type': ['integer', 'null'],
+                        'description': 'Demographic question set ID',
+                    },
+                    'questions': {
+                        'type': 'array',
+                        'items': {'type': 'object'},
+                        'description': 'Application questions',
+                    },
+                },
+                'x-airbyte-entity-name': 'job_posts',
+                'x-airbyte-stream-name': 'job_posts',
+                'x-airbyte-ai-hints': {
+                    'summary': 'Published job postings visible on the careers page',
+                    'when_to_use': 'Questions about live job postings or careers page content',
+                    'trigger_phrases': ['job post', 'careers page', 'published job'],
+                    'freshness': 'live',
+                    'example_questions': ['What jobs are posted on the careers page?'],
+                    'search_strategy': 'Search by title',
+                },
+            },
+            ai_hints={
+                'summary': 'Published job postings visible on the careers page',
+                'when_to_use': 'Questions about live job postings or careers page content',
+                'trigger_phrases': ['job post', 'careers page', 'published job'],
+                'freshness': 'live',
+                'example_questions': ['What jobs are posted on the careers page?'],
+                'search_strategy': 'Search by title',
+            },
+        ),
+        EntityDefinition(
+            name='sources',
+            stream_name='sources',
+            actions=[Action.LIST],
+            endpoints={
+                Action.LIST: EndpointDefinition(
+                    method='GET',
+                    path='/sources',
+                    action=Action.LIST,
+                    description='Returns a paginated list of all sources',
+                    query_params=['per_page', 'page'],
+                    query_params_schema={
+                        'per_page': {
+                            'type': 'integer',
+                            'required': False,
+                            'default': 100,
+                            'minimum': 1,
+                            'maximum': 500,
+                        },
+                        'page': {
+                            'type': 'integer',
+                            'required': False,
+                            'default': 1,
+                            'minimum': 1,
+                        },
+                    },
+                    response_schema={
+                        'type': 'array',
+                        'items': {
+                            'type': 'object',
+                            'description': 'Greenhouse source object',
+                            'properties': {
+                                'id': {'type': 'integer', 'description': 'Unique source identifier'},
+                                'name': {'type': 'string', 'description': 'Source name'},
+                                'type': {
+                                    'type': ['object', 'null'],
+                                    'description': 'Source type information',
+                                },
+                            },
+                            'x-airbyte-entity-name': 'sources',
+                            'x-airbyte-stream-name': 'sources',
+                            'x-airbyte-ai-hints': {
+                                'summary': 'Candidate sourcing channels (referrals, job boards, agencies)',
+                                'when_to_use': 'Questions about where candidates are coming from',
+                                'trigger_phrases': ['candidate source', 'referral', 'sourcing channel'],
+                                'freshness': 'static',
+                                'example_questions': ['What sourcing channels are tracked in Greenhouse?'],
+                                'search_strategy': 'Search by name',
+                            },
+                        },
+                    },
+                    meta_extractor={'next': '@link.next'},
+                ),
+            },
+            entity_schema={
+                'type': 'object',
+                'description': 'Greenhouse source object',
+                'properties': {
+                    'id': {'type': 'integer', 'description': 'Unique source identifier'},
+                    'name': {'type': 'string', 'description': 'Source name'},
+                    'type': {
+                        'type': ['object', 'null'],
+                        'description': 'Source type information',
+                    },
+                },
+                'x-airbyte-entity-name': 'sources',
+                'x-airbyte-stream-name': 'sources',
+                'x-airbyte-ai-hints': {
+                    'summary': 'Candidate sourcing channels (referrals, job boards, agencies)',
+                    'when_to_use': 'Questions about where candidates are coming from',
+                    'trigger_phrases': ['candidate source', 'referral', 'sourcing channel'],
+                    'freshness': 'static',
+                    'example_questions': ['What sourcing channels are tracked in Greenhouse?'],
+                    'search_strategy': 'Search by name',
+                },
+            },
+            ai_hints={
+                'summary': 'Candidate sourcing channels (referrals, job boards, agencies)',
+                'when_to_use': 'Questions about where candidates are coming from',
+                'trigger_phrases': ['candidate source', 'referral', 'sourcing channel'],
+                'freshness': 'static',
+                'example_questions': ['What sourcing channels are tracked in Greenhouse?'],
+                'search_strategy': 'Search by name',
+            },
+        ),
+        EntityDefinition(
+            name='scheduled_interviews',
+            actions=[Action.LIST, Action.GET],
+            endpoints={
+                Action.LIST: EndpointDefinition(
+                    method='GET',
+                    path='/scheduled_interviews',
+                    action=Action.LIST,
+                    description='Returns a paginated list of all scheduled interviews',
+                    query_params=[
+                        'per_page',
+                        'page',
+                        'created_before',
+                        'created_after',
+                        'updated_before',
+                        'updated_after',
+                        'starts_after',
+                        'ends_before',
+                    ],
+                    query_params_schema={
+                        'per_page': {
+                            'type': 'integer',
+                            'required': False,
+                            'default': 100,
+                            'minimum': 1,
+                            'maximum': 500,
+                        },
+                        'page': {
+                            'type': 'integer',
+                            'required': False,
+                            'default': 1,
+                            'minimum': 1,
+                        },
+                        'created_before': {
+                            'type': 'string',
+                            'required': False,
+                            'format': 'date-time',
+                        },
+                        'created_after': {
+                            'type': 'string',
+                            'required': False,
+                            'format': 'date-time',
+                        },
+                        'updated_before': {
+                            'type': 'string',
+                            'required': False,
+                            'format': 'date-time',
+                        },
+                        'updated_after': {
+                            'type': 'string',
+                            'required': False,
+                            'format': 'date-time',
+                        },
+                        'starts_after': {
+                            'type': 'string',
+                            'required': False,
+                            'format': 'date-time',
+                        },
+                        'ends_before': {
+                            'type': 'string',
+                            'required': False,
+                            'format': 'date-time',
+                        },
+                    },
+                    response_schema={
+                        'type': 'array',
+                        'items': {
+                            'type': 'object',
+                            'description': 'Greenhouse scheduled interview object',
+                            'properties': {
+                                'id': {'type': 'integer', 'description': 'Unique scheduled interview identifier'},
+                                'application_id': {'type': 'integer', 'description': 'Associated application ID'},
+                                'external_event_id': {
+                                    'type': ['string', 'null'],
+                                    'description': 'External calendar event ID',
+                                },
+                                'created_at': {
+                                    'type': 'string',
+                                    'format': 'date-time',
+                                    'description': 'When the interview was created',
+                                },
+                                'updated_at': {
+                                    'type': 'string',
+                                    'format': 'date-time',
+                                    'description': 'When the interview was last updated',
+                                },
+                                'start': {
+                                    'type': ['object', 'null'],
+                                    'description': 'Interview start time details',
+                                },
+                                'end': {
+                                    'type': ['object', 'null'],
+                                    'description': 'Interview end time details',
+                                },
+                                'location': {
+                                    'type': ['string', 'null'],
+                                    'description': 'Interview location',
+                                },
+                                'video_conferencing_url': {
+                                    'type': ['string', 'null'],
+                                    'description': 'Video conferencing URL',
+                                },
+                                'status': {'type': 'string', 'description': 'Interview status'},
+                                'interview': {
+                                    'type': ['object', 'null'],
+                                    'description': 'Interview details',
+                                },
+                                'organizer': {
+                                    'type': ['object', 'null'],
+                                    'description': 'Interview organizer',
+                                },
+                                'interviewers': {
+                                    'type': 'array',
+                                    'items': {'type': 'object'},
+                                    'description': 'List of interviewers',
+                                },
+                            },
+                            'x-airbyte-entity-name': 'scheduled_interviews',
+                            'x-airbyte-ai-hints': {
+                                'summary': 'Scheduled interviews with time, interviewer, and stage details',
+                                'when_to_use': 'Questions about upcoming interviews or interview schedules',
+                                'trigger_phrases': ['interview schedule', 'upcoming interview', 'scheduled interview'],
+                                'freshness': 'live',
+                                'example_questions': ['What interviews are scheduled?'],
+                                'search_strategy': 'Filter by date or candidate',
+                            },
+                        },
+                    },
+                    meta_extractor={'next': '@link.next'},
+                ),
+                Action.GET: EndpointDefinition(
+                    method='GET',
+                    path='/scheduled_interviews/{id}',
+                    action=Action.GET,
+                    description='Get a single scheduled interview by ID',
+                    path_params=['id'],
+                    path_params_schema={
+                        'id': {'type': 'integer', 'required': True},
+                    },
+                    response_schema={
+                        'type': 'object',
+                        'description': 'Greenhouse scheduled interview object',
+                        'properties': {
+                            'id': {'type': 'integer', 'description': 'Unique scheduled interview identifier'},
+                            'application_id': {'type': 'integer', 'description': 'Associated application ID'},
+                            'external_event_id': {
+                                'type': ['string', 'null'],
+                                'description': 'External calendar event ID',
+                            },
+                            'created_at': {
+                                'type': 'string',
+                                'format': 'date-time',
+                                'description': 'When the interview was created',
+                            },
+                            'updated_at': {
+                                'type': 'string',
+                                'format': 'date-time',
+                                'description': 'When the interview was last updated',
+                            },
+                            'start': {
+                                'type': ['object', 'null'],
+                                'description': 'Interview start time details',
+                            },
+                            'end': {
+                                'type': ['object', 'null'],
+                                'description': 'Interview end time details',
+                            },
+                            'location': {
+                                'type': ['string', 'null'],
+                                'description': 'Interview location',
+                            },
+                            'video_conferencing_url': {
+                                'type': ['string', 'null'],
+                                'description': 'Video conferencing URL',
+                            },
+                            'status': {'type': 'string', 'description': 'Interview status'},
+                            'interview': {
+                                'type': ['object', 'null'],
+                                'description': 'Interview details',
+                            },
+                            'organizer': {
+                                'type': ['object', 'null'],
+                                'description': 'Interview organizer',
+                            },
+                            'interviewers': {
+                                'type': 'array',
+                                'items': {'type': 'object'},
+                                'description': 'List of interviewers',
+                            },
+                        },
+                        'x-airbyte-entity-name': 'scheduled_interviews',
+                        'x-airbyte-ai-hints': {
+                            'summary': 'Scheduled interviews with time, interviewer, and stage details',
+                            'when_to_use': 'Questions about upcoming interviews or interview schedules',
+                            'trigger_phrases': ['interview schedule', 'upcoming interview', 'scheduled interview'],
+                            'freshness': 'live',
+                            'example_questions': ['What interviews are scheduled?'],
+                            'search_strategy': 'Filter by date or candidate',
+                        },
+                    },
+                    untested=True,
+                ),
+            },
+            entity_schema={
+                'type': 'object',
+                'description': 'Greenhouse scheduled interview object',
+                'properties': {
+                    'id': {'type': 'integer', 'description': 'Unique scheduled interview identifier'},
+                    'application_id': {'type': 'integer', 'description': 'Associated application ID'},
+                    'external_event_id': {
+                        'type': ['string', 'null'],
+                        'description': 'External calendar event ID',
+                    },
+                    'created_at': {
+                        'type': 'string',
+                        'format': 'date-time',
+                        'description': 'When the interview was created',
+                    },
+                    'updated_at': {
+                        'type': 'string',
+                        'format': 'date-time',
+                        'description': 'When the interview was last updated',
+                    },
+                    'start': {
+                        'type': ['object', 'null'],
+                        'description': 'Interview start time details',
+                    },
+                    'end': {
+                        'type': ['object', 'null'],
+                        'description': 'Interview end time details',
+                    },
+                    'location': {
+                        'type': ['string', 'null'],
+                        'description': 'Interview location',
+                    },
+                    'video_conferencing_url': {
+                        'type': ['string', 'null'],
+                        'description': 'Video conferencing URL',
+                    },
+                    'status': {'type': 'string', 'description': 'Interview status'},
+                    'interview': {
+                        'type': ['object', 'null'],
+                        'description': 'Interview details',
+                    },
+                    'organizer': {
+                        'type': ['object', 'null'],
+                        'description': 'Interview organizer',
+                    },
+                    'interviewers': {
+                        'type': 'array',
+                        'items': {'type': 'object'},
+                        'description': 'List of interviewers',
+                    },
+                },
+                'x-airbyte-entity-name': 'scheduled_interviews',
+                'x-airbyte-ai-hints': {
+                    'summary': 'Scheduled interviews with time, interviewer, and stage details',
+                    'when_to_use': 'Questions about upcoming interviews or interview schedules',
+                    'trigger_phrases': ['interview schedule', 'upcoming interview', 'scheduled interview'],
+                    'freshness': 'live',
+                    'example_questions': ['What interviews are scheduled?'],
+                    'search_strategy': 'Filter by date or candidate',
+                },
+            },
+            ai_hints={
+                'summary': 'Scheduled interviews with time, interviewer, and stage details',
+                'when_to_use': 'Questions about upcoming interviews or interview schedules',
+                'trigger_phrases': ['interview schedule', 'upcoming interview', 'scheduled interview'],
+                'freshness': 'live',
+                'example_questions': ['What interviews are scheduled?'],
+                'search_strategy': 'Filter by date or candidate',
+            },
+        ),
+        EntityDefinition(
+            name='application_attachment',
+            actions=[Action.DOWNLOAD],
+            endpoints={
+                Action.DOWNLOAD: EndpointDefinition(
+                    method='GET',
+                    path='/applications/{id}/attachment:download/{attachment_index}',
+                    path_override=PathOverrideConfig(
+                        path='/applications/{id}',
+                    ),
+                    action=Action.DOWNLOAD,
+                    description='Downloads an attachment (resume, cover letter, etc.) for an application by index.\nThe attachment URL is a temporary signed AWS S3 URL that expires within 7 days.\nFiles should be downloaded immediately after retrieval.\n',
+                    path_params=['id', 'attachment_index'],
+                    path_params_schema={
+                        'id': {'type': 'integer', 'required': True},
+                        'attachment_index': {
+                            'type': 'integer',
+                            'required': True,
+                            'default': 0,
+                            'minimum': 0,
+                        },
+                    },
+                    response_schema={
+                        'type': 'object',
+                        'description': 'Greenhouse application object',
+                        'properties': {
+                            'id': {'type': 'integer', 'description': 'Unique application identifier'},
+                            'candidate_id': {'type': 'integer', 'description': 'ID of the associated candidate'},
+                            'prospect': {'type': 'boolean', 'description': 'Whether this is a prospect application'},
+                            'applied_at': {
+                                'type': 'string',
+                                'format': 'date-time',
+                                'description': 'When the application was submitted',
+                            },
+                            'rejected_at': {
+                                'type': ['string', 'null'],
+                                'format': 'date-time',
+                                'description': 'When the application was rejected',
+                            },
+                            'last_activity_at': {
+                                'type': 'string',
+                                'format': 'date-time',
+                                'description': 'When the last activity occurred',
+                            },
+                            'location': {
+                                'type': ['object', 'null'],
+                                'description': 'Application location',
+                            },
+                            'source': {'type': 'object', 'description': 'Application source'},
+                            'credited_to': {'type': 'object', 'description': 'User credited with the application'},
+                            'rejection_reason': {
+                                'type': ['object', 'null'],
+                                'description': 'Rejection reason if rejected',
+                            },
+                            'rejection_details': {
+                                'type': ['object', 'null'],
+                                'description': 'Additional rejection details',
+                            },
+                            'jobs': {
+                                'type': 'array',
+                                'items': {'type': 'object'},
+                                'description': 'Jobs associated with the application',
+                            },
+                            'job_post_id': {
+                                'type': ['integer', 'null'],
+                                'description': 'ID of the job post',
+                            },
+                            'status': {'type': 'string', 'description': 'Application status'},
+                            'current_stage': {
+                                'type': ['object', 'null'],
+                                'description': 'Current stage of the application',
+                            },
+                            'answers': {
+                                'type': 'array',
+                                'items': {'type': 'object'},
+                                'description': 'Application question answers',
+                            },
+                            'prospective_office': {
+                                'type': ['object', 'null'],
+                                'description': 'Prospective office',
+                            },
+                            'prospective_department': {
+                                'type': ['object', 'null'],
+                                'description': 'Prospective department',
+                            },
+                            'prospect_detail': {'type': 'object', 'description': 'Prospect details'},
+                            'attachments': {
+                                'type': 'array',
+                                'items': {
+                                    'type': 'object',
+                                    'description': 'File attachment (resume, cover letter, etc.)',
+                                    'properties': {
+                                        'filename': {'type': 'string', 'description': 'Name of the attached file'},
+                                        'url': {
+                                            'type': 'string',
+                                            'format': 'uri',
+                                            'description': 'Temporary signed AWS S3 URL to download the file.\nThis URL expires within 7 days - download immediately after retrieval.\n',
+                                        },
+                                        'type': {
+                                            'type': 'string',
+                                            'enum': [
+                                                'resume',
+                                                'cover_letter',
+                                                'admin_only',
+                                                'take_home_test',
+                                                'offer_packet',
+                                                'offer_letter',
+                                                'signed_offer_letter',
+                                                'other',
+                                            ],
+                                            'description': 'Type of attachment',
+                                        },
+                                        'created_at': {
+                                            'type': 'string',
+                                            'format': 'date-time',
+                                            'description': 'When the attachment was uploaded',
+                                        },
+                                    },
+                                },
+                                'description': 'Application attachments (resumes, cover letters, etc.)',
+                            },
+                            'custom_fields': {'type': 'object', 'description': 'Custom field values'},
+                        },
+                        'x-airbyte-entity-name': 'applications',
+                        'x-airbyte-stream-name': 'applications',
+                        'x-airbyte-ai-hints': {
+                            'summary': 'Job applications with stage, status, and interview details',
+                            'when_to_use': 'Questions about application status or hiring pipeline progress',
+                            'trigger_phrases': ['application status', 'hiring stage', 'interview status'],
+                            'freshness': 'live',
+                            'example_questions': ['What stage is an application in?'],
+                            'search_strategy': 'Filter by candidate, job, or status',
+                        },
+                    },
+                    file_field='attachments[{attachment_index}].url',
+                ),
+            },
+        ),
+        EntityDefinition(
+            name='candidate_attachment',
+            actions=[Action.DOWNLOAD],
+            endpoints={
+                Action.DOWNLOAD: EndpointDefinition(
+                    method='GET',
+                    path='/candidates/{id}/attachment:download/{attachment_index}',
+                    path_override=PathOverrideConfig(
+                        path='/candidates/{id}',
+                    ),
+                    action=Action.DOWNLOAD,
+                    description='Downloads an attachment (resume, cover letter, etc.) for a candidate by index.\nThe attachment URL is a temporary signed AWS S3 URL that expires within 7 days.\nFiles should be downloaded immediately after retrieval.\n',
+                    path_params=['id', 'attachment_index'],
+                    path_params_schema={
+                        'id': {'type': 'integer', 'required': True},
+                        'attachment_index': {
+                            'type': 'integer',
+                            'required': True,
+                            'default': 0,
+                            'minimum': 0,
+                        },
+                    },
+                    response_schema={
+                        'type': 'object',
+                        'description': 'Greenhouse candidate object',
+                        'properties': {
+                            'id': {'type': 'integer', 'description': 'Unique candidate identifier'},
+                            'first_name': {'type': 'string', 'description': "Candidate's first name"},
+                            'last_name': {'type': 'string', 'description': "Candidate's last name"},
+                            'company': {
+                                'type': ['string', 'null'],
+                                'description': "Candidate's current company",
+                            },
+                            'title': {
+                                'type': ['string', 'null'],
+                                'description': "Candidate's current title",
+                            },
+                            'created_at': {
+                                'type': 'string',
+                                'format': 'date-time',
+                                'description': 'When the candidate was created',
+                            },
+                            'updated_at': {
+                                'type': 'string',
+                                'format': 'date-time',
+                                'description': 'When the candidate was last updated',
+                            },
+                            'last_activity': {
+                                'type': 'string',
+                                'format': 'date-time',
+                                'description': 'When the last activity occurred',
+                            },
+                            'is_private': {'type': 'boolean', 'description': 'Whether the candidate is private'},
+                            'photo_url': {
+                                'type': ['string', 'null'],
+                                'description': "URL to candidate's photo",
+                            },
+                            'attachments': {
+                                'type': 'array',
+                                'items': {
+                                    'type': 'object',
+                                    'description': 'File attachment (resume, cover letter, etc.)',
+                                    'properties': {
+                                        'filename': {'type': 'string', 'description': 'Name of the attached file'},
+                                        'url': {
+                                            'type': 'string',
+                                            'format': 'uri',
+                                            'description': 'Temporary signed AWS S3 URL to download the file.\nThis URL expires within 7 days - download immediately after retrieval.\n',
+                                        },
+                                        'type': {
+                                            'type': 'string',
+                                            'enum': [
+                                                'resume',
+                                                'cover_letter',
+                                                'admin_only',
+                                                'take_home_test',
+                                                'offer_packet',
+                                                'offer_letter',
+                                                'signed_offer_letter',
+                                                'other',
+                                            ],
+                                            'description': 'Type of attachment',
+                                        },
+                                        'created_at': {
+                                            'type': 'string',
+                                            'format': 'date-time',
+                                            'description': 'When the attachment was uploaded',
+                                        },
+                                    },
+                                },
+                                'description': 'Candidate attachments (resumes, cover letters, etc.)',
+                            },
+                            'application_ids': {
+                                'type': 'array',
+                                'items': {'type': 'integer'},
+                                'description': "IDs of candidate's applications",
+                            },
+                            'phone_numbers': {
+                                'type': 'array',
+                                'items': {'type': 'object'},
+                                'description': 'Candidate phone numbers',
+                            },
+                            'addresses': {
+                                'type': 'array',
+                                'items': {'type': 'object'},
+                                'description': 'Candidate addresses',
+                            },
+                            'email_addresses': {
+                                'type': 'array',
+                                'items': {'type': 'object'},
+                                'description': 'Candidate email addresses',
+                            },
+                            'website_addresses': {
+                                'type': 'array',
+                                'items': {'type': 'object'},
+                                'description': 'Candidate website addresses',
+                            },
+                            'social_media_addresses': {
+                                'type': 'array',
+                                'items': {'type': 'object'},
+                                'description': 'Candidate social media addresses',
+                            },
+                            'recruiter': {
+                                'type': ['object', 'null'],
+                                'description': 'Recruiter information',
+                            },
+                            'coordinator': {
+                                'type': ['object', 'null'],
+                                'description': 'Coordinator information',
+                            },
+                            'can_email': {'type': 'boolean', 'description': 'Whether the candidate can be emailed'},
+                            'tags': {
+                                'type': 'array',
+                                'items': {'type': 'string'},
+                                'description': 'Candidate tags',
+                            },
+                            'custom_fields': {'type': 'object', 'description': 'Custom field values'},
+                        },
+                        'x-airbyte-entity-name': 'candidates',
+                        'x-airbyte-stream-name': 'candidates',
+                        'x-airbyte-ai-hints': {
+                            'summary': 'Job candidates with application history and contact details',
+                            'when_to_use': 'Looking up candidate information or hiring pipeline data',
+                            'trigger_phrases': ['greenhouse candidate', 'applicant', 'who applied'],
+                            'freshness': 'live',
+                            'example_questions': ['Find a candidate in Greenhouse', 'List recent candidates'],
+                            'search_strategy': 'Search by name or email',
+                        },
+                    },
+                    file_field='attachments[{attachment_index}].url',
+                ),
+            },
+        ),
+    ],
+    context_store=CacheConfig(
+        entities=[
+            CacheEntityConfig(
+                entity='applications',
+                suggested=True,
+                x_airbyte_name='applications',
+                fields=[
+                    CacheFieldConfig(
+                        name='answers',
+                        type=['null', 'array'],
+                        description='Answers provided in the application.',
+                    ),
+                    CacheFieldConfig(
+                        name='applied_at',
+                        type=['null', 'string'],
+                        description='Timestamp when the candidate applied.',
+                    ),
+                    CacheFieldConfig(
+                        name='attachments',
+                        type=['null', 'array'],
+                        description='Attachments uploaded with the application.',
+                    ),
+                    CacheFieldConfig(
+                        name='candidate_id',
+                        type=['null', 'integer'],
+                        description='Unique identifier for the candidate.',
+                    ),
+                    CacheFieldConfig(
+                        name='credited_to',
+                        type=['null', 'object'],
+                        description='Information about the employee who credited the application.',
+                        properties={
+                            'employee_id': CacheFieldProperty(
+                                type=['null', 'string'],
+                            ),
+                            'first_name': CacheFieldProperty(
+                                type=['null', 'string'],
+                            ),
+                            'id': CacheFieldProperty(
+                                type=['null', 'integer'],
+                            ),
+                            'last_name': CacheFieldProperty(
+                                type=['null', 'string'],
+                            ),
+                            'name': CacheFieldProperty(
+                                type=['null', 'string'],
+                            ),
+                        },
+                    ),
+                    CacheFieldConfig(
+                        name='current_stage',
+                        type=['null', 'object'],
+                        description='Current stage of the application process.',
+                        properties={
+                            'id': CacheFieldProperty(
+                                type=['null', 'integer'],
+                            ),
+                            'name': CacheFieldProperty(
+                                type=['null', 'string'],
+                            ),
+                        },
+                    ),
+                    CacheFieldConfig(
+                        name='id',
+                        type=['null', 'integer'],
+                        description='Unique identifier for the application.',
+                    ),
+                    CacheFieldConfig(
+                        name='job_post_id',
+                        type=['integer', 'null'],
+                        description='',
+                    ),
+                    CacheFieldConfig(
+                        name='jobs',
+                        type=['null', 'array'],
+                        description='Jobs applied for by the candidate.',
+                    ),
+                    CacheFieldConfig(
+                        name='last_activity_at',
+                        type=['null', 'string'],
+                        description='Timestamp of the last activity on the application.',
+                    ),
+                    CacheFieldConfig(
+                        name='location',
+                        type=['null', 'string'],
+                        description='Location related to the application.',
+                    ),
+                    CacheFieldConfig(
+                        name='prospect',
+                        type=['null', 'boolean'],
+                        description='Status of the application prospect.',
+                    ),
+                    CacheFieldConfig(
+                        name='prospect_detail',
+                        type=['null', 'object'],
+                        description='Details related to the application prospect.',
+                        properties={
+                            'prospect_owner': CacheFieldProperty(
+                                type=['null', 'object'],
+                            ),
+                            'prospect_pool': CacheFieldProperty(
+                                type=['null', 'string'],
+                            ),
+                            'prospect_stage': CacheFieldProperty(
+                                type=['null', 'string'],
+                            ),
+                        },
+                    ),
+                    CacheFieldConfig(
+                        name='prospective_department',
+                        type=['null', 'string'],
+                        description='Prospective department for the candidate.',
+                    ),
+                    CacheFieldConfig(
+                        name='prospective_office',
+                        type=['null', 'string'],
+                        description='Prospective office for the candidate.',
+                    ),
+                    CacheFieldConfig(
+                        name='rejected_at',
+                        type=['null', 'string'],
+                        description='Timestamp when the application was rejected.',
+                    ),
+                    CacheFieldConfig(
+                        name='rejection_details',
+                        type=['null', 'object'],
+                        description='Details related to the application rejection.',
+                        properties={
+                            'custom_fields': CacheFieldProperty(
+                                type=['null', 'object'],
+                            ),
+                            'keyed_custom_fields': CacheFieldProperty(
+                                type=['null', 'object'],
+                            ),
+                        },
+                    ),
+                    CacheFieldConfig(
+                        name='rejection_reason',
+                        type=['null', 'object'],
+                        description='Reason for the application rejection.',
+                        properties={
+                            'id': CacheFieldProperty(
+                                type=['null', 'integer'],
+                            ),
+                            'name': CacheFieldProperty(
+                                type=['null', 'string'],
+                            ),
+                            'type': CacheFieldProperty(
+                                type=['null', 'object'],
+                            ),
+                        },
+                    ),
+                    CacheFieldConfig(
+                        name='source',
+                        type=['null', 'object'],
+                        description='Source of the application.',
+                        properties={
+                            'id': CacheFieldProperty(
+                                type=['null', 'integer'],
+                            ),
+                            'public_name': CacheFieldProperty(
+                                type=['null', 'string'],
+                            ),
+                        },
+                    ),
+                    CacheFieldConfig(
+                        name='status',
+                        type=['null', 'string'],
+                        description='Status of the application.',
+                    ),
+                ],
+            ),
+            CacheEntityConfig(
+                entity='candidates',
+                suggested=True,
+                x_airbyte_name='candidates',
+                fields=[
+                    CacheFieldConfig(
+                        name='addresses',
+                        type=['null', 'array'],
+                        description="Candidate's addresses",
+                    ),
+                    CacheFieldConfig(
+                        name='application_ids',
+                        type=['null', 'array'],
+                        description='List of application IDs',
+                    ),
+                    CacheFieldConfig(
+                        name='applications',
+                        type=['null', 'array'],
+                        description='An array of all applications made by candidates.',
+                    ),
+                    CacheFieldConfig(
+                        name='attachments',
+                        type=['null', 'array'],
+                        description='Attachments related to the candidate',
+                    ),
+                    CacheFieldConfig(
+                        name='can_email',
+                        type=['null', 'boolean'],
+                        description='Indicates if candidate can be emailed',
+                    ),
+                    CacheFieldConfig(
+                        name='company',
+                        type=['null', 'string'],
+                        description='Company where the candidate is associated',
+                    ),
+                    CacheFieldConfig(
+                        name='coordinator',
+                        type=['null', 'string'],
+                        description='Coordinator assigned to the candidate',
+                    ),
+                    CacheFieldConfig(
+                        name='created_at',
+                        type=['null', 'string'],
+                        description='Date and time of creation',
+                    ),
+                    CacheFieldConfig(
+                        name='custom_fields',
+                        type=['null', 'object'],
+                        description='Custom fields associated with the candidate',
+                    ),
+                    CacheFieldConfig(
+                        name='educations',
+                        type=['null', 'array'],
+                        description="List of candidate's educations",
+                    ),
+                    CacheFieldConfig(
+                        name='email_addresses',
+                        type=['null', 'array'],
+                        description="Candidate's email addresses",
+                    ),
+                    CacheFieldConfig(
+                        name='employments',
+                        type=['null', 'array'],
+                        description="List of candidate's employments",
+                    ),
+                    CacheFieldConfig(
+                        name='first_name',
+                        type=['null', 'string'],
+                        description="Candidate's first name",
+                    ),
+                    CacheFieldConfig(
+                        name='id',
+                        type=['null', 'integer'],
+                        description="Candidate's ID",
+                    ),
+                    CacheFieldConfig(
+                        name='is_private',
+                        type=['null', 'boolean'],
+                        description="Indicates if the candidate's data is private",
+                    ),
+                    CacheFieldConfig(
+                        name='keyed_custom_fields',
+                        type=['null', 'object'],
+                        description='Keyed custom fields associated with the candidate',
+                    ),
+                    CacheFieldConfig(
+                        name='last_activity',
+                        type=['null', 'string'],
+                        description='Details of the last activity related to the candidate',
+                    ),
+                    CacheFieldConfig(
+                        name='last_name',
+                        type=['null', 'string'],
+                        description="Candidate's last name",
+                    ),
+                    CacheFieldConfig(
+                        name='phone_numbers',
+                        type=['null', 'array'],
+                        description="Candidate's phone numbers",
+                    ),
+                    CacheFieldConfig(
+                        name='photo_url',
+                        type=['null', 'string'],
+                        description="URL of the candidate's profile photo",
+                    ),
+                    CacheFieldConfig(
+                        name='recruiter',
+                        type=['null', 'string'],
+                        description='Recruiter assigned to the candidate',
+                    ),
+                    CacheFieldConfig(
+                        name='social_media_addresses',
+                        type=['null', 'array'],
+                        description="Candidate's social media addresses",
+                    ),
+                    CacheFieldConfig(
+                        name='tags',
+                        type=['null', 'array'],
+                        description='Tags associated with the candidate',
+                    ),
+                    CacheFieldConfig(
+                        name='title',
+                        type=['null', 'string'],
+                        description="Candidate's title (e.g., Mr., Mrs., Dr.)",
+                    ),
+                    CacheFieldConfig(
+                        name='updated_at',
+                        type=['null', 'string'],
+                        description='Date and time of last update',
+                    ),
+                    CacheFieldConfig(
+                        name='website_addresses',
+                        type=['null', 'array'],
+                        description="List of candidate's website addresses",
+                    ),
+                ],
+            ),
+            CacheEntityConfig(
+                entity='departments',
+                x_airbyte_name='departments',
+                fields=[
+                    CacheFieldConfig(
+                        name='child_department_external_ids',
+                        type=['null', 'array'],
+                        description='External IDs of child departments associated with this department.',
+                    ),
+                    CacheFieldConfig(
+                        name='child_ids',
+                        type=['null', 'array'],
+                        description='Unique IDs of child departments associated with this department.',
+                    ),
+                    CacheFieldConfig(
+                        name='external_id',
+                        type=['null', 'string'],
+                        description='External ID of this department.',
+                    ),
+                    CacheFieldConfig(
+                        name='id',
+                        type=['null', 'integer'],
+                        description='Unique ID of this department.',
+                    ),
+                    CacheFieldConfig(
+                        name='name',
+                        type=['null', 'string'],
+                        description='Name of the department.',
+                    ),
+                    CacheFieldConfig(
+                        name='parent_department_external_id',
+                        type=['null', 'string'],
+                        description='External ID of the parent department of this department.',
+                    ),
+                    CacheFieldConfig(
+                        name='parent_id',
+                        type=['null', 'integer'],
+                        description='Unique ID of the parent department of this department.',
+                    ),
+                ],
+            ),
+            CacheEntityConfig(
+                entity='job_posts',
+                suggested=True,
+                x_airbyte_name='job_posts',
+                fields=[
+                    CacheFieldConfig(
+                        name='active',
+                        type=['null', 'boolean'],
+                        description='Flag indicating if the job post is active or not.',
+                    ),
+                    CacheFieldConfig(
+                        name='content',
+                        type=['null', 'string'],
+                        description='Content or description of the job post.',
+                    ),
+                    CacheFieldConfig(
+                        name='created_at',
+                        type=['null', 'string'],
+                        description='Date and time when the job post was created.',
+                    ),
+                    CacheFieldConfig(
+                        name='demographic_question_set_id',
+                        type=['null', 'integer'],
+                        description='ID of the demographic question set associated with the job post.',
+                    ),
+                    CacheFieldConfig(
+                        name='external',
+                        type=['null', 'boolean'],
+                        description='Flag indicating if the job post is external or not.',
+                    ),
+                    CacheFieldConfig(
+                        name='first_published_at',
+                        type=['null', 'string'],
+                        description='Date and time when the job post was first published.',
+                    ),
+                    CacheFieldConfig(
+                        name='id',
+                        type=['null', 'integer'],
+                        description='Unique identifier of the job post.',
+                    ),
+                    CacheFieldConfig(
+                        name='internal',
+                        type=['null', 'boolean'],
+                        description='Flag indicating if the job post is internal or not.',
+                    ),
+                    CacheFieldConfig(
+                        name='internal_content',
+                        type=['null', 'string'],
+                        description='Internal content or description of the job post.',
+                    ),
+                    CacheFieldConfig(
+                        name='job_id',
+                        type=['null', 'integer'],
+                        description='ID of the job associated with the job post.',
+                    ),
+                    CacheFieldConfig(
+                        name='live',
+                        type=['null', 'boolean'],
+                        description='Flag indicating if the job post is live or not.',
+                    ),
+                    CacheFieldConfig(
+                        name='location',
+                        type=['null', 'object'],
+                        description='Details about the job post location.',
+                        properties={
+                            'id': CacheFieldProperty(
+                                type=['null', 'integer'],
+                            ),
+                            'job_post_location_type': CacheFieldProperty(
+                                type=['null', 'object'],
+                            ),
+                            'name': CacheFieldProperty(
+                                type=['null', 'string'],
+                            ),
+                            'office_id': CacheFieldProperty(
+                                type=['null', 'integer'],
+                            ),
+                        },
+                    ),
+                    CacheFieldConfig(
+                        name='questions',
+                        type=['null', 'array'],
+                        description='List of questions related to the job post.',
+                    ),
+                    CacheFieldConfig(
+                        name='title',
+                        type=['null', 'string'],
+                        description='Title or headline of the job post.',
+                    ),
+                    CacheFieldConfig(
+                        name='updated_at',
+                        type=['null', 'string'],
+                        description='Date and time when the job post was last updated.',
+                    ),
+                ],
+            ),
+            CacheEntityConfig(
+                entity='jobs',
+                suggested=True,
+                x_airbyte_name='jobs',
+                fields=[
+                    CacheFieldConfig(
+                        name='closed_at',
+                        type=['null', 'string'],
+                        description='The date and time the job was closed',
+                    ),
+                    CacheFieldConfig(
+                        name='confidential',
+                        type=['null', 'boolean'],
+                        description='Indicates if the job details are confidential',
+                    ),
+                    CacheFieldConfig(
+                        name='copied_from_id',
+                        type=['null', 'integer'],
+                        description='The ID of the job from which this job was copied',
+                    ),
+                    CacheFieldConfig(
+                        name='created_at',
+                        type=['null', 'string'],
+                        description='The date and time the job was created',
+                    ),
+                    CacheFieldConfig(
+                        name='custom_fields',
+                        type=['null', 'object'],
+                        description='Custom fields related to the job',
+                        properties={
+                            'employment_type': CacheFieldProperty(
+                                type=['null', 'string'],
+                            ),
+                        },
+                    ),
+                    CacheFieldConfig(
+                        name='departments',
+                        type=['null', 'array'],
+                        description='Departments associated with the job',
+                    ),
+                    CacheFieldConfig(
+                        name='hiring_team',
+                        type=['null', 'object'],
+                        description='Members of the hiring team for the job',
+                        properties={
+                            'coordinators': CacheFieldProperty(
+                                type=['null', 'array'],
+                            ),
+                            'hiring_managers': CacheFieldProperty(
+                                type=['null', 'array'],
+                            ),
+                            'recruiters': CacheFieldProperty(
+                                type=['null', 'array'],
+                            ),
+                            'sourcers': CacheFieldProperty(
+                                type=['null', 'array'],
+                            ),
+                        },
+                    ),
+                    CacheFieldConfig(
+                        name='id',
+                        type=['null', 'integer'],
+                        description='Unique ID of the job',
+                    ),
+                    CacheFieldConfig(
+                        name='is_template',
+                        type=['null', 'boolean'],
+                        description='Indicates if the job is a template',
+                    ),
+                    CacheFieldConfig(
+                        name='keyed_custom_fields',
+                        type=['null', 'object'],
+                        description='Keyed custom fields related to the job',
+                        properties={
+                            'employment_type': CacheFieldProperty(
+                                type=['null', 'object'],
+                            ),
+                        },
+                    ),
+                    CacheFieldConfig(
+                        name='name',
+                        type=['null', 'string'],
+                        description='Name of the job',
+                    ),
+                    CacheFieldConfig(
+                        name='notes',
+                        type=['null', 'string'],
+                        description='Additional notes or comments about the job',
+                    ),
+                    CacheFieldConfig(
+                        name='offices',
+                        type=['null', 'array'],
+                        description='Offices associated with the job',
+                    ),
+                    CacheFieldConfig(
+                        name='opened_at',
+                        type=['null', 'string'],
+                        description='The date and time the job was opened',
+                    ),
+                    CacheFieldConfig(
+                        name='openings',
+                        type=['null', 'array'],
+                        description='Openings associated with the job',
+                    ),
+                    CacheFieldConfig(
+                        name='requisition_id',
+                        type=['null', 'string'],
+                        description='ID associated with the job requisition',
+                    ),
+                    CacheFieldConfig(
+                        name='status',
+                        type=['null', 'string'],
+                        description='Current status of the job',
+                    ),
+                    CacheFieldConfig(
+                        name='updated_at',
+                        type=['null', 'string'],
+                        description='The date and time the job was last updated',
+                    ),
+                ],
+            ),
+            CacheEntityConfig(
+                entity='offers',
+                suggested=True,
+                x_airbyte_name='offers',
+                fields=[
+                    CacheFieldConfig(
+                        name='application_id',
+                        type=['null', 'integer'],
+                        description='Unique identifier for the application associated with the offer',
+                    ),
+                    CacheFieldConfig(
+                        name='candidate_id',
+                        type=['null', 'integer'],
+                        description='Unique identifier for the candidate associated with the offer',
+                    ),
+                    CacheFieldConfig(
+                        name='created_at',
+                        type=['null', 'string'],
+                        description='Timestamp indicating when the offer was created',
+                    ),
+                    CacheFieldConfig(
+                        name='custom_fields',
+                        type=['null', 'object'],
+                        description='Additional custom fields related to the offer',
+                        properties={
+                            'employment_type': CacheFieldProperty(
+                                type=['null', 'string'],
+                            ),
+                        },
+                    ),
+                    CacheFieldConfig(
+                        name='id',
+                        type=['null', 'integer'],
+                        description='Unique identifier for the offer',
+                    ),
+                    CacheFieldConfig(
+                        name='job_id',
+                        type=['null', 'integer'],
+                        description='Unique identifier for the job associated with the offer',
+                    ),
+                    CacheFieldConfig(
+                        name='keyed_custom_fields',
+                        type=['null', 'object'],
+                        description='Keyed custom fields associated with the offer',
+                        properties={
+                            'employment_type': CacheFieldProperty(
+                                type=['null', 'object'],
+                            ),
+                        },
+                    ),
+                    CacheFieldConfig(
+                        name='opening',
+                        type=['null', 'object'],
+                        description='Details about the job opening',
+                        properties={
+                            'application_id': CacheFieldProperty(
+                                type=['null', 'integer'],
+                            ),
+                            'close_reason': CacheFieldProperty(
+                                type=['null', 'string'],
+                            ),
+                            'closed_at': CacheFieldProperty(
+                                type=['null', 'string'],
+                            ),
+                            'id': CacheFieldProperty(
+                                type=['null', 'integer'],
+                            ),
+                            'opened_at': CacheFieldProperty(
+                                type=['null', 'string'],
+                            ),
+                            'opening_id': CacheFieldProperty(
+                                type=['null', 'string'],
+                            ),
+                            'status': CacheFieldProperty(
+                                type=['null', 'string'],
+                            ),
+                        },
+                    ),
+                    CacheFieldConfig(
+                        name='resolved_at',
+                        type=['null', 'string'],
+                        description='Timestamp indicating when the offer was resolved',
+                    ),
+                    CacheFieldConfig(
+                        name='sent_at',
+                        type=['null', 'string'],
+                        description='Timestamp indicating when the offer was sent',
+                    ),
+                    CacheFieldConfig(
+                        name='starts_at',
+                        type=['null', 'string'],
+                        description='Timestamp indicating when the offer starts',
+                    ),
+                    CacheFieldConfig(
+                        name='status',
+                        type=['null', 'string'],
+                        description='Status of the offer',
+                    ),
+                    CacheFieldConfig(
+                        name='updated_at',
+                        type=['null', 'string'],
+                        description='Timestamp indicating when the offer was last updated',
+                    ),
+                    CacheFieldConfig(
+                        name='version',
+                        type=['null', 'integer'],
+                        description='Version of the offer data',
+                    ),
+                ],
+            ),
+            CacheEntityConfig(
+                entity='offices',
+                x_airbyte_name='offices',
+                fields=[
+                    CacheFieldConfig(
+                        name='child_ids',
+                        type=['null', 'array'],
+                        description='IDs of child offices associated with this office',
+                    ),
+                    CacheFieldConfig(
+                        name='child_office_external_ids',
+                        type=['null', 'array'],
+                        description='External IDs of child offices associated with this office',
+                    ),
+                    CacheFieldConfig(
+                        name='external_id',
+                        type=['null', 'string'],
+                        description='Unique identifier for this office in the external system',
+                    ),
+                    CacheFieldConfig(
+                        name='id',
+                        type=['null', 'integer'],
+                        description='Unique identifier for this office in the API system',
+                    ),
+                    CacheFieldConfig(
+                        name='location',
+                        type=['null', 'object'],
+                        description='Location details of this office',
+                        properties={
+                            'name': CacheFieldProperty(
+                                type=['null', 'string'],
+                            ),
+                        },
+                    ),
+                    CacheFieldConfig(
+                        name='name',
+                        type=['null', 'string'],
+                        description='Name of the office',
+                    ),
+                    CacheFieldConfig(
+                        name='parent_id',
+                        type=['null', 'integer'],
+                        description='ID of the parent office, if this office is a branch office',
+                    ),
+                    CacheFieldConfig(
+                        name='parent_office_external_id',
+                        type=['null', 'string'],
+                        description='External ID of the parent office in the external system',
+                    ),
+                    CacheFieldConfig(
+                        name='primary_contact_user_id',
+                        type=['null', 'integer'],
+                        description='User ID of the primary contact person for this office',
+                    ),
+                ],
+            ),
+            CacheEntityConfig(
+                entity='sources',
+                x_airbyte_name='sources',
+                fields=[
+                    CacheFieldConfig(
+                        name='id',
+                        type=['null', 'integer'],
+                        description='The unique identifier for the source.',
+                    ),
+                    CacheFieldConfig(
+                        name='name',
+                        type=['null', 'string'],
+                        description='The name of the source.',
+                    ),
+                    CacheFieldConfig(
+                        name='type',
+                        type=['null', 'object'],
+                        description='Type of the data source',
+                        properties={
+                            'id': CacheFieldProperty(
+                                type=['null', 'integer'],
+                            ),
+                            'name': CacheFieldProperty(
+                                type=['null', 'string'],
+                            ),
+                        },
+                    ),
+                ],
+            ),
+            CacheEntityConfig(
+                entity='users',
+                x_airbyte_name='users',
+                fields=[
+                    CacheFieldConfig(
+                        name='created_at',
+                        type=['null', 'string'],
+                        description='The date and time when the user account was created.',
+                    ),
+                    CacheFieldConfig(
+                        name='departments',
+                        type=['null', 'array'],
+                        description='List of departments associated with users',
+                    ),
+                    CacheFieldConfig(
+                        name='disabled',
+                        type=['null', 'boolean'],
+                        description='Indicates whether the user account is disabled.',
+                    ),
+                    CacheFieldConfig(
+                        name='emails',
+                        type=['null', 'array'],
+                        description='Email addresses of the users',
+                    ),
+                    CacheFieldConfig(
+                        name='employee_id',
+                        type=['null', 'string'],
+                        description='Employee identifier for the user.',
+                    ),
+                    CacheFieldConfig(
+                        name='first_name',
+                        type=['null', 'string'],
+                        description='The first name of the user.',
+                    ),
+                    CacheFieldConfig(
+                        name='id',
+                        type=['null', 'integer'],
+                        description='Unique identifier for the user.',
+                    ),
+                    CacheFieldConfig(
+                        name='last_name',
+                        type=['null', 'string'],
+                        description='The last name of the user.',
+                    ),
+                    CacheFieldConfig(
+                        name='linked_candidate_ids',
+                        type=['null', 'array'],
+                        description='IDs of candidates linked to the user.',
+                    ),
+                    CacheFieldConfig(
+                        name='name',
+                        type=['null', 'string'],
+                        description='The full name of the user.',
+                    ),
+                    CacheFieldConfig(
+                        name='offices',
+                        type=['null', 'array'],
+                        description='List of office locations where users are based',
+                    ),
+                    CacheFieldConfig(
+                        name='primary_email_address',
+                        type=['null', 'string'],
+                        description='The primary email address of the user.',
+                    ),
+                    CacheFieldConfig(
+                        name='site_admin',
+                        type=['null', 'boolean'],
+                        description='Indicates whether the user is a site administrator.',
+                    ),
+                    CacheFieldConfig(
+                        name='updated_at',
+                        type=['null', 'string'],
+                        description='The date and time when the user account was last updated.',
+                    ),
+                ],
+            ),
+        ],
+        disable_compaction=True,
+    ),
+    search_field_paths={
+        'applications': [
+            'answers',
+            'answers[]',
+            'applied_at',
+            'attachments',
+            'attachments[]',
+            'candidate_id',
+            'credited_to',
+            'credited_to.employee_id',
+            'credited_to.first_name',
+            'credited_to.id',
+            'credited_to.last_name',
+            'credited_to.name',
+            'current_stage',
+            'current_stage.id',
+            'current_stage.name',
+            'id',
+            'job_post_id',
+            'jobs',
+            'jobs[]',
+            'last_activity_at',
+            'location',
+            'prospect',
+            'prospect_detail',
+            'prospect_detail.prospect_owner',
+            'prospect_detail.prospect_pool',
+            'prospect_detail.prospect_stage',
+            'prospective_department',
+            'prospective_office',
+            'rejected_at',
+            'rejection_details',
+            'rejection_details.custom_fields',
+            'rejection_details.keyed_custom_fields',
+            'rejection_reason',
+            'rejection_reason.id',
+            'rejection_reason.name',
+            'rejection_reason.type',
+            'source',
+            'source.id',
+            'source.public_name',
+            'status',
+        ],
+        'candidates': [
+            'addresses',
+            'addresses[]',
+            'application_ids',
+            'application_ids[]',
+            'applications',
+            'applications[]',
+            'attachments',
+            'attachments[]',
+            'can_email',
+            'company',
+            'coordinator',
+            'created_at',
+            'custom_fields',
+            'educations',
+            'educations[]',
+            'email_addresses',
+            'email_addresses[]',
+            'employments',
+            'employments[]',
+            'first_name',
+            'id',
+            'is_private',
+            'keyed_custom_fields',
+            'last_activity',
+            'last_name',
+            'phone_numbers',
+            'phone_numbers[]',
+            'photo_url',
+            'recruiter',
+            'social_media_addresses',
+            'social_media_addresses[]',
+            'tags',
+            'tags[]',
+            'title',
+            'updated_at',
+            'website_addresses',
+            'website_addresses[]',
+        ],
+        'departments': [
+            'child_department_external_ids',
+            'child_department_external_ids[]',
+            'child_ids',
+            'child_ids[]',
+            'external_id',
+            'id',
+            'name',
+            'parent_department_external_id',
+            'parent_id',
+        ],
+        'job_posts': [
+            'active',
+            'content',
+            'created_at',
+            'demographic_question_set_id',
+            'external',
+            'first_published_at',
+            'id',
+            'internal',
+            'internal_content',
+            'job_id',
+            'live',
+            'location',
+            'location.id',
+            'location.job_post_location_type',
+            'location.name',
+            'location.office_id',
+            'questions',
+            'questions[]',
+            'title',
+            'updated_at',
+        ],
+        'jobs': [
+            'closed_at',
+            'confidential',
+            'copied_from_id',
+            'created_at',
+            'custom_fields',
+            'custom_fields.employment_type',
+            'departments',
+            'departments[]',
+            'hiring_team',
+            'hiring_team.coordinators',
+            'hiring_team.coordinators[]',
+            'hiring_team.hiring_managers',
+            'hiring_team.hiring_managers[]',
+            'hiring_team.recruiters',
+            'hiring_team.recruiters[]',
+            'hiring_team.sourcers',
+            'hiring_team.sourcers[]',
+            'id',
+            'is_template',
+            'keyed_custom_fields',
+            'keyed_custom_fields.employment_type',
+            'name',
+            'notes',
+            'offices',
+            'offices[]',
+            'opened_at',
+            'openings',
+            'openings[]',
+            'requisition_id',
+            'status',
+            'updated_at',
+        ],
+        'offers': [
+            'application_id',
+            'candidate_id',
+            'created_at',
+            'custom_fields',
+            'custom_fields.employment_type',
+            'id',
+            'job_id',
+            'keyed_custom_fields',
+            'keyed_custom_fields.employment_type',
+            'opening',
+            'opening.application_id',
+            'opening.close_reason',
+            'opening.closed_at',
+            'opening.id',
+            'opening.opened_at',
+            'opening.opening_id',
+            'opening.status',
+            'resolved_at',
+            'sent_at',
+            'starts_at',
+            'status',
+            'updated_at',
+            'version',
+        ],
+        'offices': [
+            'child_ids',
+            'child_ids[]',
+            'child_office_external_ids',
+            'child_office_external_ids[]',
+            'external_id',
+            'id',
+            'location',
+            'location.name',
+            'name',
+            'parent_id',
+            'parent_office_external_id',
+            'primary_contact_user_id',
+        ],
+        'sources': [
+            'id',
+            'name',
+            'type',
+            'type.id',
+            'type.name',
+        ],
+        'users': [
+            'created_at',
+            'departments',
+            'departments[]',
+            'disabled',
+            'emails',
+            'emails[]',
+            'employee_id',
+            'first_name',
+            'id',
+            'last_name',
+            'linked_candidate_ids',
+            'linked_candidate_ids[]',
+            'name',
+            'offices',
+            'offices[]',
+            'primary_email_address',
+            'site_admin',
+            'updated_at',
+        ],
+    },
+    example_questions=ExampleQuestions(
+        direct=[
+            'List all open jobs',
+            'Show me upcoming interviews this week',
+            'Show me recent job offers',
+            'List recent applications',
+        ],
+        context_store_search=[
+            'Show me candidates from {company} who applied last month',
+            'What are the top 5 sources for our job applications this quarter?',
+            'Analyze the interview schedules for our engineering candidates this week',
+            'Compare the number of applications across different offices',
+            'Identify candidates who have multiple applications in our system',
+            'Summarize the candidate pipeline for our latest job posting',
+            'Find the most active departments in recruiting this month',
+        ],
+        search=[
+            'Show me candidates from {company} who applied last month',
+            'What are the top 5 sources for our job applications this quarter?',
+            'Analyze the interview schedules for our engineering candidates this week',
+            'Compare the number of applications across different offices',
+            'Identify candidates who have multiple applications in our system',
+            'Summarize the candidate pipeline for our latest job posting',
+            'Find the most active departments in recruiting this month',
+        ],
+        unsupported=[
+            'Create a new job posting for the marketing team',
+            'Schedule an interview for {candidate}',
+            "Update the status of {candidate}'s application",
+            'Delete a candidate profile',
+            'Send an offer letter to {candidate}',
+            'Edit the details of a job description',
+        ],
+    ),
+)

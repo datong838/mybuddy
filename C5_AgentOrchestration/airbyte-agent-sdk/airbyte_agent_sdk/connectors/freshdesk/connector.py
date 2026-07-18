@@ -1,0 +1,2032 @@
+"""
+Freshdesk connector.
+"""
+
+from __future__ import annotations
+
+import logging
+from typing import Any, Callable, Mapping, TypeVar, overload
+try:
+    from typing import Literal
+except ImportError:
+    from typing_extensions import Literal
+
+from pydantic import BaseModel
+
+from .connector_model import FreshdeskConnectorModel
+from airbyte_agent_sdk.introspection import describe_entities, generate_tool_description
+from airbyte_agent_sdk.translation import DEFAULT_MAX_OUTPUT_CHARS, FrameworkName, translate_exceptions
+from airbyte_agent_sdk.types import AirbyteAuthConfig
+from .types import (
+    AgentsGetParams,
+    AgentsListParams,
+    CompaniesGetParams,
+    CompaniesListParams,
+    ContactsGetParams,
+    ContactsListParams,
+    GroupsGetParams,
+    GroupsListParams,
+    RolesGetParams,
+    RolesListParams,
+    SatisfactionRatingsListParams,
+    SurveysListParams,
+    TicketFieldsListParams,
+    TicketsGetParams,
+    TicketsListParams,
+    TimeEntriesListParams,
+    AirbyteSearchParams,
+    TicketsSearchFilter,
+    TicketsSearchQuery,
+    AgentsSearchFilter,
+    AgentsSearchQuery,
+    GroupsSearchFilter,
+    GroupsSearchQuery,
+    ContactsSearchFilter,
+    ContactsSearchQuery,
+    CompaniesSearchFilter,
+    CompaniesSearchQuery,
+    RolesSearchFilter,
+    RolesSearchQuery,
+    SatisfactionRatingsSearchFilter,
+    SatisfactionRatingsSearchQuery,
+    SurveysSearchFilter,
+    SurveysSearchQuery,
+    TimeEntriesSearchFilter,
+    TimeEntriesSearchQuery,
+    TicketFieldsSearchFilter,
+    TicketFieldsSearchQuery,
+)
+from .models import FreshdeskAuthConfig
+
+# Import response models and envelope models at runtime
+from .models import (
+    FreshdeskCheckResult,
+    FreshdeskExecuteResult,
+    FreshdeskExecuteResultWithMeta,
+    TicketsListResult,
+    ContactsListResult,
+    AgentsListResult,
+    GroupsListResult,
+    CompaniesListResult,
+    RolesListResult,
+    SatisfactionRatingsListResult,
+    SurveysListResult,
+    TimeEntriesListResult,
+    TicketFieldsListResult,
+    Agent,
+    Company,
+    Contact,
+    Group,
+    Role,
+    SatisfactionRating,
+    Survey,
+    Ticket,
+    TicketField,
+    TimeEntry,
+    AirbyteSearchMeta,
+    AirbyteSearchResult,
+    TicketsSearchData,
+    TicketsSearchResult,
+    AgentsSearchData,
+    AgentsSearchResult,
+    GroupsSearchData,
+    GroupsSearchResult,
+    ContactsSearchData,
+    ContactsSearchResult,
+    CompaniesSearchData,
+    CompaniesSearchResult,
+    RolesSearchData,
+    RolesSearchResult,
+    SatisfactionRatingsSearchData,
+    SatisfactionRatingsSearchResult,
+    SurveysSearchData,
+    SurveysSearchResult,
+    TimeEntriesSearchData,
+    TimeEntriesSearchResult,
+    TicketFieldsSearchData,
+    TicketFieldsSearchResult,
+)
+
+# TypeVar for decorator type preservation
+_F = TypeVar("_F", bound=Callable[..., Any])
+
+
+
+
+class FreshdeskConnector:
+    """
+    Type-safe Freshdesk API connector.
+
+    Auto-generated from OpenAPI specification with full type safety.
+    """
+
+    connector_name = "freshdesk"
+    connector_version = "1.0.3"
+    sdk_version = "0.1.287"
+
+    # Map of (entity, action) -> needs_envelope for envelope wrapping decision
+    _ENVELOPE_MAP = {
+        ("tickets", "list"): True,
+        ("tickets", "get"): None,
+        ("contacts", "list"): True,
+        ("contacts", "get"): None,
+        ("agents", "list"): True,
+        ("agents", "get"): None,
+        ("groups", "list"): True,
+        ("groups", "get"): None,
+        ("companies", "list"): True,
+        ("companies", "get"): None,
+        ("roles", "list"): True,
+        ("roles", "get"): None,
+        ("satisfaction_ratings", "list"): True,
+        ("surveys", "list"): True,
+        ("time_entries", "list"): True,
+        ("ticket_fields", "list"): True,
+    }
+
+    # Map of (entity, action) -> {python_param_name: api_param_name}
+    # Used to convert snake_case TypedDict keys to API parameter names in execute()
+    _PARAM_MAP = {
+        ('tickets', 'list'): {'per_page': 'per_page', 'page': 'page', 'updated_since': 'updated_since', 'order_by': 'order_by', 'order_type': 'order_type'},
+        ('tickets', 'get'): {'id': 'id'},
+        ('contacts', 'list'): {'per_page': 'per_page', 'page': 'page', 'updated_since': 'updated_since'},
+        ('contacts', 'get'): {'id': 'id'},
+        ('agents', 'list'): {'per_page': 'per_page', 'page': 'page'},
+        ('agents', 'get'): {'id': 'id'},
+        ('groups', 'list'): {'per_page': 'per_page', 'page': 'page'},
+        ('groups', 'get'): {'id': 'id'},
+        ('companies', 'list'): {'per_page': 'per_page', 'page': 'page'},
+        ('companies', 'get'): {'id': 'id'},
+        ('roles', 'list'): {'per_page': 'per_page', 'page': 'page'},
+        ('roles', 'get'): {'id': 'id'},
+        ('satisfaction_ratings', 'list'): {'per_page': 'per_page', 'page': 'page', 'created_since': 'created_since'},
+        ('surveys', 'list'): {'per_page': 'per_page', 'page': 'page'},
+        ('time_entries', 'list'): {'per_page': 'per_page', 'page': 'page'},
+        ('ticket_fields', 'list'): {'per_page': 'per_page', 'page': 'page'},
+    }
+
+    # Accepted auth_config types for isinstance validation
+    _ACCEPTED_AUTH_TYPES = (FreshdeskAuthConfig, AirbyteAuthConfig)
+
+    def __init__(
+        self,
+        auth_config: FreshdeskAuthConfig | AirbyteAuthConfig | BaseModel | None = None,
+        on_token_refresh: Any | None = None,
+        subdomain: str | None = None    ):
+        """
+        Initialize a new freshdesk connector instance.
+
+        Supports both local and hosted execution modes:
+        - Local mode: Provide connector-specific auth config (e.g., FreshdeskAuthConfig)
+        - Hosted mode: Provide `AirbyteAuthConfig` with client credentials and either `connector_id` or `workspace_name`
+
+        Args:
+            auth_config: Either connector-specific auth config for local mode, or AirbyteAuthConfig for hosted mode
+            on_token_refresh: Optional callback for OAuth2 token refresh persistence.
+                Called with new_tokens dict when tokens are refreshed. Can be sync or async.
+                Example: lambda tokens: save_to_database(tokens)            subdomain: Your Freshdesk subdomain (e.g., "acme" for acme.freshdesk.com)
+        Examples:
+            # Local mode (direct API calls)
+            connector = FreshdeskConnector(auth_config=FreshdeskAuthConfig(api_key="..."))
+            # Hosted mode with explicit connector_id (no lookup needed)
+            connector = FreshdeskConnector(
+                auth_config=AirbyteAuthConfig(
+                    airbyte_client_id="client_abc123",
+                    airbyte_client_secret="secret_xyz789",
+                    connector_id="existing-source-uuid"
+                )
+            )
+
+            # Hosted mode with lookup by workspace_name
+            connector = FreshdeskConnector(
+                auth_config=AirbyteAuthConfig(
+                    workspace_name="user-123",
+                    organization_id="00000000-0000-0000-0000-000000000123",
+                    airbyte_client_id="client_abc123",
+                    airbyte_client_secret="secret_xyz789"
+                )
+            )
+        """
+        # Accept AirbyteAuthConfig from any vendored SDK version
+        if (
+            auth_config is not None
+            and not isinstance(auth_config, AirbyteAuthConfig)
+            and type(auth_config).__name__ == AirbyteAuthConfig.__name__
+        ):
+            auth_config = AirbyteAuthConfig(**auth_config.model_dump())
+
+        # Validate auth_config type
+        if auth_config is not None and not isinstance(auth_config, self._ACCEPTED_AUTH_TYPES):
+            raise TypeError(
+                f"Unsupported auth_config type: {type(auth_config).__name__}. "
+                f"Expected one of: {', '.join(t.__name__ for t in self._ACCEPTED_AUTH_TYPES)}"
+            )
+
+        # Hosted mode: auth_config is AirbyteAuthConfig
+        is_hosted = isinstance(auth_config, AirbyteAuthConfig)
+
+        if is_hosted:
+            from airbyte_agent_sdk.executor import HostedExecutor
+            self._executor = HostedExecutor(
+                airbyte_client_id=auth_config.airbyte_client_id,
+                airbyte_client_secret=auth_config.airbyte_client_secret,
+                connector_id=auth_config.connector_id,
+                workspace_name=auth_config.workspace_name or "default",
+                organization_id=auth_config.organization_id,
+                connector_definition_id=str(FreshdeskConnectorModel.id),
+                model=FreshdeskConnectorModel,
+            )
+        else:
+            # Local mode: auth_config required (must be connector-specific auth type)
+            if not auth_config:
+                raise ValueError(
+                    "Either provide AirbyteAuthConfig with client credentials for hosted mode, "
+                    "or FreshdeskAuthConfig for local mode"
+                )
+
+            from airbyte_agent_sdk.executor import LocalExecutor
+
+            # Build config_values dict from server variables
+            config_values: dict[str, str] = {}
+            if subdomain:
+                config_values["subdomain"] = subdomain
+
+            self._executor = LocalExecutor(
+                model=FreshdeskConnectorModel,
+                auth_config=auth_config.model_dump() if auth_config else None,
+                config_values=config_values,
+                on_token_refresh=on_token_refresh
+            )
+
+            # Update base_url with server variables if provided
+            base_url = self._executor.http_client.base_url
+            if subdomain:
+                base_url = base_url.replace("{subdomain}", subdomain)
+            self._executor.http_client.base_url = base_url
+
+        # Initialize entity query objects
+        self.tickets = TicketsQuery(self)
+        self.contacts = ContactsQuery(self)
+        self.agents = AgentsQuery(self)
+        self.groups = GroupsQuery(self)
+        self.companies = CompaniesQuery(self)
+        self.roles = RolesQuery(self)
+        self.satisfaction_ratings = SatisfactionRatingsQuery(self)
+        self.surveys = SurveysQuery(self)
+        self.time_entries = TimeEntriesQuery(self)
+        self.ticket_fields = TicketFieldsQuery(self)
+
+    # ===== TYPED EXECUTE METHOD (Recommended Interface) =====
+
+    @overload
+    async def execute(
+        self,
+        entity: Literal["tickets"],
+        action: Literal["list"],
+        params: "TicketsListParams",
+        *,
+        select_fields: list[str] | None = ...,
+        exclude_fields: list[str] | None = ...,
+        skip_truncation: bool = ...
+    ) -> "TicketsListResult": ...
+
+    @overload
+    async def execute(
+        self,
+        entity: Literal["tickets"],
+        action: Literal["get"],
+        params: "TicketsGetParams",
+        *,
+        select_fields: list[str] | None = ...,
+        exclude_fields: list[str] | None = ...,
+        skip_truncation: bool = ...
+    ) -> "Ticket": ...
+
+    @overload
+    async def execute(
+        self,
+        entity: Literal["contacts"],
+        action: Literal["list"],
+        params: "ContactsListParams",
+        *,
+        select_fields: list[str] | None = ...,
+        exclude_fields: list[str] | None = ...,
+        skip_truncation: bool = ...
+    ) -> "ContactsListResult": ...
+
+    @overload
+    async def execute(
+        self,
+        entity: Literal["contacts"],
+        action: Literal["get"],
+        params: "ContactsGetParams",
+        *,
+        select_fields: list[str] | None = ...,
+        exclude_fields: list[str] | None = ...,
+        skip_truncation: bool = ...
+    ) -> "Contact": ...
+
+    @overload
+    async def execute(
+        self,
+        entity: Literal["agents"],
+        action: Literal["list"],
+        params: "AgentsListParams",
+        *,
+        select_fields: list[str] | None = ...,
+        exclude_fields: list[str] | None = ...,
+        skip_truncation: bool = ...
+    ) -> "AgentsListResult": ...
+
+    @overload
+    async def execute(
+        self,
+        entity: Literal["agents"],
+        action: Literal["get"],
+        params: "AgentsGetParams",
+        *,
+        select_fields: list[str] | None = ...,
+        exclude_fields: list[str] | None = ...,
+        skip_truncation: bool = ...
+    ) -> "Agent": ...
+
+    @overload
+    async def execute(
+        self,
+        entity: Literal["groups"],
+        action: Literal["list"],
+        params: "GroupsListParams",
+        *,
+        select_fields: list[str] | None = ...,
+        exclude_fields: list[str] | None = ...,
+        skip_truncation: bool = ...
+    ) -> "GroupsListResult": ...
+
+    @overload
+    async def execute(
+        self,
+        entity: Literal["groups"],
+        action: Literal["get"],
+        params: "GroupsGetParams",
+        *,
+        select_fields: list[str] | None = ...,
+        exclude_fields: list[str] | None = ...,
+        skip_truncation: bool = ...
+    ) -> "Group": ...
+
+    @overload
+    async def execute(
+        self,
+        entity: Literal["companies"],
+        action: Literal["list"],
+        params: "CompaniesListParams",
+        *,
+        select_fields: list[str] | None = ...,
+        exclude_fields: list[str] | None = ...,
+        skip_truncation: bool = ...
+    ) -> "CompaniesListResult": ...
+
+    @overload
+    async def execute(
+        self,
+        entity: Literal["companies"],
+        action: Literal["get"],
+        params: "CompaniesGetParams",
+        *,
+        select_fields: list[str] | None = ...,
+        exclude_fields: list[str] | None = ...,
+        skip_truncation: bool = ...
+    ) -> "Company": ...
+
+    @overload
+    async def execute(
+        self,
+        entity: Literal["roles"],
+        action: Literal["list"],
+        params: "RolesListParams",
+        *,
+        select_fields: list[str] | None = ...,
+        exclude_fields: list[str] | None = ...,
+        skip_truncation: bool = ...
+    ) -> "RolesListResult": ...
+
+    @overload
+    async def execute(
+        self,
+        entity: Literal["roles"],
+        action: Literal["get"],
+        params: "RolesGetParams",
+        *,
+        select_fields: list[str] | None = ...,
+        exclude_fields: list[str] | None = ...,
+        skip_truncation: bool = ...
+    ) -> "Role": ...
+
+    @overload
+    async def execute(
+        self,
+        entity: Literal["satisfaction_ratings"],
+        action: Literal["list"],
+        params: "SatisfactionRatingsListParams",
+        *,
+        select_fields: list[str] | None = ...,
+        exclude_fields: list[str] | None = ...,
+        skip_truncation: bool = ...
+    ) -> "SatisfactionRatingsListResult": ...
+
+    @overload
+    async def execute(
+        self,
+        entity: Literal["surveys"],
+        action: Literal["list"],
+        params: "SurveysListParams",
+        *,
+        select_fields: list[str] | None = ...,
+        exclude_fields: list[str] | None = ...,
+        skip_truncation: bool = ...
+    ) -> "SurveysListResult": ...
+
+    @overload
+    async def execute(
+        self,
+        entity: Literal["time_entries"],
+        action: Literal["list"],
+        params: "TimeEntriesListParams",
+        *,
+        select_fields: list[str] | None = ...,
+        exclude_fields: list[str] | None = ...,
+        skip_truncation: bool = ...
+    ) -> "TimeEntriesListResult": ...
+
+    @overload
+    async def execute(
+        self,
+        entity: Literal["ticket_fields"],
+        action: Literal["list"],
+        params: "TicketFieldsListParams",
+        *,
+        select_fields: list[str] | None = ...,
+        exclude_fields: list[str] | None = ...,
+        skip_truncation: bool = ...
+    ) -> "TicketFieldsListResult": ...
+
+
+    @overload
+    async def execute(
+        self,
+        entity: str,
+        action: Literal["list", "get", "context_store_search"],
+        params: Mapping[str, Any],
+        *,
+        select_fields: list[str] | None = ...,
+        exclude_fields: list[str] | None = ...,
+        skip_truncation: bool = ...
+    ) -> FreshdeskExecuteResult[Any] | FreshdeskExecuteResultWithMeta[Any, Any] | Any: ...
+
+    async def execute(
+        self,
+        entity: str,
+        action: Literal["list", "get", "context_store_search"],
+        params: Mapping[str, Any] | None = None,
+        *,
+        select_fields: list[str] | None = None,
+        exclude_fields: list[str] | None = None,
+        skip_truncation: bool = True
+    ) -> Any:
+        """
+        Execute an entity operation with full type safety.
+
+        This is the recommended interface for blessed connectors as it:
+        - Uses the same signature as non-blessed connectors
+        - Provides full IDE autocomplete for entity/action/params
+        - Makes migration from generic to blessed connectors seamless
+
+        Args:
+            entity: Entity name (e.g., "customers")
+            action: Operation action (e.g., "create", "get", "list")
+            params: Operation parameters (typed based on entity+action)
+            select_fields: Optional allowlist of dot-notation fields to include
+            exclude_fields: Optional blocklist of dot-notation fields to remove
+            skip_truncation: Disable long-text truncation for collection actions
+
+        Returns:
+            Typed response based on the operation
+
+        Example:
+            customer = await connector.execute(
+                entity="customers",
+                action="get",
+                params={"id": "cus_123"}
+            )
+        """
+        from airbyte_agent_sdk.executor import ExecutionConfig
+
+        # Remap parameter names from snake_case (TypedDict keys) to API parameter names
+        resolved_params = dict(params) if params is not None else None
+        if resolved_params:
+            param_map = self._PARAM_MAP.get((entity, action), {})
+            if param_map:
+                resolved_params = {param_map.get(k, k): v for k, v in resolved_params.items()}
+
+        # Use ExecutionConfig for both local and hosted executors
+        config = ExecutionConfig(
+            entity=entity,
+            action=action,
+            params=resolved_params,
+            select_fields=select_fields,
+            exclude_fields=exclude_fields,
+            skip_truncation=skip_truncation
+        )
+
+        result = await self._executor.execute(config)
+
+        if not result.success:
+            raise RuntimeError(f"Execution failed: {result.error}")
+
+        # Check if this operation has extractors configured
+        has_extractors = self._ENVELOPE_MAP.get((entity, action), False)
+
+        if has_extractors:
+            # With extractors - return Pydantic envelope with data and meta
+            if result.meta is not None:
+                return FreshdeskExecuteResultWithMeta[Any, Any](
+                    data=result.data,
+                    meta=result.meta
+                )
+            else:
+                return FreshdeskExecuteResult[Any](data=result.data)
+        else:
+            # No extractors - return raw response data
+            return result.data
+
+    # ===== HEALTH CHECK METHOD =====
+
+    async def check(self) -> FreshdeskCheckResult:
+        """
+        Perform a health check to verify connectivity and credentials.
+
+        Executes a lightweight list operation (limit=1) to validate that
+        the connector can communicate with the API and credentials are valid.
+
+        Returns:
+            FreshdeskCheckResult with status ("healthy" or "unhealthy") and optional error message
+
+        Example:
+            result = await connector.check()
+            if result.status == "healthy":
+                print("Connection verified!")
+            else:
+                print(f"Check failed: {result.error}")
+        """
+        result = await self._executor.check()
+
+        if result.success and isinstance(result.data, dict):
+            return FreshdeskCheckResult(
+                status=result.data.get("status", "unhealthy"),
+                error=result.data.get("error"),
+                checked_entity=result.data.get("checked_entity"),
+                checked_action=result.data.get("checked_action"),
+            )
+        else:
+            return FreshdeskCheckResult(
+                status="unhealthy",
+                error=result.error or "Unknown error during health check",
+            )
+
+    # ===== INTROSPECTION METHODS =====
+
+    @classmethod
+    def tool_utils(
+        cls,
+        func: _F | None = None,
+        *,
+        update_docstring: bool = True,
+        max_output_chars: int | None = DEFAULT_MAX_OUTPUT_CHARS,
+        framework: FrameworkName | None = None,
+        internal_retries: int = 0,
+        should_internal_retry: Callable[[Exception, tuple[Any, ...], dict[str, Any]], bool] | None = None,
+        exhausted_runtime_failure_message: Callable[[Exception, tuple[Any, ...], dict[str, Any]], str | None] | None = None,
+    ) -> _F | Callable[[_F], _F]:
+        """
+        Add connector-specific documentation and runtime safeguards to one tool.
+
+        For new agents, prefer `build_connector_tools`. It returns progressive
+        `inspect_connector`, `read_skill_docs`, and `execute` tools so the agent
+        can load only the connector guidance it needs:
+
+        ```python
+        from airbyte_agent_sdk import build_connector_tools
+        from pydantic_ai import Agent
+
+        tools = build_connector_tools(connector, framework="pydantic_ai")
+        agent = Agent("openai:gpt-4o", tools=tools.as_list())
+        ```
+
+        ### Legacy: one generated-description tool
+
+        Existing integrations can keep using `tool_utils` for one broad
+        `execute` tool with the connector's full generated catalog in its
+        description:
+
+        ```python
+        from fastmcp import FastMCP
+
+        connector = FreshdeskConnector()
+        mcp = FastMCP("Connector Agent")
+
+        @mcp.tool()
+        @FreshdeskConnector.tool_utils
+        async def execute(entity: str, action: str, params: dict):
+            ...
+        ```
+
+        Configure documentation, output limits, framework translation, and
+        retries when needed:
+
+        ```python
+        @mcp.tool()
+        @FreshdeskConnector.tool_utils(update_docstring=False, max_output_chars=None)
+        async def execute(entity: str, action: str, params: dict):
+            ...
+
+        @mcp.tool()
+        @FreshdeskConnector.tool_utils(framework="pydantic_ai", internal_retries=2)
+        async def execute(entity: str, action: str, params: dict):
+            ...
+        ```
+
+        This decorator composes `translate_exceptions` for runtime wrapping,
+        output-size checks, framework signal translation, and optional internal
+        retries, then adds connector-specific docstring augmentation.
+
+        Args:
+            update_docstring: When True, append connector capabilities to `__doc__`.
+            max_output_chars: Max serialized output size before raising. Use `None` to disable.
+            framework: One of `"pydantic_ai" | "langchain" | "openai_agents" | "mcp"`.
+                Defaults to `None`, which auto-detects each framework's canonical
+                import in order. Explicit always wins.
+            internal_retries: How many transient runtime failures (429/5xx, network,
+                timeout) to retry silently before surfacing. Default 0. Forwarded to
+                `airbyte_agent_sdk.translation.translate_exceptions`.
+            should_internal_retry: Optional predicate `(error, args, kwargs) -> bool`
+                further restricting which retryable errors are safe for this specific
+                tool. Forwarded to `airbyte_agent_sdk.translation.translate_exceptions`.
+            exhausted_runtime_failure_message: Optional callback
+                `(error, args, kwargs) -> str | None`. Invoked after internal retries
+                are exhausted or were skipped because `should_internal_retry` returned
+                `False`. Forwarded to `airbyte_agent_sdk.translation.translate_exceptions`.
+        """
+
+        def decorate(inner: _F) -> _F:
+            if update_docstring:
+                description = generate_tool_description(
+                    FreshdeskConnectorModel,
+                )
+                original_doc = inner.__doc__ or ""
+                if original_doc.strip():
+                    full_doc = f"{original_doc.strip()}\n{description}"
+                else:
+                    full_doc = description
+            else:
+                full_doc = ""
+
+            wrapped = translate_exceptions(
+                inner,
+                framework=framework,
+                max_output_chars=max_output_chars,
+                internal_retries=internal_retries,
+                should_internal_retry=should_internal_retry,
+                exhausted_runtime_failure_message=exhausted_runtime_failure_message,
+            )
+
+            if update_docstring:
+                wrapped.__doc__ = full_doc
+            return wrapped  # type: ignore[return-value]
+
+        if func is not None:
+            return decorate(func)
+        return decorate
+
+    def list_entities(self) -> list[dict[str, Any]]:
+        """
+        Get structured data about available entities, actions, and parameters.
+
+        Returns a list of entity descriptions with:
+        - entity_name: Name of the entity (e.g., "contacts", "deals")
+        - description: Entity description from the first endpoint
+        - available_actions: List of actions (e.g., ["list", "get", "create"])
+        - parameters: Dict mapping action -> list of parameter dicts
+
+        Example:
+            entities = connector.list_entities()
+            for entity in entities:
+                print(f"{entity['entity_name']}: {entity['available_actions']}")
+        """
+        return describe_entities(FreshdeskConnectorModel)
+
+    def entity_schema(self, entity: str) -> dict[str, Any] | None:
+        """
+        Get the JSON schema for an entity.
+
+        Args:
+            entity: Entity name (e.g., "contacts", "companies")
+
+        Returns:
+            JSON schema dict describing the entity structure, or None if not found.
+
+        Example:
+            schema = connector.entity_schema("contacts")
+            if schema:
+                print(f"Contact properties: {list(schema.get('properties', {}).keys())}")
+        """
+        entity_def = next(
+            (e for e in FreshdeskConnectorModel.entities if e.name == entity),
+            None
+        )
+        if entity_def is None:
+            logging.getLogger(__name__).warning(
+                f"Entity '{entity}' not found. Available entities: "
+                f"{[e.name for e in FreshdeskConnectorModel.entities]}"
+            )
+        return entity_def.entity_schema if entity_def else None
+
+    @property
+    def connector_id(self) -> str | None:
+        """Get the connector/source ID (only available in hosted mode).
+
+        Returns:
+            The connector ID if in hosted mode, None if in local mode.
+        """
+        if hasattr(self, '_executor') and hasattr(self._executor, '_connector_id'):
+            return self._executor._connector_id
+        return None
+
+    # ===== RESOURCE MANAGEMENT =====
+
+    async def close(self):
+        """Close the connector and release resources."""
+        await self._executor.close()
+
+    async def __aenter__(self):
+        """Async context manager entry."""
+        return self
+
+    async def __aexit__(self, exc_type, exc_val, exc_tb):
+        """Async context manager exit."""
+        await self.close()
+
+
+
+class TicketsQuery:
+    """
+    Query class for Tickets entity operations.
+    """
+
+    def __init__(self, connector: FreshdeskConnector):
+        """Initialize query with connector reference."""
+        self._connector = connector
+
+    async def list(
+        self,
+        per_page: int | None = None,
+        page: int | None = None,
+        updated_since: str | None = None,
+        order_by: str | None = None,
+        order_type: str | None = None,
+        **kwargs
+    ) -> TicketsListResult:
+        """
+        Returns a paginated list of tickets. By default returns tickets created in the past 30 days. Use updated_since to get older tickets.
+
+        Args:
+            per_page: Number of items per page (max 100)
+            page: Page number (starts at 1)
+            updated_since: Return tickets updated since this timestamp (ISO 8601)
+            order_by: Sort field
+            order_type: Sort order
+            **kwargs: Additional parameters
+
+        Returns:
+            TicketsListResult
+        """
+        params = {k: v for k, v in {
+            "per_page": per_page,
+            "page": page,
+            "updated_since": updated_since,
+            "order_by": order_by,
+            "order_type": order_type,
+            **kwargs
+        }.items() if v is not None}
+
+        result = await self._connector.execute("tickets", "list", params)
+        # Cast generic envelope to concrete typed result
+        return TicketsListResult(
+            data=result.data,
+            meta=getattr(result, "meta", None)
+        )
+
+
+
+    async def get(
+        self,
+        id: str | None = None,
+        **kwargs
+    ) -> Ticket:
+        """
+        Get a single ticket by ID
+
+        Args:
+            id: Ticket ID
+            **kwargs: Additional parameters
+
+        Returns:
+            Ticket
+        """
+        params = {k: v for k, v in {
+            "id": id,
+            **kwargs
+        }.items() if v is not None}
+
+        result = await self._connector.execute("tickets", "get", params)
+        return result
+
+
+
+    async def context_store_search(
+        self,
+        query: TicketsSearchQuery,
+        limit: int | None = None,
+        cursor: str | None = None,
+        fields: list[list[str]] | None = None,
+    ) -> TicketsSearchResult:
+        """
+        Search tickets records from Airbyte cache.
+
+        This operation searches cached data from Airbyte syncs.
+        Only available in hosted execution mode.
+
+        Available filter fields (TicketsSearchFilter):
+        - id: Unique ticket ID
+        - subject: Subject of the ticket
+        - description: HTML content of the ticket
+        - description_text: Plain text content of the ticket
+        - status: Status: 2=Open, 3=Pending, 4=Resolved, 5=Closed
+        - priority: Priority: 1=Low, 2=Medium, 3=High, 4=Urgent
+        - source: Source: 1=Email, 2=Portal, 3=Phone, 7=Chat, 9=Feedback Widget, 10=Outbound Email
+        - type_: Ticket type
+        - requester_id: ID of the requester
+        - requester: Requester details including name, email, and contact info
+        - responder_id: ID of the agent to whom the ticket is assigned
+        - group_id: ID of the group to which the ticket is assigned
+        - company_id: Company ID of the requester
+        - product_id: ID of the product associated with the ticket
+        - email_config_id: ID of the email config used for the ticket
+        - cc_emails: CC email addresses
+        - ticket_cc_emails: Ticket CC email addresses
+        - to_emails: To email addresses
+        - fwd_emails: Forwarded email addresses
+        - reply_cc_emails: Reply CC email addresses
+        - tags: Tags associated with the ticket
+        - custom_fields: Custom fields associated with the ticket
+        - due_by: Resolution due by timestamp
+        - fr_due_by: First response due by timestamp
+        - fr_escalated: Whether the first response time was breached
+        - is_escalated: Whether the ticket is escalated
+        - nr_due_by: Next response due by timestamp
+        - nr_escalated: Whether the next response time was breached
+        - spam: Whether the ticket is marked as spam
+        - association_type: Association type for parent/child tickets
+        - associated_tickets_count: Number of associated tickets
+        - stats: Ticket statistics including response and resolution times
+        - created_at: Ticket creation timestamp
+        - updated_at: Ticket last update timestamp
+
+        Args:
+            query: Filter and sort conditions. Supports operators like eq, neq, gt, gte, lt, lte,
+                   in, like, fuzzy, keyword, not, and, or. Example: {"filter": {"eq": {"status": "active"}}}
+            limit: Maximum results to return (default 1000)
+            cursor: Pagination cursor from previous response's meta.cursor
+            fields: Field paths to include in results. Each path is a list of keys for nested access.
+                    Example: [["id"], ["user", "name"]] returns id and user.name fields.
+
+        Returns:
+            TicketsSearchResult with typed records, pagination metadata, and optional search metadata
+
+        Raises:
+            NotImplementedError: If called in local execution mode
+        """
+        params: dict[str, Any] = {"query": query}
+        if limit is not None:
+            params["limit"] = limit
+        if cursor is not None:
+            params["cursor"] = cursor
+        if fields is not None:
+            params["fields"] = fields
+
+        result = await self._connector.execute("tickets", "context_store_search", params)
+
+        # Parse response into typed result
+        meta_data = result.get("meta")
+        return TicketsSearchResult(
+            data=[
+                TicketsSearchData(**row)
+                for row in result.get("data", [])
+                if isinstance(row, dict)
+            ],
+            meta=AirbyteSearchMeta(
+                has_more=meta_data.get("has_more", False) if isinstance(meta_data, dict) else False,
+                cursor=meta_data.get("cursor") if isinstance(meta_data, dict) else None,
+                took_ms=meta_data.get("took_ms") if isinstance(meta_data, dict) else None,
+            ),
+        )
+
+class ContactsQuery:
+    """
+    Query class for Contacts entity operations.
+    """
+
+    def __init__(self, connector: FreshdeskConnector):
+        """Initialize query with connector reference."""
+        self._connector = connector
+
+    async def list(
+        self,
+        per_page: int | None = None,
+        page: int | None = None,
+        updated_since: str | None = None,
+        **kwargs
+    ) -> ContactsListResult:
+        """
+        Returns a paginated list of contacts
+
+        Args:
+            per_page: Number of items per page (max 100)
+            page: Page number (starts at 1)
+            updated_since: Return contacts updated since this timestamp (ISO 8601)
+            **kwargs: Additional parameters
+
+        Returns:
+            ContactsListResult
+        """
+        params = {k: v for k, v in {
+            "per_page": per_page,
+            "page": page,
+            "updated_since": updated_since,
+            **kwargs
+        }.items() if v is not None}
+
+        result = await self._connector.execute("contacts", "list", params)
+        # Cast generic envelope to concrete typed result
+        return ContactsListResult(
+            data=result.data,
+            meta=getattr(result, "meta", None)
+        )
+
+
+
+    async def get(
+        self,
+        id: str | None = None,
+        **kwargs
+    ) -> Contact:
+        """
+        Get a single contact by ID
+
+        Args:
+            id: Contact ID
+            **kwargs: Additional parameters
+
+        Returns:
+            Contact
+        """
+        params = {k: v for k, v in {
+            "id": id,
+            **kwargs
+        }.items() if v is not None}
+
+        result = await self._connector.execute("contacts", "get", params)
+        return result
+
+
+
+    async def context_store_search(
+        self,
+        query: ContactsSearchQuery,
+        limit: int | None = None,
+        cursor: str | None = None,
+        fields: list[list[str]] | None = None,
+    ) -> ContactsSearchResult:
+        """
+        Search contacts records from Airbyte cache.
+
+        This operation searches cached data from Airbyte syncs.
+        Only available in hosted execution mode.
+
+        Available filter fields (ContactsSearchFilter):
+        - id: Unique contact ID
+        - name: Name of the contact
+        - email: Primary email address
+        - phone: Phone number
+        - mobile: Mobile number
+        - active: Whether the contact has been verified
+        - address: Address of the contact
+        - company_id: ID of the primary company
+        - custom_fields: Custom fields associated with the contact
+        - description: Description of the contact
+        - job_title: Job title of the contact
+        - language: Language of the contact
+        - twitter_id: Twitter ID
+        - unique_external_id: External ID of the contact
+        - time_zone: Time zone of the contact
+        - facebook_id: Facebook ID of the contact
+        - csat_rating: CSAT rating of the contact
+        - preferred_source: Preferred contact source
+        - created_at: Contact creation timestamp
+        - updated_at: Contact last update timestamp
+
+        Args:
+            query: Filter and sort conditions. Supports operators like eq, neq, gt, gte, lt, lte,
+                   in, like, fuzzy, keyword, not, and, or. Example: {"filter": {"eq": {"status": "active"}}}
+            limit: Maximum results to return (default 1000)
+            cursor: Pagination cursor from previous response's meta.cursor
+            fields: Field paths to include in results. Each path is a list of keys for nested access.
+                    Example: [["id"], ["user", "name"]] returns id and user.name fields.
+
+        Returns:
+            ContactsSearchResult with typed records, pagination metadata, and optional search metadata
+
+        Raises:
+            NotImplementedError: If called in local execution mode
+        """
+        params: dict[str, Any] = {"query": query}
+        if limit is not None:
+            params["limit"] = limit
+        if cursor is not None:
+            params["cursor"] = cursor
+        if fields is not None:
+            params["fields"] = fields
+
+        result = await self._connector.execute("contacts", "context_store_search", params)
+
+        # Parse response into typed result
+        meta_data = result.get("meta")
+        return ContactsSearchResult(
+            data=[
+                ContactsSearchData(**row)
+                for row in result.get("data", [])
+                if isinstance(row, dict)
+            ],
+            meta=AirbyteSearchMeta(
+                has_more=meta_data.get("has_more", False) if isinstance(meta_data, dict) else False,
+                cursor=meta_data.get("cursor") if isinstance(meta_data, dict) else None,
+                took_ms=meta_data.get("took_ms") if isinstance(meta_data, dict) else None,
+            ),
+        )
+
+class AgentsQuery:
+    """
+    Query class for Agents entity operations.
+    """
+
+    def __init__(self, connector: FreshdeskConnector):
+        """Initialize query with connector reference."""
+        self._connector = connector
+
+    async def list(
+        self,
+        per_page: int | None = None,
+        page: int | None = None,
+        **kwargs
+    ) -> AgentsListResult:
+        """
+        Returns a paginated list of agents
+
+        Args:
+            per_page: Number of items per page (max 100)
+            page: Page number (starts at 1)
+            **kwargs: Additional parameters
+
+        Returns:
+            AgentsListResult
+        """
+        params = {k: v for k, v in {
+            "per_page": per_page,
+            "page": page,
+            **kwargs
+        }.items() if v is not None}
+
+        result = await self._connector.execute("agents", "list", params)
+        # Cast generic envelope to concrete typed result
+        return AgentsListResult(
+            data=result.data,
+            meta=getattr(result, "meta", None)
+        )
+
+
+
+    async def get(
+        self,
+        id: str | None = None,
+        **kwargs
+    ) -> Agent:
+        """
+        Get a single agent by ID
+
+        Args:
+            id: Agent ID
+            **kwargs: Additional parameters
+
+        Returns:
+            Agent
+        """
+        params = {k: v for k, v in {
+            "id": id,
+            **kwargs
+        }.items() if v is not None}
+
+        result = await self._connector.execute("agents", "get", params)
+        return result
+
+
+
+    async def context_store_search(
+        self,
+        query: AgentsSearchQuery,
+        limit: int | None = None,
+        cursor: str | None = None,
+        fields: list[list[str]] | None = None,
+    ) -> AgentsSearchResult:
+        """
+        Search agents records from Airbyte cache.
+
+        This operation searches cached data from Airbyte syncs.
+        Only available in hosted execution mode.
+
+        Available filter fields (AgentsSearchFilter):
+        - id: Unique agent ID
+        - available: Whether the agent is available
+        - available_since: Timestamp since the agent has been available
+        - contact: Contact details of the agent including name, email, phone, and job title
+        - occasional: Whether the agent is an occasional agent
+        - signature: Signature of the agent (HTML)
+        - ticket_scope: Ticket scope: 1=Global, 2=Group, 3=Restricted
+        - type_: Agent type: support_agent, field_agent, collaborator
+        - last_active_at: Timestamp of last agent activity
+        - created_at: Agent creation timestamp
+        - updated_at: Agent last update timestamp
+
+        Args:
+            query: Filter and sort conditions. Supports operators like eq, neq, gt, gte, lt, lte,
+                   in, like, fuzzy, keyword, not, and, or. Example: {"filter": {"eq": {"status": "active"}}}
+            limit: Maximum results to return (default 1000)
+            cursor: Pagination cursor from previous response's meta.cursor
+            fields: Field paths to include in results. Each path is a list of keys for nested access.
+                    Example: [["id"], ["user", "name"]] returns id and user.name fields.
+
+        Returns:
+            AgentsSearchResult with typed records, pagination metadata, and optional search metadata
+
+        Raises:
+            NotImplementedError: If called in local execution mode
+        """
+        params: dict[str, Any] = {"query": query}
+        if limit is not None:
+            params["limit"] = limit
+        if cursor is not None:
+            params["cursor"] = cursor
+        if fields is not None:
+            params["fields"] = fields
+
+        result = await self._connector.execute("agents", "context_store_search", params)
+
+        # Parse response into typed result
+        meta_data = result.get("meta")
+        return AgentsSearchResult(
+            data=[
+                AgentsSearchData(**row)
+                for row in result.get("data", [])
+                if isinstance(row, dict)
+            ],
+            meta=AirbyteSearchMeta(
+                has_more=meta_data.get("has_more", False) if isinstance(meta_data, dict) else False,
+                cursor=meta_data.get("cursor") if isinstance(meta_data, dict) else None,
+                took_ms=meta_data.get("took_ms") if isinstance(meta_data, dict) else None,
+            ),
+        )
+
+class GroupsQuery:
+    """
+    Query class for Groups entity operations.
+    """
+
+    def __init__(self, connector: FreshdeskConnector):
+        """Initialize query with connector reference."""
+        self._connector = connector
+
+    async def list(
+        self,
+        per_page: int | None = None,
+        page: int | None = None,
+        **kwargs
+    ) -> GroupsListResult:
+        """
+        Returns a paginated list of groups
+
+        Args:
+            per_page: Number of items per page (max 100)
+            page: Page number (starts at 1)
+            **kwargs: Additional parameters
+
+        Returns:
+            GroupsListResult
+        """
+        params = {k: v for k, v in {
+            "per_page": per_page,
+            "page": page,
+            **kwargs
+        }.items() if v is not None}
+
+        result = await self._connector.execute("groups", "list", params)
+        # Cast generic envelope to concrete typed result
+        return GroupsListResult(
+            data=result.data,
+            meta=getattr(result, "meta", None)
+        )
+
+
+
+    async def get(
+        self,
+        id: str | None = None,
+        **kwargs
+    ) -> Group:
+        """
+        Get a single group by ID
+
+        Args:
+            id: Group ID
+            **kwargs: Additional parameters
+
+        Returns:
+            Group
+        """
+        params = {k: v for k, v in {
+            "id": id,
+            **kwargs
+        }.items() if v is not None}
+
+        result = await self._connector.execute("groups", "get", params)
+        return result
+
+
+
+    async def context_store_search(
+        self,
+        query: GroupsSearchQuery,
+        limit: int | None = None,
+        cursor: str | None = None,
+        fields: list[list[str]] | None = None,
+    ) -> GroupsSearchResult:
+        """
+        Search groups records from Airbyte cache.
+
+        This operation searches cached data from Airbyte syncs.
+        Only available in hosted execution mode.
+
+        Available filter fields (GroupsSearchFilter):
+        - id: Unique group ID
+        - name: Name of the group
+        - description: Description of the group
+        - auto_ticket_assign: Auto ticket assignment: 0=Disabled, 1=Round Robin, 2=Skill Based, 3=Load Based
+        - business_hour_id: ID of the associated business hour
+        - escalate_to: User ID for escalation
+        - group_type: Type of the group (e.g., support_agent_group)
+        - unassigned_for: Time after which escalation triggers
+        - created_at: Group creation timestamp
+        - updated_at: Group last update timestamp
+
+        Args:
+            query: Filter and sort conditions. Supports operators like eq, neq, gt, gte, lt, lte,
+                   in, like, fuzzy, keyword, not, and, or. Example: {"filter": {"eq": {"status": "active"}}}
+            limit: Maximum results to return (default 1000)
+            cursor: Pagination cursor from previous response's meta.cursor
+            fields: Field paths to include in results. Each path is a list of keys for nested access.
+                    Example: [["id"], ["user", "name"]] returns id and user.name fields.
+
+        Returns:
+            GroupsSearchResult with typed records, pagination metadata, and optional search metadata
+
+        Raises:
+            NotImplementedError: If called in local execution mode
+        """
+        params: dict[str, Any] = {"query": query}
+        if limit is not None:
+            params["limit"] = limit
+        if cursor is not None:
+            params["cursor"] = cursor
+        if fields is not None:
+            params["fields"] = fields
+
+        result = await self._connector.execute("groups", "context_store_search", params)
+
+        # Parse response into typed result
+        meta_data = result.get("meta")
+        return GroupsSearchResult(
+            data=[
+                GroupsSearchData(**row)
+                for row in result.get("data", [])
+                if isinstance(row, dict)
+            ],
+            meta=AirbyteSearchMeta(
+                has_more=meta_data.get("has_more", False) if isinstance(meta_data, dict) else False,
+                cursor=meta_data.get("cursor") if isinstance(meta_data, dict) else None,
+                took_ms=meta_data.get("took_ms") if isinstance(meta_data, dict) else None,
+            ),
+        )
+
+class CompaniesQuery:
+    """
+    Query class for Companies entity operations.
+    """
+
+    def __init__(self, connector: FreshdeskConnector):
+        """Initialize query with connector reference."""
+        self._connector = connector
+
+    async def list(
+        self,
+        per_page: int | None = None,
+        page: int | None = None,
+        **kwargs
+    ) -> CompaniesListResult:
+        """
+        Returns a paginated list of companies
+
+        Args:
+            per_page: Number of items per page (max 100)
+            page: Page number (starts at 1)
+            **kwargs: Additional parameters
+
+        Returns:
+            CompaniesListResult
+        """
+        params = {k: v for k, v in {
+            "per_page": per_page,
+            "page": page,
+            **kwargs
+        }.items() if v is not None}
+
+        result = await self._connector.execute("companies", "list", params)
+        # Cast generic envelope to concrete typed result
+        return CompaniesListResult(
+            data=result.data,
+            meta=getattr(result, "meta", None)
+        )
+
+
+
+    async def get(
+        self,
+        id: str | None = None,
+        **kwargs
+    ) -> Company:
+        """
+        Get a single company by ID
+
+        Args:
+            id: Company ID
+            **kwargs: Additional parameters
+
+        Returns:
+            Company
+        """
+        params = {k: v for k, v in {
+            "id": id,
+            **kwargs
+        }.items() if v is not None}
+
+        result = await self._connector.execute("companies", "get", params)
+        return result
+
+
+
+    async def context_store_search(
+        self,
+        query: CompaniesSearchQuery,
+        limit: int | None = None,
+        cursor: str | None = None,
+        fields: list[list[str]] | None = None,
+    ) -> CompaniesSearchResult:
+        """
+        Search companies records from Airbyte cache.
+
+        This operation searches cached data from Airbyte syncs.
+        Only available in hosted execution mode.
+
+        Available filter fields (CompaniesSearchFilter):
+        - id: Unique company ID
+        - name: Name of the company
+        - description: Description of the company
+        - domains: Email domains associated with the company
+        - note: Notes about the company
+        - health_score: Health score of the company
+        - account_tier: Account tier of the company
+        - renewal_date: Renewal date
+        - industry: Industry of the company
+        - custom_fields: Custom fields associated with the company
+        - created_at: Company creation timestamp
+        - updated_at: Company last update timestamp
+
+        Args:
+            query: Filter and sort conditions. Supports operators like eq, neq, gt, gte, lt, lte,
+                   in, like, fuzzy, keyword, not, and, or. Example: {"filter": {"eq": {"status": "active"}}}
+            limit: Maximum results to return (default 1000)
+            cursor: Pagination cursor from previous response's meta.cursor
+            fields: Field paths to include in results. Each path is a list of keys for nested access.
+                    Example: [["id"], ["user", "name"]] returns id and user.name fields.
+
+        Returns:
+            CompaniesSearchResult with typed records, pagination metadata, and optional search metadata
+
+        Raises:
+            NotImplementedError: If called in local execution mode
+        """
+        params: dict[str, Any] = {"query": query}
+        if limit is not None:
+            params["limit"] = limit
+        if cursor is not None:
+            params["cursor"] = cursor
+        if fields is not None:
+            params["fields"] = fields
+
+        result = await self._connector.execute("companies", "context_store_search", params)
+
+        # Parse response into typed result
+        meta_data = result.get("meta")
+        return CompaniesSearchResult(
+            data=[
+                CompaniesSearchData(**row)
+                for row in result.get("data", [])
+                if isinstance(row, dict)
+            ],
+            meta=AirbyteSearchMeta(
+                has_more=meta_data.get("has_more", False) if isinstance(meta_data, dict) else False,
+                cursor=meta_data.get("cursor") if isinstance(meta_data, dict) else None,
+                took_ms=meta_data.get("took_ms") if isinstance(meta_data, dict) else None,
+            ),
+        )
+
+class RolesQuery:
+    """
+    Query class for Roles entity operations.
+    """
+
+    def __init__(self, connector: FreshdeskConnector):
+        """Initialize query with connector reference."""
+        self._connector = connector
+
+    async def list(
+        self,
+        per_page: int | None = None,
+        page: int | None = None,
+        **kwargs
+    ) -> RolesListResult:
+        """
+        Returns a paginated list of roles
+
+        Args:
+            per_page: Number of items per page (max 100)
+            page: Page number (starts at 1)
+            **kwargs: Additional parameters
+
+        Returns:
+            RolesListResult
+        """
+        params = {k: v for k, v in {
+            "per_page": per_page,
+            "page": page,
+            **kwargs
+        }.items() if v is not None}
+
+        result = await self._connector.execute("roles", "list", params)
+        # Cast generic envelope to concrete typed result
+        return RolesListResult(
+            data=result.data,
+            meta=getattr(result, "meta", None)
+        )
+
+
+
+    async def get(
+        self,
+        id: str | None = None,
+        **kwargs
+    ) -> Role:
+        """
+        Get a single role by ID
+
+        Args:
+            id: Role ID
+            **kwargs: Additional parameters
+
+        Returns:
+            Role
+        """
+        params = {k: v for k, v in {
+            "id": id,
+            **kwargs
+        }.items() if v is not None}
+
+        result = await self._connector.execute("roles", "get", params)
+        return result
+
+
+
+    async def context_store_search(
+        self,
+        query: RolesSearchQuery,
+        limit: int | None = None,
+        cursor: str | None = None,
+        fields: list[list[str]] | None = None,
+    ) -> RolesSearchResult:
+        """
+        Search roles records from Airbyte cache.
+
+        This operation searches cached data from Airbyte syncs.
+        Only available in hosted execution mode.
+
+        Available filter fields (RolesSearchFilter):
+        - id: Unique role ID
+        - name: Name of the role
+        - description: Description of the role
+        - default: Whether this is a default role
+        - created_at: Role creation timestamp
+        - updated_at: Role last update timestamp
+
+        Args:
+            query: Filter and sort conditions. Supports operators like eq, neq, gt, gte, lt, lte,
+                   in, like, fuzzy, keyword, not, and, or. Example: {"filter": {"eq": {"status": "active"}}}
+            limit: Maximum results to return (default 1000)
+            cursor: Pagination cursor from previous response's meta.cursor
+            fields: Field paths to include in results. Each path is a list of keys for nested access.
+                    Example: [["id"], ["user", "name"]] returns id and user.name fields.
+
+        Returns:
+            RolesSearchResult with typed records, pagination metadata, and optional search metadata
+
+        Raises:
+            NotImplementedError: If called in local execution mode
+        """
+        params: dict[str, Any] = {"query": query}
+        if limit is not None:
+            params["limit"] = limit
+        if cursor is not None:
+            params["cursor"] = cursor
+        if fields is not None:
+            params["fields"] = fields
+
+        result = await self._connector.execute("roles", "context_store_search", params)
+
+        # Parse response into typed result
+        meta_data = result.get("meta")
+        return RolesSearchResult(
+            data=[
+                RolesSearchData(**row)
+                for row in result.get("data", [])
+                if isinstance(row, dict)
+            ],
+            meta=AirbyteSearchMeta(
+                has_more=meta_data.get("has_more", False) if isinstance(meta_data, dict) else False,
+                cursor=meta_data.get("cursor") if isinstance(meta_data, dict) else None,
+                took_ms=meta_data.get("took_ms") if isinstance(meta_data, dict) else None,
+            ),
+        )
+
+class SatisfactionRatingsQuery:
+    """
+    Query class for SatisfactionRatings entity operations.
+    """
+
+    def __init__(self, connector: FreshdeskConnector):
+        """Initialize query with connector reference."""
+        self._connector = connector
+
+    async def list(
+        self,
+        per_page: int | None = None,
+        page: int | None = None,
+        created_since: str | None = None,
+        **kwargs
+    ) -> SatisfactionRatingsListResult:
+        """
+        Returns a paginated list of satisfaction ratings
+
+        Args:
+            per_page: Number of items per page (max 100)
+            page: Page number (starts at 1)
+            created_since: Return ratings created since this timestamp (ISO 8601)
+            **kwargs: Additional parameters
+
+        Returns:
+            SatisfactionRatingsListResult
+        """
+        params = {k: v for k, v in {
+            "per_page": per_page,
+            "page": page,
+            "created_since": created_since,
+            **kwargs
+        }.items() if v is not None}
+
+        result = await self._connector.execute("satisfaction_ratings", "list", params)
+        # Cast generic envelope to concrete typed result
+        return SatisfactionRatingsListResult(
+            data=result.data,
+            meta=getattr(result, "meta", None)
+        )
+
+
+
+    async def context_store_search(
+        self,
+        query: SatisfactionRatingsSearchQuery,
+        limit: int | None = None,
+        cursor: str | None = None,
+        fields: list[list[str]] | None = None,
+    ) -> SatisfactionRatingsSearchResult:
+        """
+        Search satisfaction_ratings records from Airbyte cache.
+
+        This operation searches cached data from Airbyte syncs.
+        Only available in hosted execution mode.
+
+        Available filter fields (SatisfactionRatingsSearchFilter):
+        - id: Unique satisfaction rating ID
+        - survey_id: ID of the survey
+        - user_id: ID of the user (requester)
+        - agent_id: ID of the agent
+        - group_id: ID of the group
+        - ticket_id: ID of the ticket
+        - feedback: Feedback text
+        - ratings: Rating values (question_id to rating mapping)
+        - created_at: Rating creation timestamp
+        - updated_at: Rating last update timestamp
+
+        Args:
+            query: Filter and sort conditions. Supports operators like eq, neq, gt, gte, lt, lte,
+                   in, like, fuzzy, keyword, not, and, or. Example: {"filter": {"eq": {"status": "active"}}}
+            limit: Maximum results to return (default 1000)
+            cursor: Pagination cursor from previous response's meta.cursor
+            fields: Field paths to include in results. Each path is a list of keys for nested access.
+                    Example: [["id"], ["user", "name"]] returns id and user.name fields.
+
+        Returns:
+            SatisfactionRatingsSearchResult with typed records, pagination metadata, and optional search metadata
+
+        Raises:
+            NotImplementedError: If called in local execution mode
+        """
+        params: dict[str, Any] = {"query": query}
+        if limit is not None:
+            params["limit"] = limit
+        if cursor is not None:
+            params["cursor"] = cursor
+        if fields is not None:
+            params["fields"] = fields
+
+        result = await self._connector.execute("satisfaction_ratings", "context_store_search", params)
+
+        # Parse response into typed result
+        meta_data = result.get("meta")
+        return SatisfactionRatingsSearchResult(
+            data=[
+                SatisfactionRatingsSearchData(**row)
+                for row in result.get("data", [])
+                if isinstance(row, dict)
+            ],
+            meta=AirbyteSearchMeta(
+                has_more=meta_data.get("has_more", False) if isinstance(meta_data, dict) else False,
+                cursor=meta_data.get("cursor") if isinstance(meta_data, dict) else None,
+                took_ms=meta_data.get("took_ms") if isinstance(meta_data, dict) else None,
+            ),
+        )
+
+class SurveysQuery:
+    """
+    Query class for Surveys entity operations.
+    """
+
+    def __init__(self, connector: FreshdeskConnector):
+        """Initialize query with connector reference."""
+        self._connector = connector
+
+    async def list(
+        self,
+        per_page: int | None = None,
+        page: int | None = None,
+        **kwargs
+    ) -> SurveysListResult:
+        """
+        Returns a paginated list of surveys
+
+        Args:
+            per_page: Number of items per page (max 100)
+            page: Page number (starts at 1)
+            **kwargs: Additional parameters
+
+        Returns:
+            SurveysListResult
+        """
+        params = {k: v for k, v in {
+            "per_page": per_page,
+            "page": page,
+            **kwargs
+        }.items() if v is not None}
+
+        result = await self._connector.execute("surveys", "list", params)
+        # Cast generic envelope to concrete typed result
+        return SurveysListResult(
+            data=result.data,
+            meta=getattr(result, "meta", None)
+        )
+
+
+
+    async def context_store_search(
+        self,
+        query: SurveysSearchQuery,
+        limit: int | None = None,
+        cursor: str | None = None,
+        fields: list[list[str]] | None = None,
+    ) -> SurveysSearchResult:
+        """
+        Search surveys records from Airbyte cache.
+
+        This operation searches cached data from Airbyte syncs.
+        Only available in hosted execution mode.
+
+        Available filter fields (SurveysSearchFilter):
+        - id: Unique survey ID
+        - title: Title of the survey
+        - active: Whether the survey is active
+        - questions: Survey questions
+        - created_at: Survey creation timestamp
+        - updated_at: Survey last update timestamp
+
+        Args:
+            query: Filter and sort conditions. Supports operators like eq, neq, gt, gte, lt, lte,
+                   in, like, fuzzy, keyword, not, and, or. Example: {"filter": {"eq": {"status": "active"}}}
+            limit: Maximum results to return (default 1000)
+            cursor: Pagination cursor from previous response's meta.cursor
+            fields: Field paths to include in results. Each path is a list of keys for nested access.
+                    Example: [["id"], ["user", "name"]] returns id and user.name fields.
+
+        Returns:
+            SurveysSearchResult with typed records, pagination metadata, and optional search metadata
+
+        Raises:
+            NotImplementedError: If called in local execution mode
+        """
+        params: dict[str, Any] = {"query": query}
+        if limit is not None:
+            params["limit"] = limit
+        if cursor is not None:
+            params["cursor"] = cursor
+        if fields is not None:
+            params["fields"] = fields
+
+        result = await self._connector.execute("surveys", "context_store_search", params)
+
+        # Parse response into typed result
+        meta_data = result.get("meta")
+        return SurveysSearchResult(
+            data=[
+                SurveysSearchData(**row)
+                for row in result.get("data", [])
+                if isinstance(row, dict)
+            ],
+            meta=AirbyteSearchMeta(
+                has_more=meta_data.get("has_more", False) if isinstance(meta_data, dict) else False,
+                cursor=meta_data.get("cursor") if isinstance(meta_data, dict) else None,
+                took_ms=meta_data.get("took_ms") if isinstance(meta_data, dict) else None,
+            ),
+        )
+
+class TimeEntriesQuery:
+    """
+    Query class for TimeEntries entity operations.
+    """
+
+    def __init__(self, connector: FreshdeskConnector):
+        """Initialize query with connector reference."""
+        self._connector = connector
+
+    async def list(
+        self,
+        per_page: int | None = None,
+        page: int | None = None,
+        **kwargs
+    ) -> TimeEntriesListResult:
+        """
+        Returns a paginated list of time entries
+
+        Args:
+            per_page: Number of items per page (max 100)
+            page: Page number (starts at 1)
+            **kwargs: Additional parameters
+
+        Returns:
+            TimeEntriesListResult
+        """
+        params = {k: v for k, v in {
+            "per_page": per_page,
+            "page": page,
+            **kwargs
+        }.items() if v is not None}
+
+        result = await self._connector.execute("time_entries", "list", params)
+        # Cast generic envelope to concrete typed result
+        return TimeEntriesListResult(
+            data=result.data,
+            meta=getattr(result, "meta", None)
+        )
+
+
+
+    async def context_store_search(
+        self,
+        query: TimeEntriesSearchQuery,
+        limit: int | None = None,
+        cursor: str | None = None,
+        fields: list[list[str]] | None = None,
+    ) -> TimeEntriesSearchResult:
+        """
+        Search time_entries records from Airbyte cache.
+
+        This operation searches cached data from Airbyte syncs.
+        Only available in hosted execution mode.
+
+        Available filter fields (TimeEntriesSearchFilter):
+        - id: Unique time entry ID
+        - agent_id: ID of the agent
+        - ticket_id: ID of the associated ticket
+        - company_id: ID of the associated company
+        - billable: Whether the time entry is billable
+        - note: Description of the time entry
+        - time_spent: Time spent in hh:mm format
+        - timer_running: Whether the timer is running
+        - executed_at: Execution timestamp
+        - start_time: Start time of the timer
+        - created_at: Time entry creation timestamp
+        - updated_at: Time entry last update timestamp
+
+        Args:
+            query: Filter and sort conditions. Supports operators like eq, neq, gt, gte, lt, lte,
+                   in, like, fuzzy, keyword, not, and, or. Example: {"filter": {"eq": {"status": "active"}}}
+            limit: Maximum results to return (default 1000)
+            cursor: Pagination cursor from previous response's meta.cursor
+            fields: Field paths to include in results. Each path is a list of keys for nested access.
+                    Example: [["id"], ["user", "name"]] returns id and user.name fields.
+
+        Returns:
+            TimeEntriesSearchResult with typed records, pagination metadata, and optional search metadata
+
+        Raises:
+            NotImplementedError: If called in local execution mode
+        """
+        params: dict[str, Any] = {"query": query}
+        if limit is not None:
+            params["limit"] = limit
+        if cursor is not None:
+            params["cursor"] = cursor
+        if fields is not None:
+            params["fields"] = fields
+
+        result = await self._connector.execute("time_entries", "context_store_search", params)
+
+        # Parse response into typed result
+        meta_data = result.get("meta")
+        return TimeEntriesSearchResult(
+            data=[
+                TimeEntriesSearchData(**row)
+                for row in result.get("data", [])
+                if isinstance(row, dict)
+            ],
+            meta=AirbyteSearchMeta(
+                has_more=meta_data.get("has_more", False) if isinstance(meta_data, dict) else False,
+                cursor=meta_data.get("cursor") if isinstance(meta_data, dict) else None,
+                took_ms=meta_data.get("took_ms") if isinstance(meta_data, dict) else None,
+            ),
+        )
+
+class TicketFieldsQuery:
+    """
+    Query class for TicketFields entity operations.
+    """
+
+    def __init__(self, connector: FreshdeskConnector):
+        """Initialize query with connector reference."""
+        self._connector = connector
+
+    async def list(
+        self,
+        per_page: int | None = None,
+        page: int | None = None,
+        **kwargs
+    ) -> TicketFieldsListResult:
+        """
+        Returns a list of all ticket fields
+
+        Args:
+            per_page: Number of items per page (max 100)
+            page: Page number (starts at 1)
+            **kwargs: Additional parameters
+
+        Returns:
+            TicketFieldsListResult
+        """
+        params = {k: v for k, v in {
+            "per_page": per_page,
+            "page": page,
+            **kwargs
+        }.items() if v is not None}
+
+        result = await self._connector.execute("ticket_fields", "list", params)
+        # Cast generic envelope to concrete typed result
+        return TicketFieldsListResult(
+            data=result.data,
+            meta=getattr(result, "meta", None)
+        )
+
+
+
+    async def context_store_search(
+        self,
+        query: TicketFieldsSearchQuery,
+        limit: int | None = None,
+        cursor: str | None = None,
+        fields: list[list[str]] | None = None,
+    ) -> TicketFieldsSearchResult:
+        """
+        Search ticket_fields records from Airbyte cache.
+
+        This operation searches cached data from Airbyte syncs.
+        Only available in hosted execution mode.
+
+        Available filter fields (TicketFieldsSearchFilter):
+        - id: Unique ticket field ID
+        - name: Name of the field
+        - label: Display label for agents
+        - label_for_customers: Display label in the customer portal
+        - description: Description of the field
+        - position: Position of the field in the form
+        - type_: Field type (e.g., custom_dropdown, custom_text)
+        - default: Whether this is a default (non-custom) field
+        - required_for_closure: Whether the field is required for ticket closure
+        - required_for_agents: Whether the field is required for agents
+        - required_for_customers: Whether the field is required for customers
+        - customers_can_edit: Whether customers can edit this field
+        - displayed_to_customers: Whether the field is displayed to customers
+        - portal_cc: Whether CC is enabled in the portal
+        - portal_cc_to: CC recipients scope (all or company)
+        - choices: Available choices for dropdown fields
+        - created_at: Field creation timestamp
+        - updated_at: Field last update timestamp
+
+        Args:
+            query: Filter and sort conditions. Supports operators like eq, neq, gt, gte, lt, lte,
+                   in, like, fuzzy, keyword, not, and, or. Example: {"filter": {"eq": {"status": "active"}}}
+            limit: Maximum results to return (default 1000)
+            cursor: Pagination cursor from previous response's meta.cursor
+            fields: Field paths to include in results. Each path is a list of keys for nested access.
+                    Example: [["id"], ["user", "name"]] returns id and user.name fields.
+
+        Returns:
+            TicketFieldsSearchResult with typed records, pagination metadata, and optional search metadata
+
+        Raises:
+            NotImplementedError: If called in local execution mode
+        """
+        params: dict[str, Any] = {"query": query}
+        if limit is not None:
+            params["limit"] = limit
+        if cursor is not None:
+            params["cursor"] = cursor
+        if fields is not None:
+            params["fields"] = fields
+
+        result = await self._connector.execute("ticket_fields", "context_store_search", params)
+
+        # Parse response into typed result
+        meta_data = result.get("meta")
+        return TicketFieldsSearchResult(
+            data=[
+                TicketFieldsSearchData(**row)
+                for row in result.get("data", [])
+                if isinstance(row, dict)
+            ],
+            meta=AirbyteSearchMeta(
+                has_more=meta_data.get("has_more", False) if isinstance(meta_data, dict) else False,
+                cursor=meta_data.get("cursor") if isinstance(meta_data, dict) else None,
+                took_ms=meta_data.get("took_ms") if isinstance(meta_data, dict) else None,
+            ),
+        )

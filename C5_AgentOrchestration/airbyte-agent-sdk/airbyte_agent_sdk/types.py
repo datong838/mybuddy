@@ -1,0 +1,436 @@
+"""Type definitions for Airbyte SDK."""
+
+from __future__ import annotations
+
+from enum import Enum
+from typing import Any
+from uuid import UUID
+
+from pydantic import AliasChoices, BaseModel, ConfigDict, Field
+
+from airbyte_agent_sdk.constants import OPENAPI_DEFAULT_VERSION
+from airbyte_agent_sdk.extensions import AIRBYTE_FILE_URL_DESCRIPTION
+from airbyte_agent_sdk.schema.base import ResponseErrorCheck
+from airbyte_agent_sdk.schema.components import PathOverrideConfig
+from airbyte_agent_sdk.schema.extensions import (
+    CacheConfig,
+    EnrichmentConfig,
+    EntityRelationshipConfig,
+    RetryConfig,
+    ScopingParamConfig,
+    SemanticSearchConfig,
+)
+from airbyte_agent_sdk.schema.security import AuthConfigSpec
+
+
+class AirbyteAuthConfig(BaseModel):
+    """Authentication configuration for Airbyte hosted mode execution.
+
+    Pass this to the connector's `auth_config` parameter to use hosted mode,
+    where API credentials are stored securely in Airbyte Cloud.
+
+    For hosted mode execution, provide client credentials with either:
+    - `connector_id`: Direct connector/source ID (skips lookup)
+    - `workspace_name`: Workspace name for connector lookup
+
+    Attributes:
+        workspace_name: Workspace name for hosted mode connector lookup
+        organization_id: Optional Airbyte organization ID for multi-org selection
+        airbyte_client_id: Airbyte OAuth client ID (required for hosted mode)
+        airbyte_client_secret: Airbyte OAuth client secret (required for hosted mode)
+        connector_id: Specific connector/source ID (skips lookup if provided)
+
+    Examples:
+        # Hosted mode with connector_id (no lookup needed)
+        connector = GongConnector(
+            auth_config=AirbyteAuthConfig(
+                airbyte_client_id="client_abc123",
+                airbyte_client_secret="secret_xyz789",
+                connector_id="existing-source-uuid"
+            )
+        )
+
+        # Hosted mode with workspace_name (lookup by workspace)
+        connector = GongConnector(
+            auth_config=AirbyteAuthConfig(
+                workspace_name="user-123",
+                organization_id="00000000-0000-0000-0000-000000000123",
+                airbyte_client_id="client_abc123",
+                airbyte_client_secret="secret_xyz789"
+            )
+        )
+    """
+
+    workspace_name: str | None = Field(
+        None,
+        description="Workspace name for hosted mode connector lookup.",
+        validation_alias=AliasChoices("workspace_name", "customer_name", "external_user_id"),
+    )
+    organization_id: str | None = Field(
+        None,
+        description="Optional Airbyte organization ID for multi-org request routing",
+    )
+    airbyte_client_id: str | None = Field(
+        None,
+        description="Airbyte OAuth client ID (required for hosted mode)",
+    )
+    airbyte_client_secret: str | None = Field(
+        None,
+        description="Airbyte OAuth client secret (required for hosted mode)",
+    )
+    connector_id: str | None = Field(
+        None,
+        description="Specific connector/source ID (skips lookup if provided)",
+    )
+
+
+class Action(str, Enum):
+    """Supported actions for Entity operations.
+
+    Standard CRUD actions:
+        GET, CREATE, UPDATE, DELETE, LIST
+
+    Special actions:
+        API_SEARCH - Search via API endpoint
+        DOWNLOAD - Download file content
+        AUTHORIZE - OAuth authorization flow
+    """
+
+    GET = "get"
+    CREATE = "create"
+    UPDATE = "update"
+    DELETE = "delete"
+    LIST = "list"
+    API_SEARCH = "api_search"
+    DOWNLOAD = "download"
+    AUTHORIZE = "authorize"
+
+
+class AuthType(str, Enum):
+    """Supported authentication types."""
+
+    API_KEY = "api_key"
+    BEARER = "bearer"
+    HTTP = "http"
+    BASIC = "basic"
+    OAUTH2 = "oauth2"
+
+
+class ContentType(str, Enum):
+    """Supported content types for request bodies."""
+
+    JSON = "application/json"
+    FORM_URLENCODED = "application/x-www-form-urlencoded"
+    FORM_DATA = "multipart/form-data"
+    MULTIPART_RELATED = "multipart/related"
+
+
+class ParameterLocation(str, Enum):
+    """Location of operation parameters."""
+
+    PATH = "path"
+    QUERY = "query"
+    HEADER = "header"
+    COOKIE = "cookie"
+
+
+# All comprehensive OpenAPI 3.0 models are now in airbyte_agent_sdk.schema package
+# Import from airbyte_agent_sdk.schema for: OpenAPIConnector, Components, Schema, Operation, etc.
+
+
+class AuthOption(BaseModel):
+    """A single authentication option in a multi-auth connector.
+
+    Represents one security scheme from OpenAPI components.securitySchemes.
+    Each option defines a complete authentication method with its own type,
+    configuration, and user-facing credential specification.
+
+    Example:
+        For a connector supporting both OAuth2 and API Key auth:
+        - AuthOption(scheme_name="oauth", type=OAUTH2, ...)
+        - AuthOption(scheme_name="apikey", type=BEARER, ...)
+    """
+
+    scheme_name: str = Field(description="Security scheme name from OpenAPI spec (e.g., 'githubOAuth', 'githubPAT')")
+    type: AuthType = Field(description="Authentication type for this option")
+    config: dict[str, Any] = Field(
+        default_factory=dict,
+        description="Auth-specific configuration (e.g., OAuth2 refresh settings)",
+    )
+    user_config_spec: AuthConfigSpec | None = Field(
+        None,
+        description="User-facing credential specification from x-airbyte-auth-config",
+    )
+    untested: bool = Field(
+        False,
+        description="Mark this auth scheme as untested to skip cassette coverage validation",
+    )
+
+
+class AuthConfig(BaseModel):
+    """Authentication configuration supporting single or multiple auth methods.
+
+    Connectors can define either:
+    - Single auth: One authentication method (backwards compatible)
+    - Multi-auth: Multiple authentication methods (user/agent selects one)
+
+    For single-auth connectors (most common):
+        AuthConfig(type=OAUTH2, config={...}, user_config_spec={...})
+
+    For multi-auth connectors:
+        AuthConfig(options=[
+            AuthOption(scheme_name="oauth", type=OAUTH2, ...),
+            AuthOption(scheme_name="apikey", type=BEARER, ...)
+        ])
+    """
+
+    # Single-auth mode (backwards compatible)
+    type: AuthType | None = Field(
+        None,
+        description="Authentication type (single-auth mode only)",
+    )
+    config: dict[str, Any] = Field(
+        default_factory=dict,
+        description="Auth configuration (single-auth mode only)",
+    )
+    user_config_spec: AuthConfigSpec | None = Field(
+        None,
+        description="User-facing config spec from x-airbyte-auth-config (single-auth mode)",
+    )
+
+    # Multi-auth mode
+    options: list[AuthOption] | None = Field(
+        None,
+        description="Multiple authentication options (multi-auth mode only)",
+    )
+
+    def is_multi_auth(self) -> bool:
+        """Check if this configuration supports multiple authentication methods.
+
+        Returns:
+            True if multiple auth options are available, False for single-auth
+        """
+        return self.options is not None and len(self.options) > 0
+
+    def get_single_option(self) -> AuthOption:
+        """Get single auth option (for backwards compatibility).
+
+        Converts single-auth config to AuthOption format for uniform handling.
+
+        Returns:
+            AuthOption containing the single auth configuration
+
+        Raises:
+            ValueError: If this is a multi-auth config or invalid
+        """
+        if self.is_multi_auth():
+            raise ValueError("Cannot call get_single_option() on multi-auth config. Use options list instead.")
+
+        if self.type is None:
+            raise ValueError("Invalid AuthConfig: neither single-auth nor multi-auth")
+
+        return AuthOption(
+            scheme_name="default",
+            type=self.type,
+            config=self.config,
+            user_config_spec=self.user_config_spec,
+        )
+
+
+# Executor types (used by executor.py)
+class EndpointDefinition(BaseModel):
+    """Definition of an API endpoint."""
+
+    method: str  # GET, POST, PUT, DELETE, etc.
+    path: str  # e.g., /v1/customers/{id} (OpenAPI path)
+    path_override: PathOverrideConfig | None = Field(
+        None,
+        description=("Path override config from x-airbyte-path-override. When set, overrides the path for actual HTTP requests."),
+    )
+    action: Action | None = None  # Semantic action (get, list, create, update, delete)
+    description: str | None = None
+    body_fields: list[str] = Field(default_factory=list)  # For POST/PUT
+    body_is_array: bool = Field(
+        False,
+        description=(
+            "When True the request body is a JSON array of objects rather than a "
+            "single JSON object.  ``body_fields`` still lists the per-item "
+            "property names (extracted from ``items.properties``).  At runtime "
+            "``_build_request_body`` wraps the constructed dict in a one-element "
+            "list before handing it to the HTTP client."
+        ),
+    )
+    query_params: list[str] = Field(default_factory=list)  # For GET
+    query_params_schema: dict[str, dict[str, Any]] = Field(
+        default_factory=dict,
+        description="Schema for query params including defaults: {name: {type, default, required}}",
+    )
+    deep_object_params: list[str] = Field(
+        default_factory=list,
+        description="Query parameters using deepObject style (e.g., filter[key]=value)",
+    )  # For GET with deepObject query params
+    path_params: list[str] = Field(default_factory=list)  # Extracted from path
+    path_params_schema: dict[str, dict[str, Any]] = Field(
+        default_factory=dict,
+        description="Schema for path params including defaults: {name: {type, default, required}}",
+    )
+    header_params: list[str] = Field(default_factory=list)  # Header parameters from OpenAPI
+    header_params_schema: dict[str, dict[str, Any]] = Field(
+        default_factory=dict,
+        description="Schema for header params including defaults: {name: {type, default, required}}",
+    )
+    request_body_defaults: dict[str, Any] = Field(
+        default_factory=dict,
+        description="Default values for request body fields from OpenAPI schema",
+    )
+    request_body_probe_defaults: dict[str, Any] = Field(
+        default_factory=dict,
+        description=(
+            "Per-field probe-only defaults from `x-airbyte-probe-default` on body-field schemas. "
+            "Read by `_probe_entity` (and the parent-probe path) and injected into the call as if "
+            "user-supplied; never consulted by `_build_request_body`. String values are "
+            "Jinja-evaluated at probe time via `_evaluate_probe_default`. Keeps probe-time "
+            "defaults from leaking into agent runtime calls."
+        ),
+    )
+    content_type: ContentType = ContentType.JSON
+    request_schema: dict[str, Any] | None = None
+    response_schema: dict[str, Any] | None = None
+
+    # GraphQL support (Airbyte extension)
+    graphql_body: dict[str, Any] | None = Field(
+        None,
+        description="GraphQL body configuration from x-airbyte-body-type extension",
+    )
+
+    # Record extractor support (Airbyte extension)
+    record_extractor: str | None = Field(
+        None,
+        description="JSONPath expression to extract records from response envelopes",
+    )
+
+    # Record filter support (Airbyte extension)
+    record_filter: str | None = Field(
+        None,
+        description=(
+            "Jinja expression evaluated per extracted record. Records for which the "
+            "expression renders to a truthy value are emitted; others are dropped. "
+            "Runs after `record_extractor`. Example: `{{ not record.isPrivate }}`."
+        ),
+    )
+    record_transform: dict[str, str] | None = Field(
+        None,
+        description=(
+            "Jinja field mapping evaluated per extracted record to reshape the output. "
+            "Runs after `record_extractor` and before `record_filter`. Primitive "
+            "extracted records are wrapped as `{value: ...}` before evaluation."
+        ),
+    )
+
+    # Metadata extractor support (Airbyte extension)
+    meta_extractor: dict[str, str] | None = Field(
+        None,
+        description="Dictionary mapping field names to JSONPath expressions for extracting metadata from response envelopes",
+    )
+
+    # Download support (Airbyte extension)
+    file_field: str | None = Field(
+        None,
+        description=AIRBYTE_FILE_URL_DESCRIPTION,
+    )
+
+    # Test validation support (Airbyte extension)
+    untested: bool = Field(
+        False,
+        description="Mark operation as untested to skip cassette validation (from x-airbyte-untested extension)",
+    )
+
+    # Pagination opt-out (Airbyte extension)
+    no_pagination: str | None = Field(
+        None,
+        description=(
+            "Justification for opting a list operation out of the pagination readiness check "
+            "(from x-airbyte-no-pagination extension). Non-empty string means the API does not paginate."
+        ),
+    )
+
+    # Health check support (Airbyte extension)
+    preferred_for_check: bool = Field(
+        False,
+        description="Mark this operation as preferred for health checks (from x-airbyte-preferred-for-check extension)",
+    )
+
+    upload_file_param: str | None = Field(
+        None,
+        description="Parameter name containing base64-encoded file content for multipart/related uploads (from x-airbyte-upload-file-param)",
+    )
+
+    no_content_response: bool = Field(
+        False,
+        description="True when the operation defines a 204 No Content response, indicating no response body is expected",
+    )
+    ai_hints: dict[str, Any] | None = Field(
+        default=None,
+        description="AI hints attached to this specific operation (from x-airbyte-ai-hints)",
+    )
+
+
+class EntityDefinition(BaseModel):
+    """Definition of an API entity."""
+
+    model_config = {"populate_by_name": True}
+
+    name: str
+    stream_name: str | None = Field(
+        default=None,
+        description="Airbyte replication stream name (from x-airbyte-stream-name schema extension)",
+    )
+    actions: list[Action]
+    endpoints: dict[Action, EndpointDefinition]
+    entity_schema: dict[str, Any] | None = Field(default=None, alias="schema")
+    ai_hints: dict[str, Any] | None = Field(
+        default=None,
+        description="AI hints for this entity (from x-airbyte-ai-hints schema extension)",
+    )
+    relationships: list[EntityRelationshipConfig] = Field(
+        default_factory=list,
+        description="Relationships where this entity is the source (from x-airbyte-entity-relationships)",
+    )
+
+
+class ConnectorModel(BaseModel):
+    """Complete connector model loaded from YAML definition."""
+
+    model_config = ConfigDict(use_enum_values=True)
+
+    id: UUID
+    name: str
+    version: str = OPENAPI_DEFAULT_VERSION
+    base_url: str
+    auth: AuthConfig
+    entities: list[EntityDefinition]
+    openapi_spec: Any | None = None  # Optional reference to OpenAPIConnector
+    retry_config: RetryConfig | None = None  # Optional retry configuration
+    context_store: CacheConfig | None = None
+    search_field_paths: dict[str, list[str]] | None = None
+    semantic_search_fields: dict[str, dict[str, SemanticSearchConfig]] = Field(
+        default_factory=dict,
+        description="Parsed x-airbyte-semantic-search annotations, keyed by user-facing "
+        "entity name then field name. Dormant in Phase 1; no engine consumes it yet.",
+    )
+    enrichment_configs: dict[str, list[EnrichmentConfig]] = Field(
+        default_factory=dict,
+        description="Parsed x-airbyte-enrichment annotations, keyed by user-facing "
+        "entity name. Each entry declares a query-time join used by the read-path "
+        "enrichment engine.",
+    )
+    example_questions: Any | None = None  # ExampleQuestions from x-airbyte-example-questions
+    scoping: list[ScopingParamConfig] = Field(
+        default_factory=list,
+        description="Scoping parameters resolved from config at runtime (from x-airbyte-scoping)",
+    )
+    server_variable_defaults: dict[str, str] = Field(
+        default_factory=dict,
+        description="Default values for server URL variables from the OpenAPI spec. Used as fallbacks when config_values doesn't include a variable.",
+    )
+    response_error_check: ResponseErrorCheck | None = None

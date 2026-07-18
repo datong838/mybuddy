@@ -1,0 +1,3690 @@
+"""
+Asana connector.
+"""
+
+from __future__ import annotations
+
+import logging
+from typing import Any, Callable, Mapping, TypeVar, AsyncIterator, overload
+try:
+    from typing import Literal
+except ImportError:
+    from typing_extensions import Literal
+
+from pydantic import BaseModel
+
+from .connector_model import AsanaConnectorModel
+from airbyte_agent_sdk.introspection import describe_entities, generate_tool_description
+from airbyte_agent_sdk.translation import DEFAULT_MAX_OUTPUT_CHARS, FrameworkName, translate_exceptions
+from airbyte_agent_sdk.types import AirbyteAuthConfig
+from .types import (
+    AttachmentsDownloadParams,
+    AttachmentsGetParams,
+    AttachmentsListParams,
+    ProjectSectionsCreateParams,
+    ProjectSectionsCreateParamsData,
+    ProjectSectionsListParams,
+    ProjectTasksListParams,
+    ProjectsCreateParams,
+    ProjectsCreateParamsData,
+    ProjectsDeleteParams,
+    ProjectsGetParams,
+    ProjectsListParams,
+    ProjectsUpdateParams,
+    ProjectsUpdateParamsData,
+    SectionTasksCreateParams,
+    SectionTasksCreateParamsData,
+    SectionTasksListParams,
+    SectionsDeleteParams,
+    SectionsGetParams,
+    SectionsUpdateParams,
+    SectionsUpdateParamsData,
+    TagTasksListParams,
+    TagsDeleteParams,
+    TagsGetParams,
+    TagsUpdateParams,
+    TagsUpdateParamsData,
+    TaskDependenciesListParams,
+    TaskDependentsListParams,
+    TaskProjectsListParams,
+    TaskStoriesCreateParams,
+    TaskStoriesCreateParamsData,
+    TaskSubtasksListParams,
+    TaskTagsCreateParams,
+    TaskTagsCreateParamsData,
+    TaskTagsDeleteParams,
+    TaskTagsDeleteParamsData,
+    TasksCreateParams,
+    TasksCreateParamsData,
+    TasksDeleteParams,
+    TasksGetParams,
+    TasksListParams,
+    TasksUpdateParams,
+    TasksUpdateParamsData,
+    TeamProjectsListParams,
+    TeamUsersListParams,
+    TeamsGetParams,
+    UserTeamsListParams,
+    UsersGetParams,
+    UsersListParams,
+    WorkspaceMembershipsCreateParams,
+    WorkspaceMembershipsCreateParamsData,
+    WorkspaceProjectsListParams,
+    WorkspaceTagsCreateParams,
+    WorkspaceTagsCreateParamsData,
+    WorkspaceTagsListParams,
+    WorkspaceTaskSearchListParams,
+    WorkspaceTeamsListParams,
+    WorkspaceUsersListParams,
+    WorkspacesGetParams,
+    WorkspacesListParams,
+    AirbyteSearchParams,
+    AttachmentsSearchFilter,
+    AttachmentsSearchQuery,
+    ProjectsSearchFilter,
+    ProjectsSearchQuery,
+    SectionsSearchFilter,
+    SectionsSearchQuery,
+    TagsSearchFilter,
+    TagsSearchQuery,
+    TasksSearchFilter,
+    TasksSearchQuery,
+    TeamsSearchFilter,
+    TeamsSearchQuery,
+    UsersSearchFilter,
+    UsersSearchQuery,
+    WorkspacesSearchFilter,
+    WorkspacesSearchQuery,
+)
+from .models import AsanaOauth2AuthConfig, AsanaPersonalAccessTokenAuthConfig
+from .models import AsanaAuthConfig
+
+# Import response models and envelope models at runtime
+from .models import (
+    AsanaCheckResult,
+    AsanaExecuteResult,
+    AsanaExecuteResultWithMeta,
+    TasksListResult,
+    ProjectTasksListResult,
+    WorkspaceTaskSearchListResult,
+    ProjectsListResult,
+    TaskProjectsListResult,
+    TeamProjectsListResult,
+    WorkspaceProjectsListResult,
+    WorkspacesListResult,
+    UsersListResult,
+    WorkspaceUsersListResult,
+    TeamUsersListResult,
+    WorkspaceTeamsListResult,
+    UserTeamsListResult,
+    AttachmentsListResult,
+    WorkspaceTagsListResult,
+    TagTasksListResult,
+    ProjectSectionsListResult,
+    SectionTasksListResult,
+    TaskSubtasksListResult,
+    TaskDependenciesListResult,
+    TaskDependentsListResult,
+    Attachment,
+    AttachmentCompact,
+    Project,
+    ProjectCompact,
+    Section,
+    SectionCompact,
+    Story,
+    Tag,
+    TagCompact,
+    Task,
+    TaskCompact,
+    Team,
+    TeamCompact,
+    User,
+    UserCompact,
+    Workspace,
+    WorkspaceCompact,
+    AirbyteSearchMeta,
+    AirbyteSearchResult,
+    AttachmentsSearchData,
+    AttachmentsSearchResult,
+    ProjectsSearchData,
+    ProjectsSearchResult,
+    SectionsSearchData,
+    SectionsSearchResult,
+    TagsSearchData,
+    TagsSearchResult,
+    TasksSearchData,
+    TasksSearchResult,
+    TeamsSearchData,
+    TeamsSearchResult,
+    UsersSearchData,
+    UsersSearchResult,
+    WorkspacesSearchData,
+    WorkspacesSearchResult,
+)
+
+# TypeVar for decorator type preservation
+_F = TypeVar("_F", bound=Callable[..., Any])
+
+
+
+
+class AsanaConnector:
+    """
+    Type-safe Asana API connector.
+
+    Auto-generated from OpenAPI specification with full type safety.
+    """
+
+    connector_name = "asana"
+    connector_version = "0.1.21"
+    sdk_version = "0.1.287"
+
+    # Map of (entity, action) -> needs_envelope for envelope wrapping decision
+    _ENVELOPE_MAP = {
+        ("tasks", "list"): True,
+        ("tasks", "create"): None,
+        ("project_tasks", "list"): True,
+        ("tasks", "get"): None,
+        ("tasks", "update"): None,
+        ("tasks", "delete"): None,
+        ("workspace_task_search", "list"): True,
+        ("projects", "list"): True,
+        ("projects", "create"): None,
+        ("projects", "get"): None,
+        ("projects", "update"): None,
+        ("projects", "delete"): None,
+        ("task_projects", "list"): True,
+        ("team_projects", "list"): True,
+        ("workspace_projects", "list"): True,
+        ("workspaces", "list"): True,
+        ("workspaces", "get"): None,
+        ("users", "list"): True,
+        ("users", "get"): None,
+        ("workspace_users", "list"): True,
+        ("team_users", "list"): True,
+        ("teams", "get"): None,
+        ("workspace_teams", "list"): True,
+        ("user_teams", "list"): True,
+        ("attachments", "list"): True,
+        ("attachments", "get"): None,
+        ("attachments", "download"): None,
+        ("workspace_tags", "list"): True,
+        ("workspace_tags", "create"): None,
+        ("tags", "get"): None,
+        ("tags", "update"): None,
+        ("tags", "delete"): None,
+        ("tag_tasks", "list"): True,
+        ("project_sections", "list"): True,
+        ("project_sections", "create"): None,
+        ("sections", "get"): None,
+        ("sections", "update"): None,
+        ("sections", "delete"): None,
+        ("section_tasks", "list"): True,
+        ("section_tasks", "create"): None,
+        ("task_subtasks", "list"): True,
+        ("task_dependencies", "list"): True,
+        ("task_dependents", "list"): True,
+        ("task_stories", "create"): None,
+        ("task_tags", "create"): None,
+        ("task_tags", "delete"): None,
+        ("workspace_memberships", "create"): None,
+    }
+
+    # Map of (entity, action) -> {python_param_name: api_param_name}
+    # Used to convert snake_case TypedDict keys to API parameter names in execute()
+    _PARAM_MAP = {
+        ('tasks', 'list'): {'limit': 'limit', 'offset': 'offset', 'project': 'project', 'workspace': 'workspace', 'section': 'section', 'assignee': 'assignee', 'completed_since': 'completed_since', 'modified_since': 'modified_since'},
+        ('tasks', 'create'): {'data': 'data'},
+        ('project_tasks', 'list'): {'project_gid': 'project_gid', 'limit': 'limit', 'offset': 'offset', 'completed_since': 'completed_since'},
+        ('tasks', 'get'): {'task_gid': 'task_gid'},
+        ('tasks', 'update'): {'data': 'data', 'task_gid': 'task_gid'},
+        ('tasks', 'delete'): {'task_gid': 'task_gid'},
+        ('workspace_task_search', 'list'): {'workspace_gid': 'workspace_gid', 'limit': 'limit', 'offset': 'offset', 'text': 'text', 'completed': 'completed', 'assignee_any': 'assignee.any', 'projects_any': 'projects.any', 'sections_any': 'sections.any', 'teams_any': 'teams.any', 'followers_any': 'followers.any', 'created_at_after': 'created_at.after', 'created_at_before': 'created_at.before', 'modified_at_after': 'modified_at.after', 'modified_at_before': 'modified_at.before', 'due_on_after': 'due_on.after', 'due_on_before': 'due_on.before', 'resource_subtype': 'resource_subtype', 'sort_by': 'sort_by', 'sort_ascending': 'sort_ascending'},
+        ('projects', 'list'): {'limit': 'limit', 'offset': 'offset', 'workspace': 'workspace', 'team': 'team', 'archived': 'archived'},
+        ('projects', 'create'): {'data': 'data'},
+        ('projects', 'get'): {'project_gid': 'project_gid'},
+        ('projects', 'update'): {'data': 'data', 'project_gid': 'project_gid'},
+        ('projects', 'delete'): {'project_gid': 'project_gid'},
+        ('task_projects', 'list'): {'task_gid': 'task_gid', 'limit': 'limit', 'offset': 'offset'},
+        ('team_projects', 'list'): {'team_gid': 'team_gid', 'limit': 'limit', 'offset': 'offset', 'archived': 'archived'},
+        ('workspace_projects', 'list'): {'workspace_gid': 'workspace_gid', 'limit': 'limit', 'offset': 'offset', 'archived': 'archived'},
+        ('workspaces', 'list'): {'limit': 'limit', 'offset': 'offset'},
+        ('workspaces', 'get'): {'workspace_gid': 'workspace_gid'},
+        ('users', 'list'): {'limit': 'limit', 'offset': 'offset', 'workspace': 'workspace', 'team': 'team'},
+        ('users', 'get'): {'user_gid': 'user_gid'},
+        ('workspace_users', 'list'): {'workspace_gid': 'workspace_gid', 'limit': 'limit', 'offset': 'offset'},
+        ('team_users', 'list'): {'team_gid': 'team_gid', 'limit': 'limit', 'offset': 'offset'},
+        ('teams', 'get'): {'team_gid': 'team_gid'},
+        ('workspace_teams', 'list'): {'workspace_gid': 'workspace_gid', 'limit': 'limit', 'offset': 'offset'},
+        ('user_teams', 'list'): {'user_gid': 'user_gid', 'organization': 'organization', 'limit': 'limit', 'offset': 'offset'},
+        ('attachments', 'list'): {'parent': 'parent', 'limit': 'limit', 'offset': 'offset'},
+        ('attachments', 'get'): {'attachment_gid': 'attachment_gid'},
+        ('attachments', 'download'): {'attachment_gid': 'attachment_gid', 'range_header': 'range_header'},
+        ('workspace_tags', 'list'): {'workspace_gid': 'workspace_gid', 'limit': 'limit', 'offset': 'offset'},
+        ('workspace_tags', 'create'): {'data': 'data', 'workspace_gid': 'workspace_gid'},
+        ('tags', 'get'): {'tag_gid': 'tag_gid'},
+        ('tags', 'update'): {'data': 'data', 'tag_gid': 'tag_gid'},
+        ('tags', 'delete'): {'tag_gid': 'tag_gid'},
+        ('tag_tasks', 'list'): {'tag_gid': 'tag_gid', 'limit': 'limit', 'offset': 'offset'},
+        ('project_sections', 'list'): {'project_gid': 'project_gid', 'limit': 'limit', 'offset': 'offset'},
+        ('project_sections', 'create'): {'data': 'data', 'project_gid': 'project_gid'},
+        ('sections', 'get'): {'section_gid': 'section_gid'},
+        ('sections', 'update'): {'data': 'data', 'section_gid': 'section_gid'},
+        ('sections', 'delete'): {'section_gid': 'section_gid'},
+        ('section_tasks', 'list'): {'section_gid': 'section_gid', 'limit': 'limit', 'offset': 'offset', 'completed_since': 'completed_since'},
+        ('section_tasks', 'create'): {'data': 'data', 'section_gid': 'section_gid'},
+        ('task_subtasks', 'list'): {'task_gid': 'task_gid', 'limit': 'limit', 'offset': 'offset'},
+        ('task_dependencies', 'list'): {'task_gid': 'task_gid', 'limit': 'limit', 'offset': 'offset'},
+        ('task_dependents', 'list'): {'task_gid': 'task_gid', 'limit': 'limit', 'offset': 'offset'},
+        ('task_stories', 'create'): {'data': 'data', 'task_gid': 'task_gid'},
+        ('task_tags', 'create'): {'data': 'data', 'task_gid': 'task_gid'},
+        ('task_tags', 'delete'): {'data': 'data', 'task_gid': 'task_gid'},
+        ('workspace_memberships', 'create'): {'data': 'data', 'workspace_gid': 'workspace_gid'},
+    }
+
+    # Accepted auth_config types for isinstance validation
+    _ACCEPTED_AUTH_TYPES = (AsanaOauth2AuthConfig, AsanaPersonalAccessTokenAuthConfig, AirbyteAuthConfig)
+
+    def __init__(
+        self,
+        auth_config: AsanaAuthConfig | AirbyteAuthConfig | BaseModel | None = None,
+        on_token_refresh: Any | None = None    ):
+        """
+        Initialize a new asana connector instance.
+
+        Supports both local and hosted execution modes:
+        - Local mode: Provide connector-specific auth config (e.g., AsanaAuthConfig)
+        - Hosted mode: Provide `AirbyteAuthConfig` with client credentials and either `connector_id` or `workspace_name`
+
+        Args:
+            auth_config: Either connector-specific auth config for local mode, or AirbyteAuthConfig for hosted mode
+            on_token_refresh: Optional callback for OAuth2 token refresh persistence.
+                Called with new_tokens dict when tokens are refreshed. Can be sync or async.
+                Example: lambda tokens: save_to_database(tokens)
+        Examples:
+            # Local mode (direct API calls)
+            connector = AsanaConnector(auth_config=AsanaAuthConfig(access_token="...", refresh_token="...", client_id="...", client_secret="..."))
+            # Hosted mode with explicit connector_id (no lookup needed)
+            connector = AsanaConnector(
+                auth_config=AirbyteAuthConfig(
+                    airbyte_client_id="client_abc123",
+                    airbyte_client_secret="secret_xyz789",
+                    connector_id="existing-source-uuid"
+                )
+            )
+
+            # Hosted mode with lookup by workspace_name
+            connector = AsanaConnector(
+                auth_config=AirbyteAuthConfig(
+                    workspace_name="user-123",
+                    organization_id="00000000-0000-0000-0000-000000000123",
+                    airbyte_client_id="client_abc123",
+                    airbyte_client_secret="secret_xyz789"
+                )
+            )
+        """
+        # Accept AirbyteAuthConfig from any vendored SDK version
+        if (
+            auth_config is not None
+            and not isinstance(auth_config, AirbyteAuthConfig)
+            and type(auth_config).__name__ == AirbyteAuthConfig.__name__
+        ):
+            auth_config = AirbyteAuthConfig(**auth_config.model_dump())
+
+        # Validate auth_config type
+        if auth_config is not None and not isinstance(auth_config, self._ACCEPTED_AUTH_TYPES):
+            raise TypeError(
+                f"Unsupported auth_config type: {type(auth_config).__name__}. "
+                f"Expected one of: {', '.join(t.__name__ for t in self._ACCEPTED_AUTH_TYPES)}"
+            )
+
+        # Hosted mode: auth_config is AirbyteAuthConfig
+        is_hosted = isinstance(auth_config, AirbyteAuthConfig)
+
+        if is_hosted:
+            from airbyte_agent_sdk.executor import HostedExecutor
+            self._executor = HostedExecutor(
+                airbyte_client_id=auth_config.airbyte_client_id,
+                airbyte_client_secret=auth_config.airbyte_client_secret,
+                connector_id=auth_config.connector_id,
+                workspace_name=auth_config.workspace_name or "default",
+                organization_id=auth_config.organization_id,
+                connector_definition_id=str(AsanaConnectorModel.id),
+                model=AsanaConnectorModel,
+            )
+        else:
+            # Local mode: auth_config required (must be connector-specific auth type)
+            if not auth_config:
+                raise ValueError(
+                    "Either provide AirbyteAuthConfig with client credentials for hosted mode, "
+                    "or AsanaAuthConfig for local mode"
+                )
+
+            from airbyte_agent_sdk.executor import LocalExecutor
+
+            # Build config_values dict from server variables
+            config_values = None
+
+            # Multi-auth connector: detect auth scheme from auth_config type
+            auth_scheme: str | None = None
+            if auth_config:
+                if isinstance(auth_config, AsanaOauth2AuthConfig):
+                    auth_scheme = "oauth2"
+                if isinstance(auth_config, AsanaPersonalAccessTokenAuthConfig):
+                    auth_scheme = "personalAccessToken"
+
+            self._executor = LocalExecutor(
+                model=AsanaConnectorModel,
+                auth_config=auth_config.model_dump() if auth_config else None,
+                auth_scheme=auth_scheme,
+                config_values=config_values,
+                on_token_refresh=on_token_refresh
+            )
+
+            # Update base_url with server variables if provided
+
+        # Initialize entity query objects
+        self.tasks = TasksQuery(self)
+        self.project_tasks = ProjectTasksQuery(self)
+        self.workspace_task_search = WorkspaceTaskSearchQuery(self)
+        self.projects = ProjectsQuery(self)
+        self.task_projects = TaskProjectsQuery(self)
+        self.team_projects = TeamProjectsQuery(self)
+        self.workspace_projects = WorkspaceProjectsQuery(self)
+        self.workspaces = WorkspacesQuery(self)
+        self.users = UsersQuery(self)
+        self.workspace_users = WorkspaceUsersQuery(self)
+        self.team_users = TeamUsersQuery(self)
+        self.teams = TeamsQuery(self)
+        self.workspace_teams = WorkspaceTeamsQuery(self)
+        self.user_teams = UserTeamsQuery(self)
+        self.attachments = AttachmentsQuery(self)
+        self.workspace_tags = WorkspaceTagsQuery(self)
+        self.tags = TagsQuery(self)
+        self.tag_tasks = TagTasksQuery(self)
+        self.project_sections = ProjectSectionsQuery(self)
+        self.sections = SectionsQuery(self)
+        self.section_tasks = SectionTasksQuery(self)
+        self.task_subtasks = TaskSubtasksQuery(self)
+        self.task_dependencies = TaskDependenciesQuery(self)
+        self.task_dependents = TaskDependentsQuery(self)
+        self.task_stories = TaskStoriesQuery(self)
+        self.task_tags = TaskTagsQuery(self)
+        self.workspace_memberships = WorkspaceMembershipsQuery(self)
+
+    # ===== TYPED EXECUTE METHOD (Recommended Interface) =====
+
+    @overload
+    async def execute(
+        self,
+        entity: Literal["tasks"],
+        action: Literal["list"],
+        params: "TasksListParams",
+        *,
+        select_fields: list[str] | None = ...,
+        exclude_fields: list[str] | None = ...,
+        skip_truncation: bool = ...
+    ) -> "TasksListResult": ...
+
+    @overload
+    async def execute(
+        self,
+        entity: Literal["tasks"],
+        action: Literal["create"],
+        params: "TasksCreateParams",
+        *,
+        select_fields: list[str] | None = ...,
+        exclude_fields: list[str] | None = ...,
+        skip_truncation: bool = ...
+    ) -> "Task": ...
+
+    @overload
+    async def execute(
+        self,
+        entity: Literal["project_tasks"],
+        action: Literal["list"],
+        params: "ProjectTasksListParams",
+        *,
+        select_fields: list[str] | None = ...,
+        exclude_fields: list[str] | None = ...,
+        skip_truncation: bool = ...
+    ) -> "ProjectTasksListResult": ...
+
+    @overload
+    async def execute(
+        self,
+        entity: Literal["tasks"],
+        action: Literal["get"],
+        params: "TasksGetParams",
+        *,
+        select_fields: list[str] | None = ...,
+        exclude_fields: list[str] | None = ...,
+        skip_truncation: bool = ...
+    ) -> "Task": ...
+
+    @overload
+    async def execute(
+        self,
+        entity: Literal["tasks"],
+        action: Literal["update"],
+        params: "TasksUpdateParams",
+        *,
+        select_fields: list[str] | None = ...,
+        exclude_fields: list[str] | None = ...,
+        skip_truncation: bool = ...
+    ) -> "Task": ...
+
+    @overload
+    async def execute(
+        self,
+        entity: Literal["tasks"],
+        action: Literal["delete"],
+        params: "TasksDeleteParams",
+        *,
+        select_fields: list[str] | None = ...,
+        exclude_fields: list[str] | None = ...,
+        skip_truncation: bool = ...
+    ) -> "dict[str, Any]": ...
+
+    @overload
+    async def execute(
+        self,
+        entity: Literal["workspace_task_search"],
+        action: Literal["list"],
+        params: "WorkspaceTaskSearchListParams",
+        *,
+        select_fields: list[str] | None = ...,
+        exclude_fields: list[str] | None = ...,
+        skip_truncation: bool = ...
+    ) -> "WorkspaceTaskSearchListResult": ...
+
+    @overload
+    async def execute(
+        self,
+        entity: Literal["projects"],
+        action: Literal["list"],
+        params: "ProjectsListParams",
+        *,
+        select_fields: list[str] | None = ...,
+        exclude_fields: list[str] | None = ...,
+        skip_truncation: bool = ...
+    ) -> "ProjectsListResult": ...
+
+    @overload
+    async def execute(
+        self,
+        entity: Literal["projects"],
+        action: Literal["create"],
+        params: "ProjectsCreateParams",
+        *,
+        select_fields: list[str] | None = ...,
+        exclude_fields: list[str] | None = ...,
+        skip_truncation: bool = ...
+    ) -> "Project": ...
+
+    @overload
+    async def execute(
+        self,
+        entity: Literal["projects"],
+        action: Literal["get"],
+        params: "ProjectsGetParams",
+        *,
+        select_fields: list[str] | None = ...,
+        exclude_fields: list[str] | None = ...,
+        skip_truncation: bool = ...
+    ) -> "Project": ...
+
+    @overload
+    async def execute(
+        self,
+        entity: Literal["projects"],
+        action: Literal["update"],
+        params: "ProjectsUpdateParams",
+        *,
+        select_fields: list[str] | None = ...,
+        exclude_fields: list[str] | None = ...,
+        skip_truncation: bool = ...
+    ) -> "Project": ...
+
+    @overload
+    async def execute(
+        self,
+        entity: Literal["projects"],
+        action: Literal["delete"],
+        params: "ProjectsDeleteParams",
+        *,
+        select_fields: list[str] | None = ...,
+        exclude_fields: list[str] | None = ...,
+        skip_truncation: bool = ...
+    ) -> "dict[str, Any]": ...
+
+    @overload
+    async def execute(
+        self,
+        entity: Literal["task_projects"],
+        action: Literal["list"],
+        params: "TaskProjectsListParams",
+        *,
+        select_fields: list[str] | None = ...,
+        exclude_fields: list[str] | None = ...,
+        skip_truncation: bool = ...
+    ) -> "TaskProjectsListResult": ...
+
+    @overload
+    async def execute(
+        self,
+        entity: Literal["team_projects"],
+        action: Literal["list"],
+        params: "TeamProjectsListParams",
+        *,
+        select_fields: list[str] | None = ...,
+        exclude_fields: list[str] | None = ...,
+        skip_truncation: bool = ...
+    ) -> "TeamProjectsListResult": ...
+
+    @overload
+    async def execute(
+        self,
+        entity: Literal["workspace_projects"],
+        action: Literal["list"],
+        params: "WorkspaceProjectsListParams",
+        *,
+        select_fields: list[str] | None = ...,
+        exclude_fields: list[str] | None = ...,
+        skip_truncation: bool = ...
+    ) -> "WorkspaceProjectsListResult": ...
+
+    @overload
+    async def execute(
+        self,
+        entity: Literal["workspaces"],
+        action: Literal["list"],
+        params: "WorkspacesListParams",
+        *,
+        select_fields: list[str] | None = ...,
+        exclude_fields: list[str] | None = ...,
+        skip_truncation: bool = ...
+    ) -> "WorkspacesListResult": ...
+
+    @overload
+    async def execute(
+        self,
+        entity: Literal["workspaces"],
+        action: Literal["get"],
+        params: "WorkspacesGetParams",
+        *,
+        select_fields: list[str] | None = ...,
+        exclude_fields: list[str] | None = ...,
+        skip_truncation: bool = ...
+    ) -> "Workspace": ...
+
+    @overload
+    async def execute(
+        self,
+        entity: Literal["users"],
+        action: Literal["list"],
+        params: "UsersListParams",
+        *,
+        select_fields: list[str] | None = ...,
+        exclude_fields: list[str] | None = ...,
+        skip_truncation: bool = ...
+    ) -> "UsersListResult": ...
+
+    @overload
+    async def execute(
+        self,
+        entity: Literal["users"],
+        action: Literal["get"],
+        params: "UsersGetParams",
+        *,
+        select_fields: list[str] | None = ...,
+        exclude_fields: list[str] | None = ...,
+        skip_truncation: bool = ...
+    ) -> "User": ...
+
+    @overload
+    async def execute(
+        self,
+        entity: Literal["workspace_users"],
+        action: Literal["list"],
+        params: "WorkspaceUsersListParams",
+        *,
+        select_fields: list[str] | None = ...,
+        exclude_fields: list[str] | None = ...,
+        skip_truncation: bool = ...
+    ) -> "WorkspaceUsersListResult": ...
+
+    @overload
+    async def execute(
+        self,
+        entity: Literal["team_users"],
+        action: Literal["list"],
+        params: "TeamUsersListParams",
+        *,
+        select_fields: list[str] | None = ...,
+        exclude_fields: list[str] | None = ...,
+        skip_truncation: bool = ...
+    ) -> "TeamUsersListResult": ...
+
+    @overload
+    async def execute(
+        self,
+        entity: Literal["teams"],
+        action: Literal["get"],
+        params: "TeamsGetParams",
+        *,
+        select_fields: list[str] | None = ...,
+        exclude_fields: list[str] | None = ...,
+        skip_truncation: bool = ...
+    ) -> "Team": ...
+
+    @overload
+    async def execute(
+        self,
+        entity: Literal["workspace_teams"],
+        action: Literal["list"],
+        params: "WorkspaceTeamsListParams",
+        *,
+        select_fields: list[str] | None = ...,
+        exclude_fields: list[str] | None = ...,
+        skip_truncation: bool = ...
+    ) -> "WorkspaceTeamsListResult": ...
+
+    @overload
+    async def execute(
+        self,
+        entity: Literal["user_teams"],
+        action: Literal["list"],
+        params: "UserTeamsListParams",
+        *,
+        select_fields: list[str] | None = ...,
+        exclude_fields: list[str] | None = ...,
+        skip_truncation: bool = ...
+    ) -> "UserTeamsListResult": ...
+
+    @overload
+    async def execute(
+        self,
+        entity: Literal["attachments"],
+        action: Literal["list"],
+        params: "AttachmentsListParams",
+        *,
+        select_fields: list[str] | None = ...,
+        exclude_fields: list[str] | None = ...,
+        skip_truncation: bool = ...
+    ) -> "AttachmentsListResult": ...
+
+    @overload
+    async def execute(
+        self,
+        entity: Literal["attachments"],
+        action: Literal["get"],
+        params: "AttachmentsGetParams",
+        *,
+        select_fields: list[str] | None = ...,
+        exclude_fields: list[str] | None = ...,
+        skip_truncation: bool = ...
+    ) -> "Attachment": ...
+
+    @overload
+    async def execute(
+        self,
+        entity: Literal["attachments"],
+        action: Literal["download"],
+        params: "AttachmentsDownloadParams",
+        *,
+        select_fields: list[str] | None = ...,
+        exclude_fields: list[str] | None = ...,
+        skip_truncation: bool = ...
+    ) -> "AsyncIterator[bytes]": ...
+
+    @overload
+    async def execute(
+        self,
+        entity: Literal["workspace_tags"],
+        action: Literal["list"],
+        params: "WorkspaceTagsListParams",
+        *,
+        select_fields: list[str] | None = ...,
+        exclude_fields: list[str] | None = ...,
+        skip_truncation: bool = ...
+    ) -> "WorkspaceTagsListResult": ...
+
+    @overload
+    async def execute(
+        self,
+        entity: Literal["workspace_tags"],
+        action: Literal["create"],
+        params: "WorkspaceTagsCreateParams",
+        *,
+        select_fields: list[str] | None = ...,
+        exclude_fields: list[str] | None = ...,
+        skip_truncation: bool = ...
+    ) -> "Tag": ...
+
+    @overload
+    async def execute(
+        self,
+        entity: Literal["tags"],
+        action: Literal["get"],
+        params: "TagsGetParams",
+        *,
+        select_fields: list[str] | None = ...,
+        exclude_fields: list[str] | None = ...,
+        skip_truncation: bool = ...
+    ) -> "Tag": ...
+
+    @overload
+    async def execute(
+        self,
+        entity: Literal["tags"],
+        action: Literal["update"],
+        params: "TagsUpdateParams",
+        *,
+        select_fields: list[str] | None = ...,
+        exclude_fields: list[str] | None = ...,
+        skip_truncation: bool = ...
+    ) -> "Tag": ...
+
+    @overload
+    async def execute(
+        self,
+        entity: Literal["tags"],
+        action: Literal["delete"],
+        params: "TagsDeleteParams",
+        *,
+        select_fields: list[str] | None = ...,
+        exclude_fields: list[str] | None = ...,
+        skip_truncation: bool = ...
+    ) -> "dict[str, Any]": ...
+
+    @overload
+    async def execute(
+        self,
+        entity: Literal["tag_tasks"],
+        action: Literal["list"],
+        params: "TagTasksListParams",
+        *,
+        select_fields: list[str] | None = ...,
+        exclude_fields: list[str] | None = ...,
+        skip_truncation: bool = ...
+    ) -> "TagTasksListResult": ...
+
+    @overload
+    async def execute(
+        self,
+        entity: Literal["project_sections"],
+        action: Literal["list"],
+        params: "ProjectSectionsListParams",
+        *,
+        select_fields: list[str] | None = ...,
+        exclude_fields: list[str] | None = ...,
+        skip_truncation: bool = ...
+    ) -> "ProjectSectionsListResult": ...
+
+    @overload
+    async def execute(
+        self,
+        entity: Literal["project_sections"],
+        action: Literal["create"],
+        params: "ProjectSectionsCreateParams",
+        *,
+        select_fields: list[str] | None = ...,
+        exclude_fields: list[str] | None = ...,
+        skip_truncation: bool = ...
+    ) -> "Section": ...
+
+    @overload
+    async def execute(
+        self,
+        entity: Literal["sections"],
+        action: Literal["get"],
+        params: "SectionsGetParams",
+        *,
+        select_fields: list[str] | None = ...,
+        exclude_fields: list[str] | None = ...,
+        skip_truncation: bool = ...
+    ) -> "Section": ...
+
+    @overload
+    async def execute(
+        self,
+        entity: Literal["sections"],
+        action: Literal["update"],
+        params: "SectionsUpdateParams",
+        *,
+        select_fields: list[str] | None = ...,
+        exclude_fields: list[str] | None = ...,
+        skip_truncation: bool = ...
+    ) -> "Section": ...
+
+    @overload
+    async def execute(
+        self,
+        entity: Literal["sections"],
+        action: Literal["delete"],
+        params: "SectionsDeleteParams",
+        *,
+        select_fields: list[str] | None = ...,
+        exclude_fields: list[str] | None = ...,
+        skip_truncation: bool = ...
+    ) -> "dict[str, Any]": ...
+
+    @overload
+    async def execute(
+        self,
+        entity: Literal["section_tasks"],
+        action: Literal["list"],
+        params: "SectionTasksListParams",
+        *,
+        select_fields: list[str] | None = ...,
+        exclude_fields: list[str] | None = ...,
+        skip_truncation: bool = ...
+    ) -> "SectionTasksListResult": ...
+
+    @overload
+    async def execute(
+        self,
+        entity: Literal["section_tasks"],
+        action: Literal["create"],
+        params: "SectionTasksCreateParams",
+        *,
+        select_fields: list[str] | None = ...,
+        exclude_fields: list[str] | None = ...,
+        skip_truncation: bool = ...
+    ) -> "dict[str, Any]": ...
+
+    @overload
+    async def execute(
+        self,
+        entity: Literal["task_subtasks"],
+        action: Literal["list"],
+        params: "TaskSubtasksListParams",
+        *,
+        select_fields: list[str] | None = ...,
+        exclude_fields: list[str] | None = ...,
+        skip_truncation: bool = ...
+    ) -> "TaskSubtasksListResult": ...
+
+    @overload
+    async def execute(
+        self,
+        entity: Literal["task_dependencies"],
+        action: Literal["list"],
+        params: "TaskDependenciesListParams",
+        *,
+        select_fields: list[str] | None = ...,
+        exclude_fields: list[str] | None = ...,
+        skip_truncation: bool = ...
+    ) -> "TaskDependenciesListResult": ...
+
+    @overload
+    async def execute(
+        self,
+        entity: Literal["task_dependents"],
+        action: Literal["list"],
+        params: "TaskDependentsListParams",
+        *,
+        select_fields: list[str] | None = ...,
+        exclude_fields: list[str] | None = ...,
+        skip_truncation: bool = ...
+    ) -> "TaskDependentsListResult": ...
+
+    @overload
+    async def execute(
+        self,
+        entity: Literal["task_stories"],
+        action: Literal["create"],
+        params: "TaskStoriesCreateParams",
+        *,
+        select_fields: list[str] | None = ...,
+        exclude_fields: list[str] | None = ...,
+        skip_truncation: bool = ...
+    ) -> "Story": ...
+
+    @overload
+    async def execute(
+        self,
+        entity: Literal["task_tags"],
+        action: Literal["create"],
+        params: "TaskTagsCreateParams",
+        *,
+        select_fields: list[str] | None = ...,
+        exclude_fields: list[str] | None = ...,
+        skip_truncation: bool = ...
+    ) -> "dict[str, Any]": ...
+
+    @overload
+    async def execute(
+        self,
+        entity: Literal["task_tags"],
+        action: Literal["delete"],
+        params: "TaskTagsDeleteParams",
+        *,
+        select_fields: list[str] | None = ...,
+        exclude_fields: list[str] | None = ...,
+        skip_truncation: bool = ...
+    ) -> "dict[str, Any]": ...
+
+    @overload
+    async def execute(
+        self,
+        entity: Literal["workspace_memberships"],
+        action: Literal["create"],
+        params: "WorkspaceMembershipsCreateParams",
+        *,
+        select_fields: list[str] | None = ...,
+        exclude_fields: list[str] | None = ...,
+        skip_truncation: bool = ...
+    ) -> "User": ...
+
+
+    @overload
+    async def execute(
+        self,
+        entity: str,
+        action: Literal["list", "create", "get", "update", "delete", "download", "context_store_search"],
+        params: Mapping[str, Any],
+        *,
+        select_fields: list[str] | None = ...,
+        exclude_fields: list[str] | None = ...,
+        skip_truncation: bool = ...
+    ) -> AsanaExecuteResult[Any] | AsanaExecuteResultWithMeta[Any, Any] | Any: ...
+
+    async def execute(
+        self,
+        entity: str,
+        action: Literal["list", "create", "get", "update", "delete", "download", "context_store_search"],
+        params: Mapping[str, Any] | None = None,
+        *,
+        select_fields: list[str] | None = None,
+        exclude_fields: list[str] | None = None,
+        skip_truncation: bool = True
+    ) -> Any:
+        """
+        Execute an entity operation with full type safety.
+
+        This is the recommended interface for blessed connectors as it:
+        - Uses the same signature as non-blessed connectors
+        - Provides full IDE autocomplete for entity/action/params
+        - Makes migration from generic to blessed connectors seamless
+
+        Args:
+            entity: Entity name (e.g., "customers")
+            action: Operation action (e.g., "create", "get", "list")
+            params: Operation parameters (typed based on entity+action)
+            select_fields: Optional allowlist of dot-notation fields to include
+            exclude_fields: Optional blocklist of dot-notation fields to remove
+            skip_truncation: Disable long-text truncation for collection actions
+
+        Returns:
+            Typed response based on the operation
+
+        Example:
+            customer = await connector.execute(
+                entity="customers",
+                action="get",
+                params={"id": "cus_123"}
+            )
+        """
+        from airbyte_agent_sdk.executor import ExecutionConfig
+
+        # Remap parameter names from snake_case (TypedDict keys) to API parameter names
+        resolved_params = dict(params) if params is not None else None
+        if resolved_params:
+            param_map = self._PARAM_MAP.get((entity, action), {})
+            if param_map:
+                resolved_params = {param_map.get(k, k): v for k, v in resolved_params.items()}
+
+        # Use ExecutionConfig for both local and hosted executors
+        config = ExecutionConfig(
+            entity=entity,
+            action=action,
+            params=resolved_params,
+            select_fields=select_fields,
+            exclude_fields=exclude_fields,
+            skip_truncation=skip_truncation
+        )
+
+        result = await self._executor.execute(config)
+
+        if not result.success:
+            raise RuntimeError(f"Execution failed: {result.error}")
+
+        # Check if this operation has extractors configured
+        has_extractors = self._ENVELOPE_MAP.get((entity, action), False)
+
+        if has_extractors:
+            # With extractors - return Pydantic envelope with data and meta
+            if result.meta is not None:
+                return AsanaExecuteResultWithMeta[Any, Any](
+                    data=result.data,
+                    meta=result.meta
+                )
+            else:
+                return AsanaExecuteResult[Any](data=result.data)
+        else:
+            # No extractors - return raw response data
+            return result.data
+
+    # ===== HEALTH CHECK METHOD =====
+
+    async def check(self) -> AsanaCheckResult:
+        """
+        Perform a health check to verify connectivity and credentials.
+
+        Executes a lightweight list operation (limit=1) to validate that
+        the connector can communicate with the API and credentials are valid.
+
+        Returns:
+            AsanaCheckResult with status ("healthy" or "unhealthy") and optional error message
+
+        Example:
+            result = await connector.check()
+            if result.status == "healthy":
+                print("Connection verified!")
+            else:
+                print(f"Check failed: {result.error}")
+        """
+        result = await self._executor.check()
+
+        if result.success and isinstance(result.data, dict):
+            return AsanaCheckResult(
+                status=result.data.get("status", "unhealthy"),
+                error=result.data.get("error"),
+                checked_entity=result.data.get("checked_entity"),
+                checked_action=result.data.get("checked_action"),
+            )
+        else:
+            return AsanaCheckResult(
+                status="unhealthy",
+                error=result.error or "Unknown error during health check",
+            )
+
+    # ===== INTROSPECTION METHODS =====
+
+    @classmethod
+    def tool_utils(
+        cls,
+        func: _F | None = None,
+        *,
+        update_docstring: bool = True,
+        max_output_chars: int | None = DEFAULT_MAX_OUTPUT_CHARS,
+        framework: FrameworkName | None = None,
+        internal_retries: int = 0,
+        should_internal_retry: Callable[[Exception, tuple[Any, ...], dict[str, Any]], bool] | None = None,
+        exhausted_runtime_failure_message: Callable[[Exception, tuple[Any, ...], dict[str, Any]], str | None] | None = None,
+    ) -> _F | Callable[[_F], _F]:
+        """
+        Add connector-specific documentation and runtime safeguards to one tool.
+
+        For new agents, prefer `build_connector_tools`. It returns progressive
+        `inspect_connector`, `read_skill_docs`, and `execute` tools so the agent
+        can load only the connector guidance it needs:
+
+        ```python
+        from airbyte_agent_sdk import build_connector_tools
+        from pydantic_ai import Agent
+
+        tools = build_connector_tools(connector, framework="pydantic_ai")
+        agent = Agent("openai:gpt-4o", tools=tools.as_list())
+        ```
+
+        ### Legacy: one generated-description tool
+
+        Existing integrations can keep using `tool_utils` for one broad
+        `execute` tool with the connector's full generated catalog in its
+        description:
+
+        ```python
+        from fastmcp import FastMCP
+
+        connector = AsanaConnector()
+        mcp = FastMCP("Connector Agent")
+
+        @mcp.tool()
+        @AsanaConnector.tool_utils
+        async def execute(entity: str, action: str, params: dict):
+            ...
+        ```
+
+        Configure documentation, output limits, framework translation, and
+        retries when needed:
+
+        ```python
+        @mcp.tool()
+        @AsanaConnector.tool_utils(update_docstring=False, max_output_chars=None)
+        async def execute(entity: str, action: str, params: dict):
+            ...
+
+        @mcp.tool()
+        @AsanaConnector.tool_utils(framework="pydantic_ai", internal_retries=2)
+        async def execute(entity: str, action: str, params: dict):
+            ...
+        ```
+
+        This decorator composes `translate_exceptions` for runtime wrapping,
+        output-size checks, framework signal translation, and optional internal
+        retries, then adds connector-specific docstring augmentation.
+
+        Args:
+            update_docstring: When True, append connector capabilities to `__doc__`.
+            max_output_chars: Max serialized output size before raising. Use `None` to disable.
+            framework: One of `"pydantic_ai" | "langchain" | "openai_agents" | "mcp"`.
+                Defaults to `None`, which auto-detects each framework's canonical
+                import in order. Explicit always wins.
+            internal_retries: How many transient runtime failures (429/5xx, network,
+                timeout) to retry silently before surfacing. Default 0. Forwarded to
+                `airbyte_agent_sdk.translation.translate_exceptions`.
+            should_internal_retry: Optional predicate `(error, args, kwargs) -> bool`
+                further restricting which retryable errors are safe for this specific
+                tool. Forwarded to `airbyte_agent_sdk.translation.translate_exceptions`.
+            exhausted_runtime_failure_message: Optional callback
+                `(error, args, kwargs) -> str | None`. Invoked after internal retries
+                are exhausted or were skipped because `should_internal_retry` returned
+                `False`. Forwarded to `airbyte_agent_sdk.translation.translate_exceptions`.
+        """
+
+        def decorate(inner: _F) -> _F:
+            if update_docstring:
+                description = generate_tool_description(
+                    AsanaConnectorModel,
+                )
+                original_doc = inner.__doc__ or ""
+                if original_doc.strip():
+                    full_doc = f"{original_doc.strip()}\n{description}"
+                else:
+                    full_doc = description
+            else:
+                full_doc = ""
+
+            wrapped = translate_exceptions(
+                inner,
+                framework=framework,
+                max_output_chars=max_output_chars,
+                internal_retries=internal_retries,
+                should_internal_retry=should_internal_retry,
+                exhausted_runtime_failure_message=exhausted_runtime_failure_message,
+            )
+
+            if update_docstring:
+                wrapped.__doc__ = full_doc
+            return wrapped  # type: ignore[return-value]
+
+        if func is not None:
+            return decorate(func)
+        return decorate
+
+    def list_entities(self) -> list[dict[str, Any]]:
+        """
+        Get structured data about available entities, actions, and parameters.
+
+        Returns a list of entity descriptions with:
+        - entity_name: Name of the entity (e.g., "contacts", "deals")
+        - description: Entity description from the first endpoint
+        - available_actions: List of actions (e.g., ["list", "get", "create"])
+        - parameters: Dict mapping action -> list of parameter dicts
+
+        Example:
+            entities = connector.list_entities()
+            for entity in entities:
+                print(f"{entity['entity_name']}: {entity['available_actions']}")
+        """
+        return describe_entities(AsanaConnectorModel)
+
+    def entity_schema(self, entity: str) -> dict[str, Any] | None:
+        """
+        Get the JSON schema for an entity.
+
+        Args:
+            entity: Entity name (e.g., "contacts", "companies")
+
+        Returns:
+            JSON schema dict describing the entity structure, or None if not found.
+
+        Example:
+            schema = connector.entity_schema("contacts")
+            if schema:
+                print(f"Contact properties: {list(schema.get('properties', {}).keys())}")
+        """
+        entity_def = next(
+            (e for e in AsanaConnectorModel.entities if e.name == entity),
+            None
+        )
+        if entity_def is None:
+            logging.getLogger(__name__).warning(
+                f"Entity '{entity}' not found. Available entities: "
+                f"{[e.name for e in AsanaConnectorModel.entities]}"
+            )
+        return entity_def.entity_schema if entity_def else None
+
+    @property
+    def connector_id(self) -> str | None:
+        """Get the connector/source ID (only available in hosted mode).
+
+        Returns:
+            The connector ID if in hosted mode, None if in local mode.
+        """
+        if hasattr(self, '_executor') and hasattr(self._executor, '_connector_id'):
+            return self._executor._connector_id
+        return None
+
+    # ===== RESOURCE MANAGEMENT =====
+
+    async def close(self):
+        """Close the connector and release resources."""
+        await self._executor.close()
+
+    async def __aenter__(self):
+        """Async context manager entry."""
+        return self
+
+    async def __aexit__(self, exc_type, exc_val, exc_tb):
+        """Async context manager exit."""
+        await self.close()
+
+
+
+class TasksQuery:
+    """
+    Query class for Tasks entity operations.
+    """
+
+    def __init__(self, connector: AsanaConnector):
+        """Initialize query with connector reference."""
+        self._connector = connector
+
+    async def list(
+        self,
+        limit: int | None = None,
+        offset: str | None = None,
+        project: str | None = None,
+        workspace: str | None = None,
+        section: str | None = None,
+        assignee: str | None = None,
+        completed_since: str | None = None,
+        modified_since: str | None = None,
+        **kwargs
+    ) -> TasksListResult:
+        """
+        Returns a paginated list of tasks. Must include either a project OR a section OR a workspace AND assignee parameter.
+
+        Args:
+            limit: Number of items to return per page
+            offset: Pagination offset token
+            project: The project to filter tasks on
+            workspace: The workspace to filter tasks on
+            section: The workspace to filter tasks on
+            assignee: The assignee to filter tasks on
+            completed_since: Only return tasks that have been completed since this time
+            modified_since: Only return tasks that have been completed since this time
+            **kwargs: Additional parameters
+
+        Returns:
+            TasksListResult
+        """
+        params = {k: v for k, v in {
+            "limit": limit,
+            "offset": offset,
+            "project": project,
+            "workspace": workspace,
+            "section": section,
+            "assignee": assignee,
+            "completed_since": completed_since,
+            "modified_since": modified_since,
+            **kwargs
+        }.items() if v is not None}
+
+        result = await self._connector.execute("tasks", "list", params)
+        # Cast generic envelope to concrete typed result
+        return TasksListResult(
+            data=result.data,
+            meta=getattr(result, "meta", None)
+        )
+
+
+
+    async def create(
+        self,
+        data: TasksCreateParamsData,
+        **kwargs
+    ) -> Task:
+        """
+        Creates a new task. Every task is required to be created in a specific workspace,
+and this workspace cannot be changed once set. The workspace need not be set explicitly
+if you specify projects or a parent task instead.
+
+
+        Args:
+            data: Parameter data
+            **kwargs: Additional parameters
+
+        Returns:
+            Task
+        """
+        params = {k: v for k, v in {
+            "data": data,
+            **kwargs
+        }.items() if v is not None}
+
+        result = await self._connector.execute("tasks", "create", params)
+        return result
+
+
+
+    async def get(
+        self,
+        task_gid: str,
+        **kwargs
+    ) -> Task:
+        """
+        Get a single task by its ID
+
+        Args:
+            task_gid: Task GID
+            **kwargs: Additional parameters
+
+        Returns:
+            Task
+        """
+        params = {k: v for k, v in {
+            "task_gid": task_gid,
+            **kwargs
+        }.items() if v is not None}
+
+        result = await self._connector.execute("tasks", "get", params)
+        return result
+
+
+
+    async def update(
+        self,
+        data: TasksUpdateParamsData,
+        task_gid: str,
+        **kwargs
+    ) -> Task:
+        """
+        Updates an existing task. Only the fields provided in the data block will be updated;
+any unspecified fields will remain unchanged. When using this method, it is best to
+specify only those fields you wish to change.
+
+
+        Args:
+            data: Parameter data
+            task_gid: The task to update
+            **kwargs: Additional parameters
+
+        Returns:
+            Task
+        """
+        params = {k: v for k, v in {
+            "data": data,
+            "task_gid": task_gid,
+            **kwargs
+        }.items() if v is not None}
+
+        result = await self._connector.execute("tasks", "update", params)
+        return result
+
+
+
+    async def delete(
+        self,
+        task_gid: str,
+        **kwargs
+    ) -> dict[str, Any]:
+        """
+        Deletes a specific, existing task. Deleted tasks go into the trash of the user
+making the delete request. Tasks can be recovered from the trash within 30 days;
+afterward they are completely removed from the system.
+
+
+        Args:
+            task_gid: The task to delete
+            **kwargs: Additional parameters
+
+        Returns:
+            dict[str, Any]
+        """
+        params = {k: v for k, v in {
+            "task_gid": task_gid,
+            **kwargs
+        }.items() if v is not None}
+
+        result = await self._connector.execute("tasks", "delete", params)
+        return result
+
+
+
+    async def context_store_search(
+        self,
+        query: TasksSearchQuery,
+        limit: int | None = None,
+        cursor: str | None = None,
+        fields: list[list[str]] | None = None,
+    ) -> TasksSearchResult:
+        """
+        Search tasks records from Airbyte cache.
+
+        This operation searches cached data from Airbyte syncs.
+        Only available in hosted execution mode.
+
+        Available filter fields (TasksSearchFilter):
+        - actual_time_minutes: The actual time spent on the task in minutes
+        - approval_status: 
+        - assignee: 
+        - completed: 
+        - completed_at: 
+        - completed_by: 
+        - created_at: 
+        - custom_fields: 
+        - dependencies: 
+        - dependents: 
+        - due_at: 
+        - due_on: 
+        - external: 
+        - followers: 
+        - gid: 
+        - hearted: 
+        - hearts: 
+        - html_notes: 
+        - is_rendered_as_separator: 
+        - liked: 
+        - likes: 
+        - memberships: 
+        - modified_at: 
+        - name: 
+        - notes: 
+        - num_hearts: 
+        - num_likes: 
+        - num_subtasks: 
+        - parent: 
+        - permalink_url: 
+        - projects: 
+        - resource_subtype: 
+        - resource_type: 
+        - start_on: 
+        - tags: 
+        - workspace: 
+
+        Args:
+            query: Filter and sort conditions. Supports operators like eq, neq, gt, gte, lt, lte,
+                   in, like, fuzzy, keyword, not, and, or. Example: {"filter": {"eq": {"status": "active"}}}
+            limit: Maximum results to return (default 1000)
+            cursor: Pagination cursor from previous response's meta.cursor
+            fields: Field paths to include in results. Each path is a list of keys for nested access.
+                    Example: [["id"], ["user", "name"]] returns id and user.name fields.
+
+        Returns:
+            TasksSearchResult with typed records, pagination metadata, and optional search metadata
+
+        Raises:
+            NotImplementedError: If called in local execution mode
+        """
+        params: dict[str, Any] = {"query": query}
+        if limit is not None:
+            params["limit"] = limit
+        if cursor is not None:
+            params["cursor"] = cursor
+        if fields is not None:
+            params["fields"] = fields
+
+        result = await self._connector.execute("tasks", "context_store_search", params)
+
+        # Parse response into typed result
+        meta_data = result.get("meta")
+        return TasksSearchResult(
+            data=[
+                TasksSearchData(**row)
+                for row in result.get("data", [])
+                if isinstance(row, dict)
+            ],
+            meta=AirbyteSearchMeta(
+                has_more=meta_data.get("has_more", False) if isinstance(meta_data, dict) else False,
+                cursor=meta_data.get("cursor") if isinstance(meta_data, dict) else None,
+                took_ms=meta_data.get("took_ms") if isinstance(meta_data, dict) else None,
+            ),
+        )
+
+class ProjectTasksQuery:
+    """
+    Query class for ProjectTasks entity operations.
+    """
+
+    def __init__(self, connector: AsanaConnector):
+        """Initialize query with connector reference."""
+        self._connector = connector
+
+    async def list(
+        self,
+        project_gid: str,
+        limit: int | None = None,
+        offset: str | None = None,
+        completed_since: str | None = None,
+        **kwargs
+    ) -> ProjectTasksListResult:
+        """
+        Returns all tasks in a project
+
+        Args:
+            project_gid: Project GID to list tasks from
+            limit: Number of items to return per page
+            offset: Pagination offset token
+            completed_since: Only return tasks that have been completed since this time
+            **kwargs: Additional parameters
+
+        Returns:
+            ProjectTasksListResult
+        """
+        params = {k: v for k, v in {
+            "project_gid": project_gid,
+            "limit": limit,
+            "offset": offset,
+            "completed_since": completed_since,
+            **kwargs
+        }.items() if v is not None}
+
+        result = await self._connector.execute("project_tasks", "list", params)
+        # Cast generic envelope to concrete typed result
+        return ProjectTasksListResult(
+            data=result.data,
+            meta=getattr(result, "meta", None)
+        )
+
+
+
+class WorkspaceTaskSearchQuery:
+    """
+    Query class for WorkspaceTaskSearch entity operations.
+    """
+
+    def __init__(self, connector: AsanaConnector):
+        """Initialize query with connector reference."""
+        self._connector = connector
+
+    async def list(
+        self,
+        workspace_gid: str,
+        limit: int | None = None,
+        offset: str | None = None,
+        text: str | None = None,
+        completed: bool | None = None,
+        assignee_any: str | None = None,
+        projects_any: str | None = None,
+        sections_any: str | None = None,
+        teams_any: str | None = None,
+        followers_any: str | None = None,
+        created_at_after: str | None = None,
+        created_at_before: str | None = None,
+        modified_at_after: str | None = None,
+        modified_at_before: str | None = None,
+        due_on_after: str | None = None,
+        due_on_before: str | None = None,
+        resource_subtype: str | None = None,
+        sort_by: str | None = None,
+        sort_ascending: bool | None = None,
+        **kwargs
+    ) -> WorkspaceTaskSearchListResult:
+        """
+        Returns tasks that match the specified search criteria. This endpoint requires a premium Asana account.
+
+IMPORTANT: At least one search filter parameter must be provided. Valid filter parameters include: text, completed, assignee.any, projects.any, sections.any, teams.any, followers.any, created_at.after, created_at.before, modified_at.after, modified_at.before, due_on.after, due_on.before, and resource_subtype. The sort_by and sort_ascending parameters are for ordering results and do not count as search filters.
+
+
+        Args:
+            workspace_gid: Workspace GID to search tasks in
+            limit: Number of items to return per page
+            offset: Pagination offset token
+            text: Search text to filter tasks
+            completed: Filter by completion status
+            assignee_any: Comma-separated list of assignee GIDs
+            projects_any: Comma-separated list of project GIDs
+            sections_any: Comma-separated list of section GIDs
+            teams_any: Comma-separated list of team GIDs
+            followers_any: Comma-separated list of follower GIDs
+            created_at_after: Filter tasks created after this date (ISO 8601 format)
+            created_at_before: Filter tasks created before this date (ISO 8601 format)
+            modified_at_after: Filter tasks modified after this date (ISO 8601 format)
+            modified_at_before: Filter tasks modified before this date (ISO 8601 format)
+            due_on_after: Filter tasks due after this date (ISO 8601 date format)
+            due_on_before: Filter tasks due before this date (ISO 8601 date format)
+            resource_subtype: Filter by task resource subtype (e.g., default_task, milestone)
+            sort_by: Field to sort by (e.g., created_at, modified_at, due_date)
+            sort_ascending: Sort order (true for ascending, false for descending)
+            **kwargs: Additional parameters
+
+        Returns:
+            WorkspaceTaskSearchListResult
+        """
+        params = {k: v for k, v in {
+            "workspace_gid": workspace_gid,
+            "limit": limit,
+            "offset": offset,
+            "text": text,
+            "completed": completed,
+            "assignee.any": assignee_any,
+            "projects.any": projects_any,
+            "sections.any": sections_any,
+            "teams.any": teams_any,
+            "followers.any": followers_any,
+            "created_at.after": created_at_after,
+            "created_at.before": created_at_before,
+            "modified_at.after": modified_at_after,
+            "modified_at.before": modified_at_before,
+            "due_on.after": due_on_after,
+            "due_on.before": due_on_before,
+            "resource_subtype": resource_subtype,
+            "sort_by": sort_by,
+            "sort_ascending": sort_ascending,
+            **kwargs
+        }.items() if v is not None}
+
+        result = await self._connector.execute("workspace_task_search", "list", params)
+        # Cast generic envelope to concrete typed result
+        return WorkspaceTaskSearchListResult(
+            data=result.data,
+            meta=getattr(result, "meta", None)
+        )
+
+
+
+class ProjectsQuery:
+    """
+    Query class for Projects entity operations.
+    """
+
+    def __init__(self, connector: AsanaConnector):
+        """Initialize query with connector reference."""
+        self._connector = connector
+
+    async def list(
+        self,
+        limit: int | None = None,
+        offset: str | None = None,
+        workspace: str | None = None,
+        team: str | None = None,
+        archived: bool | None = None,
+        **kwargs
+    ) -> ProjectsListResult:
+        """
+        Returns a paginated list of projects
+
+        Args:
+            limit: Number of items to return per page
+            offset: Pagination offset token
+            workspace: The workspace to filter projects on
+            team: The team to filter projects on
+            archived: Filter by archived status
+            **kwargs: Additional parameters
+
+        Returns:
+            ProjectsListResult
+        """
+        params = {k: v for k, v in {
+            "limit": limit,
+            "offset": offset,
+            "workspace": workspace,
+            "team": team,
+            "archived": archived,
+            **kwargs
+        }.items() if v is not None}
+
+        result = await self._connector.execute("projects", "list", params)
+        # Cast generic envelope to concrete typed result
+        return ProjectsListResult(
+            data=result.data,
+            meta=getattr(result, "meta", None)
+        )
+
+
+
+    async def create(
+        self,
+        data: ProjectsCreateParamsData,
+        **kwargs
+    ) -> Project:
+        """
+        Create a new project in a workspace or team. Every project is required to be
+created in a specific workspace or organization, and this cannot be changed once set.
+
+
+        Args:
+            data: Parameter data
+            **kwargs: Additional parameters
+
+        Returns:
+            Project
+        """
+        params = {k: v for k, v in {
+            "data": data,
+            **kwargs
+        }.items() if v is not None}
+
+        result = await self._connector.execute("projects", "create", params)
+        return result
+
+
+
+    async def get(
+        self,
+        project_gid: str,
+        **kwargs
+    ) -> Project:
+        """
+        Get a single project by its ID
+
+        Args:
+            project_gid: Project GID
+            **kwargs: Additional parameters
+
+        Returns:
+            Project
+        """
+        params = {k: v for k, v in {
+            "project_gid": project_gid,
+            **kwargs
+        }.items() if v is not None}
+
+        result = await self._connector.execute("projects", "get", params)
+        return result
+
+
+
+    async def update(
+        self,
+        data: ProjectsUpdateParamsData,
+        project_gid: str,
+        **kwargs
+    ) -> Project:
+        """
+        Updates an existing project. Only the fields provided in the data block will be updated;
+any unspecified fields will remain unchanged. When using this method, it is best to
+specify only those fields you wish to change.
+
+
+        Args:
+            data: Parameter data
+            project_gid: The project to update
+            **kwargs: Additional parameters
+
+        Returns:
+            Project
+        """
+        params = {k: v for k, v in {
+            "data": data,
+            "project_gid": project_gid,
+            **kwargs
+        }.items() if v is not None}
+
+        result = await self._connector.execute("projects", "update", params)
+        return result
+
+
+
+    async def delete(
+        self,
+        project_gid: str,
+        **kwargs
+    ) -> dict[str, Any]:
+        """
+        Deletes a specific, existing project. Returns an empty data record.
+
+
+        Args:
+            project_gid: The project to delete
+            **kwargs: Additional parameters
+
+        Returns:
+            dict[str, Any]
+        """
+        params = {k: v for k, v in {
+            "project_gid": project_gid,
+            **kwargs
+        }.items() if v is not None}
+
+        result = await self._connector.execute("projects", "delete", params)
+        return result
+
+
+
+    async def context_store_search(
+        self,
+        query: ProjectsSearchQuery,
+        limit: int | None = None,
+        cursor: str | None = None,
+        fields: list[list[str]] | None = None,
+    ) -> ProjectsSearchResult:
+        """
+        Search projects records from Airbyte cache.
+
+        This operation searches cached data from Airbyte syncs.
+        Only available in hosted execution mode.
+
+        Available filter fields (ProjectsSearchFilter):
+        - archived: 
+        - color: 
+        - created_at: 
+        - current_status: 
+        - custom_field_settings: 
+        - custom_fields: 
+        - default_view: 
+        - due_date: 
+        - due_on: 
+        - followers: 
+        - gid: 
+        - html_notes: 
+        - icon: 
+        - is_template: 
+        - members: 
+        - modified_at: 
+        - name: 
+        - notes: 
+        - owner: 
+        - permalink_url: 
+        - public: 
+        - resource_type: 
+        - start_on: 
+        - team: 
+        - workspace: 
+
+        Args:
+            query: Filter and sort conditions. Supports operators like eq, neq, gt, gte, lt, lte,
+                   in, like, fuzzy, keyword, not, and, or. Example: {"filter": {"eq": {"status": "active"}}}
+            limit: Maximum results to return (default 1000)
+            cursor: Pagination cursor from previous response's meta.cursor
+            fields: Field paths to include in results. Each path is a list of keys for nested access.
+                    Example: [["id"], ["user", "name"]] returns id and user.name fields.
+
+        Returns:
+            ProjectsSearchResult with typed records, pagination metadata, and optional search metadata
+
+        Raises:
+            NotImplementedError: If called in local execution mode
+        """
+        params: dict[str, Any] = {"query": query}
+        if limit is not None:
+            params["limit"] = limit
+        if cursor is not None:
+            params["cursor"] = cursor
+        if fields is not None:
+            params["fields"] = fields
+
+        result = await self._connector.execute("projects", "context_store_search", params)
+
+        # Parse response into typed result
+        meta_data = result.get("meta")
+        return ProjectsSearchResult(
+            data=[
+                ProjectsSearchData(**row)
+                for row in result.get("data", [])
+                if isinstance(row, dict)
+            ],
+            meta=AirbyteSearchMeta(
+                has_more=meta_data.get("has_more", False) if isinstance(meta_data, dict) else False,
+                cursor=meta_data.get("cursor") if isinstance(meta_data, dict) else None,
+                took_ms=meta_data.get("took_ms") if isinstance(meta_data, dict) else None,
+            ),
+        )
+
+class TaskProjectsQuery:
+    """
+    Query class for TaskProjects entity operations.
+    """
+
+    def __init__(self, connector: AsanaConnector):
+        """Initialize query with connector reference."""
+        self._connector = connector
+
+    async def list(
+        self,
+        task_gid: str,
+        limit: int | None = None,
+        offset: str | None = None,
+        **kwargs
+    ) -> TaskProjectsListResult:
+        """
+        Returns all projects a task is in
+
+        Args:
+            task_gid: Task GID to list projects from
+            limit: Number of items to return per page
+            offset: Pagination offset token
+            **kwargs: Additional parameters
+
+        Returns:
+            TaskProjectsListResult
+        """
+        params = {k: v for k, v in {
+            "task_gid": task_gid,
+            "limit": limit,
+            "offset": offset,
+            **kwargs
+        }.items() if v is not None}
+
+        result = await self._connector.execute("task_projects", "list", params)
+        # Cast generic envelope to concrete typed result
+        return TaskProjectsListResult(
+            data=result.data,
+            meta=getattr(result, "meta", None)
+        )
+
+
+
+class TeamProjectsQuery:
+    """
+    Query class for TeamProjects entity operations.
+    """
+
+    def __init__(self, connector: AsanaConnector):
+        """Initialize query with connector reference."""
+        self._connector = connector
+
+    async def list(
+        self,
+        team_gid: str,
+        limit: int | None = None,
+        offset: str | None = None,
+        archived: bool | None = None,
+        **kwargs
+    ) -> TeamProjectsListResult:
+        """
+        Returns all projects for a team
+
+        Args:
+            team_gid: Team GID to list projects from
+            limit: Number of items to return per page
+            offset: Pagination offset token
+            archived: Filter by archived status
+            **kwargs: Additional parameters
+
+        Returns:
+            TeamProjectsListResult
+        """
+        params = {k: v for k, v in {
+            "team_gid": team_gid,
+            "limit": limit,
+            "offset": offset,
+            "archived": archived,
+            **kwargs
+        }.items() if v is not None}
+
+        result = await self._connector.execute("team_projects", "list", params)
+        # Cast generic envelope to concrete typed result
+        return TeamProjectsListResult(
+            data=result.data,
+            meta=getattr(result, "meta", None)
+        )
+
+
+
+class WorkspaceProjectsQuery:
+    """
+    Query class for WorkspaceProjects entity operations.
+    """
+
+    def __init__(self, connector: AsanaConnector):
+        """Initialize query with connector reference."""
+        self._connector = connector
+
+    async def list(
+        self,
+        workspace_gid: str,
+        limit: int | None = None,
+        offset: str | None = None,
+        archived: bool | None = None,
+        **kwargs
+    ) -> WorkspaceProjectsListResult:
+        """
+        Returns all projects in a workspace
+
+        Args:
+            workspace_gid: Workspace GID to list projects from
+            limit: Number of items to return per page
+            offset: Pagination offset token
+            archived: Filter by archived status
+            **kwargs: Additional parameters
+
+        Returns:
+            WorkspaceProjectsListResult
+        """
+        params = {k: v for k, v in {
+            "workspace_gid": workspace_gid,
+            "limit": limit,
+            "offset": offset,
+            "archived": archived,
+            **kwargs
+        }.items() if v is not None}
+
+        result = await self._connector.execute("workspace_projects", "list", params)
+        # Cast generic envelope to concrete typed result
+        return WorkspaceProjectsListResult(
+            data=result.data,
+            meta=getattr(result, "meta", None)
+        )
+
+
+
+class WorkspacesQuery:
+    """
+    Query class for Workspaces entity operations.
+    """
+
+    def __init__(self, connector: AsanaConnector):
+        """Initialize query with connector reference."""
+        self._connector = connector
+
+    async def list(
+        self,
+        limit: int | None = None,
+        offset: str | None = None,
+        **kwargs
+    ) -> WorkspacesListResult:
+        """
+        Returns a paginated list of workspaces
+
+        Args:
+            limit: Number of items to return per page
+            offset: Pagination offset token
+            **kwargs: Additional parameters
+
+        Returns:
+            WorkspacesListResult
+        """
+        params = {k: v for k, v in {
+            "limit": limit,
+            "offset": offset,
+            **kwargs
+        }.items() if v is not None}
+
+        result = await self._connector.execute("workspaces", "list", params)
+        # Cast generic envelope to concrete typed result
+        return WorkspacesListResult(
+            data=result.data,
+            meta=getattr(result, "meta", None)
+        )
+
+
+
+    async def get(
+        self,
+        workspace_gid: str,
+        **kwargs
+    ) -> Workspace:
+        """
+        Get a single workspace by its ID
+
+        Args:
+            workspace_gid: Workspace GID
+            **kwargs: Additional parameters
+
+        Returns:
+            Workspace
+        """
+        params = {k: v for k, v in {
+            "workspace_gid": workspace_gid,
+            **kwargs
+        }.items() if v is not None}
+
+        result = await self._connector.execute("workspaces", "get", params)
+        return result
+
+
+
+    async def context_store_search(
+        self,
+        query: WorkspacesSearchQuery,
+        limit: int | None = None,
+        cursor: str | None = None,
+        fields: list[list[str]] | None = None,
+    ) -> WorkspacesSearchResult:
+        """
+        Search workspaces records from Airbyte cache.
+
+        This operation searches cached data from Airbyte syncs.
+        Only available in hosted execution mode.
+
+        Available filter fields (WorkspacesSearchFilter):
+        - email_domains: 
+        - gid: 
+        - is_organization: 
+        - name: 
+        - resource_type: 
+
+        Args:
+            query: Filter and sort conditions. Supports operators like eq, neq, gt, gte, lt, lte,
+                   in, like, fuzzy, keyword, not, and, or. Example: {"filter": {"eq": {"status": "active"}}}
+            limit: Maximum results to return (default 1000)
+            cursor: Pagination cursor from previous response's meta.cursor
+            fields: Field paths to include in results. Each path is a list of keys for nested access.
+                    Example: [["id"], ["user", "name"]] returns id and user.name fields.
+
+        Returns:
+            WorkspacesSearchResult with typed records, pagination metadata, and optional search metadata
+
+        Raises:
+            NotImplementedError: If called in local execution mode
+        """
+        params: dict[str, Any] = {"query": query}
+        if limit is not None:
+            params["limit"] = limit
+        if cursor is not None:
+            params["cursor"] = cursor
+        if fields is not None:
+            params["fields"] = fields
+
+        result = await self._connector.execute("workspaces", "context_store_search", params)
+
+        # Parse response into typed result
+        meta_data = result.get("meta")
+        return WorkspacesSearchResult(
+            data=[
+                WorkspacesSearchData(**row)
+                for row in result.get("data", [])
+                if isinstance(row, dict)
+            ],
+            meta=AirbyteSearchMeta(
+                has_more=meta_data.get("has_more", False) if isinstance(meta_data, dict) else False,
+                cursor=meta_data.get("cursor") if isinstance(meta_data, dict) else None,
+                took_ms=meta_data.get("took_ms") if isinstance(meta_data, dict) else None,
+            ),
+        )
+
+class UsersQuery:
+    """
+    Query class for Users entity operations.
+    """
+
+    def __init__(self, connector: AsanaConnector):
+        """Initialize query with connector reference."""
+        self._connector = connector
+
+    async def list(
+        self,
+        limit: int | None = None,
+        offset: str | None = None,
+        workspace: str | None = None,
+        team: str | None = None,
+        **kwargs
+    ) -> UsersListResult:
+        """
+        Returns a paginated list of users
+
+        Args:
+            limit: Number of items to return per page
+            offset: Pagination offset token
+            workspace: The workspace to filter users on
+            team: The team to filter users on
+            **kwargs: Additional parameters
+
+        Returns:
+            UsersListResult
+        """
+        params = {k: v for k, v in {
+            "limit": limit,
+            "offset": offset,
+            "workspace": workspace,
+            "team": team,
+            **kwargs
+        }.items() if v is not None}
+
+        result = await self._connector.execute("users", "list", params)
+        # Cast generic envelope to concrete typed result
+        return UsersListResult(
+            data=result.data,
+            meta=getattr(result, "meta", None)
+        )
+
+
+
+    async def get(
+        self,
+        user_gid: str,
+        **kwargs
+    ) -> User:
+        """
+        Get a single user by their ID
+
+        Args:
+            user_gid: User GID
+            **kwargs: Additional parameters
+
+        Returns:
+            User
+        """
+        params = {k: v for k, v in {
+            "user_gid": user_gid,
+            **kwargs
+        }.items() if v is not None}
+
+        result = await self._connector.execute("users", "get", params)
+        return result
+
+
+
+    async def context_store_search(
+        self,
+        query: UsersSearchQuery,
+        limit: int | None = None,
+        cursor: str | None = None,
+        fields: list[list[str]] | None = None,
+    ) -> UsersSearchResult:
+        """
+        Search users records from Airbyte cache.
+
+        This operation searches cached data from Airbyte syncs.
+        Only available in hosted execution mode.
+
+        Available filter fields (UsersSearchFilter):
+        - email: 
+        - gid: 
+        - name: 
+        - photo: 
+        - resource_type: 
+        - workspaces: 
+
+        Args:
+            query: Filter and sort conditions. Supports operators like eq, neq, gt, gte, lt, lte,
+                   in, like, fuzzy, keyword, not, and, or. Example: {"filter": {"eq": {"status": "active"}}}
+            limit: Maximum results to return (default 1000)
+            cursor: Pagination cursor from previous response's meta.cursor
+            fields: Field paths to include in results. Each path is a list of keys for nested access.
+                    Example: [["id"], ["user", "name"]] returns id and user.name fields.
+
+        Returns:
+            UsersSearchResult with typed records, pagination metadata, and optional search metadata
+
+        Raises:
+            NotImplementedError: If called in local execution mode
+        """
+        params: dict[str, Any] = {"query": query}
+        if limit is not None:
+            params["limit"] = limit
+        if cursor is not None:
+            params["cursor"] = cursor
+        if fields is not None:
+            params["fields"] = fields
+
+        result = await self._connector.execute("users", "context_store_search", params)
+
+        # Parse response into typed result
+        meta_data = result.get("meta")
+        return UsersSearchResult(
+            data=[
+                UsersSearchData(**row)
+                for row in result.get("data", [])
+                if isinstance(row, dict)
+            ],
+            meta=AirbyteSearchMeta(
+                has_more=meta_data.get("has_more", False) if isinstance(meta_data, dict) else False,
+                cursor=meta_data.get("cursor") if isinstance(meta_data, dict) else None,
+                took_ms=meta_data.get("took_ms") if isinstance(meta_data, dict) else None,
+            ),
+        )
+
+class WorkspaceUsersQuery:
+    """
+    Query class for WorkspaceUsers entity operations.
+    """
+
+    def __init__(self, connector: AsanaConnector):
+        """Initialize query with connector reference."""
+        self._connector = connector
+
+    async def list(
+        self,
+        workspace_gid: str,
+        limit: int | None = None,
+        offset: str | None = None,
+        **kwargs
+    ) -> WorkspaceUsersListResult:
+        """
+        Returns all users in a workspace
+
+        Args:
+            workspace_gid: Workspace GID to list users from
+            limit: Number of items to return per page
+            offset: Pagination offset token
+            **kwargs: Additional parameters
+
+        Returns:
+            WorkspaceUsersListResult
+        """
+        params = {k: v for k, v in {
+            "workspace_gid": workspace_gid,
+            "limit": limit,
+            "offset": offset,
+            **kwargs
+        }.items() if v is not None}
+
+        result = await self._connector.execute("workspace_users", "list", params)
+        # Cast generic envelope to concrete typed result
+        return WorkspaceUsersListResult(
+            data=result.data,
+            meta=getattr(result, "meta", None)
+        )
+
+
+
+class TeamUsersQuery:
+    """
+    Query class for TeamUsers entity operations.
+    """
+
+    def __init__(self, connector: AsanaConnector):
+        """Initialize query with connector reference."""
+        self._connector = connector
+
+    async def list(
+        self,
+        team_gid: str,
+        limit: int | None = None,
+        offset: str | None = None,
+        **kwargs
+    ) -> TeamUsersListResult:
+        """
+        Returns all users in a team
+
+        Args:
+            team_gid: Team GID to list users from
+            limit: Number of items to return per page
+            offset: Pagination offset token
+            **kwargs: Additional parameters
+
+        Returns:
+            TeamUsersListResult
+        """
+        params = {k: v for k, v in {
+            "team_gid": team_gid,
+            "limit": limit,
+            "offset": offset,
+            **kwargs
+        }.items() if v is not None}
+
+        result = await self._connector.execute("team_users", "list", params)
+        # Cast generic envelope to concrete typed result
+        return TeamUsersListResult(
+            data=result.data,
+            meta=getattr(result, "meta", None)
+        )
+
+
+
+class TeamsQuery:
+    """
+    Query class for Teams entity operations.
+    """
+
+    def __init__(self, connector: AsanaConnector):
+        """Initialize query with connector reference."""
+        self._connector = connector
+
+    async def get(
+        self,
+        team_gid: str,
+        **kwargs
+    ) -> Team:
+        """
+        Get a single team by its ID
+
+        Args:
+            team_gid: Team GID
+            **kwargs: Additional parameters
+
+        Returns:
+            Team
+        """
+        params = {k: v for k, v in {
+            "team_gid": team_gid,
+            **kwargs
+        }.items() if v is not None}
+
+        result = await self._connector.execute("teams", "get", params)
+        return result
+
+
+
+    async def context_store_search(
+        self,
+        query: TeamsSearchQuery,
+        limit: int | None = None,
+        cursor: str | None = None,
+        fields: list[list[str]] | None = None,
+    ) -> TeamsSearchResult:
+        """
+        Search teams records from Airbyte cache.
+
+        This operation searches cached data from Airbyte syncs.
+        Only available in hosted execution mode.
+
+        Available filter fields (TeamsSearchFilter):
+        - description: 
+        - gid: 
+        - html_description: 
+        - name: 
+        - organization: 
+        - permalink_url: 
+        - resource_type: 
+
+        Args:
+            query: Filter and sort conditions. Supports operators like eq, neq, gt, gte, lt, lte,
+                   in, like, fuzzy, keyword, not, and, or. Example: {"filter": {"eq": {"status": "active"}}}
+            limit: Maximum results to return (default 1000)
+            cursor: Pagination cursor from previous response's meta.cursor
+            fields: Field paths to include in results. Each path is a list of keys for nested access.
+                    Example: [["id"], ["user", "name"]] returns id and user.name fields.
+
+        Returns:
+            TeamsSearchResult with typed records, pagination metadata, and optional search metadata
+
+        Raises:
+            NotImplementedError: If called in local execution mode
+        """
+        params: dict[str, Any] = {"query": query}
+        if limit is not None:
+            params["limit"] = limit
+        if cursor is not None:
+            params["cursor"] = cursor
+        if fields is not None:
+            params["fields"] = fields
+
+        result = await self._connector.execute("teams", "context_store_search", params)
+
+        # Parse response into typed result
+        meta_data = result.get("meta")
+        return TeamsSearchResult(
+            data=[
+                TeamsSearchData(**row)
+                for row in result.get("data", [])
+                if isinstance(row, dict)
+            ],
+            meta=AirbyteSearchMeta(
+                has_more=meta_data.get("has_more", False) if isinstance(meta_data, dict) else False,
+                cursor=meta_data.get("cursor") if isinstance(meta_data, dict) else None,
+                took_ms=meta_data.get("took_ms") if isinstance(meta_data, dict) else None,
+            ),
+        )
+
+class WorkspaceTeamsQuery:
+    """
+    Query class for WorkspaceTeams entity operations.
+    """
+
+    def __init__(self, connector: AsanaConnector):
+        """Initialize query with connector reference."""
+        self._connector = connector
+
+    async def list(
+        self,
+        workspace_gid: str,
+        limit: int | None = None,
+        offset: str | None = None,
+        **kwargs
+    ) -> WorkspaceTeamsListResult:
+        """
+        Returns all teams in a workspace
+
+        Args:
+            workspace_gid: Workspace GID to list teams from
+            limit: Number of items to return per page
+            offset: Pagination offset token
+            **kwargs: Additional parameters
+
+        Returns:
+            WorkspaceTeamsListResult
+        """
+        params = {k: v for k, v in {
+            "workspace_gid": workspace_gid,
+            "limit": limit,
+            "offset": offset,
+            **kwargs
+        }.items() if v is not None}
+
+        result = await self._connector.execute("workspace_teams", "list", params)
+        # Cast generic envelope to concrete typed result
+        return WorkspaceTeamsListResult(
+            data=result.data,
+            meta=getattr(result, "meta", None)
+        )
+
+
+
+class UserTeamsQuery:
+    """
+    Query class for UserTeams entity operations.
+    """
+
+    def __init__(self, connector: AsanaConnector):
+        """Initialize query with connector reference."""
+        self._connector = connector
+
+    async def list(
+        self,
+        user_gid: str,
+        organization: str,
+        limit: int | None = None,
+        offset: str | None = None,
+        **kwargs
+    ) -> UserTeamsListResult:
+        """
+        Returns all teams a user is a member of
+
+        Args:
+            user_gid: User GID to list teams from
+            organization: The workspace or organization to filter teams on
+            limit: Number of items to return per page
+            offset: Pagination offset token
+            **kwargs: Additional parameters
+
+        Returns:
+            UserTeamsListResult
+        """
+        params = {k: v for k, v in {
+            "user_gid": user_gid,
+            "organization": organization,
+            "limit": limit,
+            "offset": offset,
+            **kwargs
+        }.items() if v is not None}
+
+        result = await self._connector.execute("user_teams", "list", params)
+        # Cast generic envelope to concrete typed result
+        return UserTeamsListResult(
+            data=result.data,
+            meta=getattr(result, "meta", None)
+        )
+
+
+
+class AttachmentsQuery:
+    """
+    Query class for Attachments entity operations.
+    """
+
+    def __init__(self, connector: AsanaConnector):
+        """Initialize query with connector reference."""
+        self._connector = connector
+
+    async def list(
+        self,
+        parent: str,
+        limit: int | None = None,
+        offset: str | None = None,
+        **kwargs
+    ) -> AttachmentsListResult:
+        """
+        Returns a list of attachments for an object (task, project, etc.)
+
+        Args:
+            parent: Globally unique identifier for the object to fetch attachments for (e.g., a task GID)
+            limit: Number of items to return per page
+            offset: Pagination offset token
+            **kwargs: Additional parameters
+
+        Returns:
+            AttachmentsListResult
+        """
+        params = {k: v for k, v in {
+            "parent": parent,
+            "limit": limit,
+            "offset": offset,
+            **kwargs
+        }.items() if v is not None}
+
+        result = await self._connector.execute("attachments", "list", params)
+        # Cast generic envelope to concrete typed result
+        return AttachmentsListResult(
+            data=result.data,
+            meta=getattr(result, "meta", None)
+        )
+
+
+
+    async def get(
+        self,
+        attachment_gid: str,
+        **kwargs
+    ) -> Attachment:
+        """
+        Get details for a single attachment by its GID
+
+        Args:
+            attachment_gid: Globally unique identifier for the attachment
+            **kwargs: Additional parameters
+
+        Returns:
+            Attachment
+        """
+        params = {k: v for k, v in {
+            "attachment_gid": attachment_gid,
+            **kwargs
+        }.items() if v is not None}
+
+        result = await self._connector.execute("attachments", "get", params)
+        return result
+
+
+
+    async def download(
+        self,
+        attachment_gid: str,
+        range_header: str | None = None,
+        **kwargs
+    ) -> AsyncIterator[bytes]:
+        """
+        Downloads the file content of an attachment. This operation first retrieves the attachment
+metadata to get the download_url, then downloads the file from that URL.
+
+
+        Args:
+            attachment_gid: Globally unique identifier for the attachment
+            range_header: Optional Range header for partial downloads (e.g., 'bytes=0-99')
+            **kwargs: Additional parameters
+
+        Returns:
+            AsyncIterator[bytes]
+        """
+        params = {k: v for k, v in {
+            "attachment_gid": attachment_gid,
+            "range_header": range_header,
+            **kwargs
+        }.items() if v is not None}
+
+        result = await self._connector.execute("attachments", "download", params)
+        return result
+
+
+    async def download_text(
+        self,
+        attachment_gid: str,
+        range_header: str | None = None,
+        **kwargs
+    ) -> dict[str, Any]:
+        """
+        Downloads the file content of an attachment. This operation first retrieves the attachment
+metadata to get the download_url, then downloads the file from that URL.
+ and return a JSON-safe UTF-8 text chunk.
+        """
+        params = {k: v for k, v in {
+            "attachment_gid": attachment_gid,
+            "range_header": range_header,
+            **kwargs,
+            "_airbyte_response_type": "json",
+            "_airbyte_response_format": "text",
+        }.items() if v is not None}
+
+        return await self._connector.execute("attachments", "download", params)
+
+    async def download_base64(
+        self,
+        attachment_gid: str,
+        range_header: str | None = None,
+        **kwargs
+    ) -> dict[str, Any]:
+        """
+        Downloads the file content of an attachment. This operation first retrieves the attachment
+metadata to get the download_url, then downloads the file from that URL.
+ and return a JSON-safe base64 chunk.
+        """
+        params = {k: v for k, v in {
+            "attachment_gid": attachment_gid,
+            "range_header": range_header,
+            **kwargs,
+            "_airbyte_response_type": "json",
+            "_airbyte_response_format": "base64",
+        }.items() if v is not None}
+
+        return await self._connector.execute("attachments", "download", params)
+
+    async def download_local(
+        self,
+        attachment_gid: str,
+        path: str,
+        range_header: str | None = None,
+        **kwargs
+    ) -> Path:
+        """
+        Downloads the file content of an attachment. This operation first retrieves the attachment
+metadata to get the download_url, then downloads the file from that URL.
+ and save to file.
+
+        Args:
+            attachment_gid: Globally unique identifier for the attachment
+            range_header: Optional Range header for partial downloads (e.g., 'bytes=0-99')
+            path: File path to save downloaded content
+            **kwargs: Additional parameters
+
+        Returns:
+            str: Path to the downloaded file
+        """
+        from airbyte_agent_sdk import save_download
+
+        # Get the async iterator
+        content_iterator = await self.download(
+            attachment_gid=attachment_gid,
+            range_header=range_header,
+            **kwargs
+        )
+
+        return await save_download(content_iterator, path)
+
+
+    async def context_store_search(
+        self,
+        query: AttachmentsSearchQuery,
+        limit: int | None = None,
+        cursor: str | None = None,
+        fields: list[list[str]] | None = None,
+    ) -> AttachmentsSearchResult:
+        """
+        Search attachments records from Airbyte cache.
+
+        This operation searches cached data from Airbyte syncs.
+        Only available in hosted execution mode.
+
+        Available filter fields (AttachmentsSearchFilter):
+        - connected_to_app: 
+        - created_at: 
+        - download_url: 
+        - gid: 
+        - host: 
+        - name: 
+        - parent: 
+        - permanent_url: 
+        - resource_subtype: 
+        - resource_type: 
+        - size: 
+        - view_url: 
+
+        Args:
+            query: Filter and sort conditions. Supports operators like eq, neq, gt, gte, lt, lte,
+                   in, like, fuzzy, keyword, not, and, or. Example: {"filter": {"eq": {"status": "active"}}}
+            limit: Maximum results to return (default 1000)
+            cursor: Pagination cursor from previous response's meta.cursor
+            fields: Field paths to include in results. Each path is a list of keys for nested access.
+                    Example: [["id"], ["user", "name"]] returns id and user.name fields.
+
+        Returns:
+            AttachmentsSearchResult with typed records, pagination metadata, and optional search metadata
+
+        Raises:
+            NotImplementedError: If called in local execution mode
+        """
+        params: dict[str, Any] = {"query": query}
+        if limit is not None:
+            params["limit"] = limit
+        if cursor is not None:
+            params["cursor"] = cursor
+        if fields is not None:
+            params["fields"] = fields
+
+        result = await self._connector.execute("attachments", "context_store_search", params)
+
+        # Parse response into typed result
+        meta_data = result.get("meta")
+        return AttachmentsSearchResult(
+            data=[
+                AttachmentsSearchData(**row)
+                for row in result.get("data", [])
+                if isinstance(row, dict)
+            ],
+            meta=AirbyteSearchMeta(
+                has_more=meta_data.get("has_more", False) if isinstance(meta_data, dict) else False,
+                cursor=meta_data.get("cursor") if isinstance(meta_data, dict) else None,
+                took_ms=meta_data.get("took_ms") if isinstance(meta_data, dict) else None,
+            ),
+        )
+
+class WorkspaceTagsQuery:
+    """
+    Query class for WorkspaceTags entity operations.
+    """
+
+    def __init__(self, connector: AsanaConnector):
+        """Initialize query with connector reference."""
+        self._connector = connector
+
+    async def list(
+        self,
+        workspace_gid: str,
+        limit: int | None = None,
+        offset: str | None = None,
+        **kwargs
+    ) -> WorkspaceTagsListResult:
+        """
+        Returns all tags in a workspace
+
+        Args:
+            workspace_gid: Workspace GID to list tags from
+            limit: Number of items to return per page
+            offset: Pagination offset token
+            **kwargs: Additional parameters
+
+        Returns:
+            WorkspaceTagsListResult
+        """
+        params = {k: v for k, v in {
+            "workspace_gid": workspace_gid,
+            "limit": limit,
+            "offset": offset,
+            **kwargs
+        }.items() if v is not None}
+
+        result = await self._connector.execute("workspace_tags", "list", params)
+        # Cast generic envelope to concrete typed result
+        return WorkspaceTagsListResult(
+            data=result.data,
+            meta=getattr(result, "meta", None)
+        )
+
+
+
+    async def create(
+        self,
+        data: WorkspaceTagsCreateParamsData,
+        workspace_gid: str,
+        **kwargs
+    ) -> Tag:
+        """
+        Creates a new tag in a workspace or organization. Every tag is required to be
+created in a specific workspace or organization, and this cannot be changed once set.
+Returns the full record of the newly created tag.
+
+
+        Args:
+            data: Parameter data
+            workspace_gid: Globally unique identifier for the workspace or organization
+            **kwargs: Additional parameters
+
+        Returns:
+            Tag
+        """
+        params = {k: v for k, v in {
+            "data": data,
+            "workspace_gid": workspace_gid,
+            **kwargs
+        }.items() if v is not None}
+
+        result = await self._connector.execute("workspace_tags", "create", params)
+        return result
+
+
+
+class TagsQuery:
+    """
+    Query class for Tags entity operations.
+    """
+
+    def __init__(self, connector: AsanaConnector):
+        """Initialize query with connector reference."""
+        self._connector = connector
+
+    async def get(
+        self,
+        tag_gid: str,
+        **kwargs
+    ) -> Tag:
+        """
+        Get a single tag by its ID
+
+        Args:
+            tag_gid: Tag GID
+            **kwargs: Additional parameters
+
+        Returns:
+            Tag
+        """
+        params = {k: v for k, v in {
+            "tag_gid": tag_gid,
+            **kwargs
+        }.items() if v is not None}
+
+        result = await self._connector.execute("tags", "get", params)
+        return result
+
+
+
+    async def update(
+        self,
+        data: TagsUpdateParamsData,
+        tag_gid: str,
+        **kwargs
+    ) -> Tag:
+        """
+        Updates the properties of a tag. Only the fields provided in the data block will
+be updated; any unspecified fields will remain unchanged. Returns the complete
+updated tag record.
+
+
+        Args:
+            data: Parameter data
+            tag_gid: The tag to update
+            **kwargs: Additional parameters
+
+        Returns:
+            Tag
+        """
+        params = {k: v for k, v in {
+            "data": data,
+            "tag_gid": tag_gid,
+            **kwargs
+        }.items() if v is not None}
+
+        result = await self._connector.execute("tags", "update", params)
+        return result
+
+
+
+    async def delete(
+        self,
+        tag_gid: str,
+        **kwargs
+    ) -> dict[str, Any]:
+        """
+        A specific, existing tag can be deleted by making a DELETE request on the URL
+for that tag. Returns an empty data record.
+
+
+        Args:
+            tag_gid: The tag to delete
+            **kwargs: Additional parameters
+
+        Returns:
+            dict[str, Any]
+        """
+        params = {k: v for k, v in {
+            "tag_gid": tag_gid,
+            **kwargs
+        }.items() if v is not None}
+
+        result = await self._connector.execute("tags", "delete", params)
+        return result
+
+
+
+    async def context_store_search(
+        self,
+        query: TagsSearchQuery,
+        limit: int | None = None,
+        cursor: str | None = None,
+        fields: list[list[str]] | None = None,
+    ) -> TagsSearchResult:
+        """
+        Search tags records from Airbyte cache.
+
+        This operation searches cached data from Airbyte syncs.
+        Only available in hosted execution mode.
+
+        Available filter fields (TagsSearchFilter):
+        - color: 
+        - followers: 
+        - gid: 
+        - name: 
+        - permalink_url: 
+        - resource_type: 
+        - workspace: 
+
+        Args:
+            query: Filter and sort conditions. Supports operators like eq, neq, gt, gte, lt, lte,
+                   in, like, fuzzy, keyword, not, and, or. Example: {"filter": {"eq": {"status": "active"}}}
+            limit: Maximum results to return (default 1000)
+            cursor: Pagination cursor from previous response's meta.cursor
+            fields: Field paths to include in results. Each path is a list of keys for nested access.
+                    Example: [["id"], ["user", "name"]] returns id and user.name fields.
+
+        Returns:
+            TagsSearchResult with typed records, pagination metadata, and optional search metadata
+
+        Raises:
+            NotImplementedError: If called in local execution mode
+        """
+        params: dict[str, Any] = {"query": query}
+        if limit is not None:
+            params["limit"] = limit
+        if cursor is not None:
+            params["cursor"] = cursor
+        if fields is not None:
+            params["fields"] = fields
+
+        result = await self._connector.execute("tags", "context_store_search", params)
+
+        # Parse response into typed result
+        meta_data = result.get("meta")
+        return TagsSearchResult(
+            data=[
+                TagsSearchData(**row)
+                for row in result.get("data", [])
+                if isinstance(row, dict)
+            ],
+            meta=AirbyteSearchMeta(
+                has_more=meta_data.get("has_more", False) if isinstance(meta_data, dict) else False,
+                cursor=meta_data.get("cursor") if isinstance(meta_data, dict) else None,
+                took_ms=meta_data.get("took_ms") if isinstance(meta_data, dict) else None,
+            ),
+        )
+
+class TagTasksQuery:
+    """
+    Query class for TagTasks entity operations.
+    """
+
+    def __init__(self, connector: AsanaConnector):
+        """Initialize query with connector reference."""
+        self._connector = connector
+
+    async def list(
+        self,
+        tag_gid: str,
+        limit: int | None = None,
+        offset: str | None = None,
+        **kwargs
+    ) -> TagTasksListResult:
+        """
+        Returns the compact task records for all tasks with the given tag.
+Tasks can have more than one tag at a time.
+
+
+        Args:
+            tag_gid: Globally unique identifier for the tag
+            limit: Number of items to return per page
+            offset: Pagination offset token
+            **kwargs: Additional parameters
+
+        Returns:
+            TagTasksListResult
+        """
+        params = {k: v for k, v in {
+            "tag_gid": tag_gid,
+            "limit": limit,
+            "offset": offset,
+            **kwargs
+        }.items() if v is not None}
+
+        result = await self._connector.execute("tag_tasks", "list", params)
+        # Cast generic envelope to concrete typed result
+        return TagTasksListResult(
+            data=result.data,
+            meta=getattr(result, "meta", None)
+        )
+
+
+
+class ProjectSectionsQuery:
+    """
+    Query class for ProjectSections entity operations.
+    """
+
+    def __init__(self, connector: AsanaConnector):
+        """Initialize query with connector reference."""
+        self._connector = connector
+
+    async def list(
+        self,
+        project_gid: str,
+        limit: int | None = None,
+        offset: str | None = None,
+        **kwargs
+    ) -> ProjectSectionsListResult:
+        """
+        Returns all sections in a project
+
+        Args:
+            project_gid: Project GID to list sections from
+            limit: Number of items to return per page
+            offset: Pagination offset token
+            **kwargs: Additional parameters
+
+        Returns:
+            ProjectSectionsListResult
+        """
+        params = {k: v for k, v in {
+            "project_gid": project_gid,
+            "limit": limit,
+            "offset": offset,
+            **kwargs
+        }.items() if v is not None}
+
+        result = await self._connector.execute("project_sections", "list", params)
+        # Cast generic envelope to concrete typed result
+        return ProjectSectionsListResult(
+            data=result.data,
+            meta=getattr(result, "meta", None)
+        )
+
+
+
+    async def create(
+        self,
+        data: ProjectSectionsCreateParamsData,
+        project_gid: str,
+        **kwargs
+    ) -> Section:
+        """
+        Creates a new section in a project. Returns the full record of the newly created section.
+
+
+        Args:
+            data: Parameter data
+            project_gid: Globally unique identifier for the project
+            **kwargs: Additional parameters
+
+        Returns:
+            Section
+        """
+        params = {k: v for k, v in {
+            "data": data,
+            "project_gid": project_gid,
+            **kwargs
+        }.items() if v is not None}
+
+        result = await self._connector.execute("project_sections", "create", params)
+        return result
+
+
+
+class SectionsQuery:
+    """
+    Query class for Sections entity operations.
+    """
+
+    def __init__(self, connector: AsanaConnector):
+        """Initialize query with connector reference."""
+        self._connector = connector
+
+    async def get(
+        self,
+        section_gid: str,
+        **kwargs
+    ) -> Section:
+        """
+        Get a single section by its ID
+
+        Args:
+            section_gid: Section GID
+            **kwargs: Additional parameters
+
+        Returns:
+            Section
+        """
+        params = {k: v for k, v in {
+            "section_gid": section_gid,
+            **kwargs
+        }.items() if v is not None}
+
+        result = await self._connector.execute("sections", "get", params)
+        return result
+
+
+
+    async def update(
+        self,
+        data: SectionsUpdateParamsData,
+        section_gid: str,
+        **kwargs
+    ) -> Section:
+        """
+        A specific, existing section can be updated by making a PUT request on the URL for
+that section. Only the fields provided in the data block will be updated; any unspecified
+fields will remain unchanged. Currently only the name field can be updated.
+
+
+        Args:
+            data: Parameter data
+            section_gid: The section to update
+            **kwargs: Additional parameters
+
+        Returns:
+            Section
+        """
+        params = {k: v for k, v in {
+            "data": data,
+            "section_gid": section_gid,
+            **kwargs
+        }.items() if v is not None}
+
+        result = await self._connector.execute("sections", "update", params)
+        return result
+
+
+
+    async def delete(
+        self,
+        section_gid: str,
+        **kwargs
+    ) -> dict[str, Any]:
+        """
+        A specific, existing section can be deleted by making a DELETE request on the URL
+for that section. Note that sections must be empty to be deleted. The last remaining
+section in a project cannot be deleted.
+
+
+        Args:
+            section_gid: The section to delete
+            **kwargs: Additional parameters
+
+        Returns:
+            dict[str, Any]
+        """
+        params = {k: v for k, v in {
+            "section_gid": section_gid,
+            **kwargs
+        }.items() if v is not None}
+
+        result = await self._connector.execute("sections", "delete", params)
+        return result
+
+
+
+    async def context_store_search(
+        self,
+        query: SectionsSearchQuery,
+        limit: int | None = None,
+        cursor: str | None = None,
+        fields: list[list[str]] | None = None,
+    ) -> SectionsSearchResult:
+        """
+        Search sections records from Airbyte cache.
+
+        This operation searches cached data from Airbyte syncs.
+        Only available in hosted execution mode.
+
+        Available filter fields (SectionsSearchFilter):
+        - created_at: 
+        - gid: 
+        - name: 
+        - project: 
+        - resource_type: 
+
+        Args:
+            query: Filter and sort conditions. Supports operators like eq, neq, gt, gte, lt, lte,
+                   in, like, fuzzy, keyword, not, and, or. Example: {"filter": {"eq": {"status": "active"}}}
+            limit: Maximum results to return (default 1000)
+            cursor: Pagination cursor from previous response's meta.cursor
+            fields: Field paths to include in results. Each path is a list of keys for nested access.
+                    Example: [["id"], ["user", "name"]] returns id and user.name fields.
+
+        Returns:
+            SectionsSearchResult with typed records, pagination metadata, and optional search metadata
+
+        Raises:
+            NotImplementedError: If called in local execution mode
+        """
+        params: dict[str, Any] = {"query": query}
+        if limit is not None:
+            params["limit"] = limit
+        if cursor is not None:
+            params["cursor"] = cursor
+        if fields is not None:
+            params["fields"] = fields
+
+        result = await self._connector.execute("sections", "context_store_search", params)
+
+        # Parse response into typed result
+        meta_data = result.get("meta")
+        return SectionsSearchResult(
+            data=[
+                SectionsSearchData(**row)
+                for row in result.get("data", [])
+                if isinstance(row, dict)
+            ],
+            meta=AirbyteSearchMeta(
+                has_more=meta_data.get("has_more", False) if isinstance(meta_data, dict) else False,
+                cursor=meta_data.get("cursor") if isinstance(meta_data, dict) else None,
+                took_ms=meta_data.get("took_ms") if isinstance(meta_data, dict) else None,
+            ),
+        )
+
+class SectionTasksQuery:
+    """
+    Query class for SectionTasks entity operations.
+    """
+
+    def __init__(self, connector: AsanaConnector):
+        """Initialize query with connector reference."""
+        self._connector = connector
+
+    async def list(
+        self,
+        section_gid: str,
+        limit: int | None = None,
+        offset: str | None = None,
+        completed_since: str | None = None,
+        **kwargs
+    ) -> SectionTasksListResult:
+        """
+        Returns the compact task records for all tasks within the given section.
+
+        Args:
+            section_gid: The globally unique identifier for the section
+            limit: Number of items to return per page
+            offset: Pagination offset token
+            completed_since: Only return tasks that are either incomplete or that have been completed since this time
+            **kwargs: Additional parameters
+
+        Returns:
+            SectionTasksListResult
+        """
+        params = {k: v for k, v in {
+            "section_gid": section_gid,
+            "limit": limit,
+            "offset": offset,
+            "completed_since": completed_since,
+            **kwargs
+        }.items() if v is not None}
+
+        result = await self._connector.execute("section_tasks", "list", params)
+        # Cast generic envelope to concrete typed result
+        return SectionTasksListResult(
+            data=result.data,
+            meta=getattr(result, "meta", None)
+        )
+
+
+
+    async def create(
+        self,
+        data: SectionTasksCreateParamsData,
+        section_gid: str,
+        **kwargs
+    ) -> dict[str, Any]:
+        """
+        Add a task to a specific, existing section. This will remove the task from other
+sections of the project. The task will be inserted at the top of the section unless
+an insert_before or insert_after parameter is declared.
+
+
+        Args:
+            data: Parameter data
+            section_gid: The globally unique identifier for the section
+            **kwargs: Additional parameters
+
+        Returns:
+            dict[str, Any]
+        """
+        params = {k: v for k, v in {
+            "data": data,
+            "section_gid": section_gid,
+            **kwargs
+        }.items() if v is not None}
+
+        result = await self._connector.execute("section_tasks", "create", params)
+        return result
+
+
+
+class TaskSubtasksQuery:
+    """
+    Query class for TaskSubtasks entity operations.
+    """
+
+    def __init__(self, connector: AsanaConnector):
+        """Initialize query with connector reference."""
+        self._connector = connector
+
+    async def list(
+        self,
+        task_gid: str,
+        limit: int | None = None,
+        offset: str | None = None,
+        **kwargs
+    ) -> TaskSubtasksListResult:
+        """
+        Returns all subtasks of a task
+
+        Args:
+            task_gid: Task GID to list subtasks from
+            limit: Number of items to return per page
+            offset: Pagination offset token
+            **kwargs: Additional parameters
+
+        Returns:
+            TaskSubtasksListResult
+        """
+        params = {k: v for k, v in {
+            "task_gid": task_gid,
+            "limit": limit,
+            "offset": offset,
+            **kwargs
+        }.items() if v is not None}
+
+        result = await self._connector.execute("task_subtasks", "list", params)
+        # Cast generic envelope to concrete typed result
+        return TaskSubtasksListResult(
+            data=result.data,
+            meta=getattr(result, "meta", None)
+        )
+
+
+
+class TaskDependenciesQuery:
+    """
+    Query class for TaskDependencies entity operations.
+    """
+
+    def __init__(self, connector: AsanaConnector):
+        """Initialize query with connector reference."""
+        self._connector = connector
+
+    async def list(
+        self,
+        task_gid: str,
+        limit: int | None = None,
+        offset: str | None = None,
+        **kwargs
+    ) -> TaskDependenciesListResult:
+        """
+        Returns all tasks that this task depends on
+
+        Args:
+            task_gid: Task GID to list dependencies from
+            limit: Number of items to return per page
+            offset: Pagination offset token
+            **kwargs: Additional parameters
+
+        Returns:
+            TaskDependenciesListResult
+        """
+        params = {k: v for k, v in {
+            "task_gid": task_gid,
+            "limit": limit,
+            "offset": offset,
+            **kwargs
+        }.items() if v is not None}
+
+        result = await self._connector.execute("task_dependencies", "list", params)
+        # Cast generic envelope to concrete typed result
+        return TaskDependenciesListResult(
+            data=result.data,
+            meta=getattr(result, "meta", None)
+        )
+
+
+
+class TaskDependentsQuery:
+    """
+    Query class for TaskDependents entity operations.
+    """
+
+    def __init__(self, connector: AsanaConnector):
+        """Initialize query with connector reference."""
+        self._connector = connector
+
+    async def list(
+        self,
+        task_gid: str,
+        limit: int | None = None,
+        offset: str | None = None,
+        **kwargs
+    ) -> TaskDependentsListResult:
+        """
+        Returns all tasks that depend on this task
+
+        Args:
+            task_gid: Task GID to list dependents from
+            limit: Number of items to return per page
+            offset: Pagination offset token
+            **kwargs: Additional parameters
+
+        Returns:
+            TaskDependentsListResult
+        """
+        params = {k: v for k, v in {
+            "task_gid": task_gid,
+            "limit": limit,
+            "offset": offset,
+            **kwargs
+        }.items() if v is not None}
+
+        result = await self._connector.execute("task_dependents", "list", params)
+        # Cast generic envelope to concrete typed result
+        return TaskDependentsListResult(
+            data=result.data,
+            meta=getattr(result, "meta", None)
+        )
+
+
+
+class TaskStoriesQuery:
+    """
+    Query class for TaskStories entity operations.
+    """
+
+    def __init__(self, connector: AsanaConnector):
+        """Initialize query with connector reference."""
+        self._connector = connector
+
+    async def create(
+        self,
+        data: TaskStoriesCreateParamsData,
+        task_gid: str,
+        **kwargs
+    ) -> Story:
+        """
+        Adds a comment to a task. The comment will be authored by the currently
+authenticated user, and timestamped when the server receives the request.
+
+
+        Args:
+            data: Parameter data
+            task_gid: The task to add a comment to
+            **kwargs: Additional parameters
+
+        Returns:
+            Story
+        """
+        params = {k: v for k, v in {
+            "data": data,
+            "task_gid": task_gid,
+            **kwargs
+        }.items() if v is not None}
+
+        result = await self._connector.execute("task_stories", "create", params)
+        return result
+
+
+
+class TaskTagsQuery:
+    """
+    Query class for TaskTags entity operations.
+    """
+
+    def __init__(self, connector: AsanaConnector):
+        """Initialize query with connector reference."""
+        self._connector = connector
+
+    async def create(
+        self,
+        data: TaskTagsCreateParamsData,
+        task_gid: str,
+        **kwargs
+    ) -> dict[str, Any]:
+        """
+        Adds a tag to a task. Returns an empty data block.
+
+
+        Args:
+            data: Parameter data
+            task_gid: The task to operate on
+            **kwargs: Additional parameters
+
+        Returns:
+            dict[str, Any]
+        """
+        params = {k: v for k, v in {
+            "data": data,
+            "task_gid": task_gid,
+            **kwargs
+        }.items() if v is not None}
+
+        result = await self._connector.execute("task_tags", "create", params)
+        return result
+
+
+
+    async def delete(
+        self,
+        data: TaskTagsDeleteParamsData,
+        task_gid: str,
+        **kwargs
+    ) -> dict[str, Any]:
+        """
+        Removes a tag from a task. Returns an empty data block.
+
+
+        Args:
+            data: Parameter data
+            task_gid: The task to operate on
+            **kwargs: Additional parameters
+
+        Returns:
+            dict[str, Any]
+        """
+        params = {k: v for k, v in {
+            "data": data,
+            "task_gid": task_gid,
+            **kwargs
+        }.items() if v is not None}
+
+        result = await self._connector.execute("task_tags", "delete", params)
+        return result
+
+
+
+class WorkspaceMembershipsQuery:
+    """
+    Query class for WorkspaceMemberships entity operations.
+    """
+
+    def __init__(self, connector: AsanaConnector):
+        """Initialize query with connector reference."""
+        self._connector = connector
+
+    async def create(
+        self,
+        data: WorkspaceMembershipsCreateParamsData,
+        workspace_gid: str,
+        **kwargs
+    ) -> User:
+        """
+        Add a user to a workspace or organization. The user can be referenced by their
+globally unique user ID or their email address. Returns the full user record
+for the invited user.
+
+
+        Args:
+            data: Parameter data
+            workspace_gid: The workspace or organization to add the user to
+            **kwargs: Additional parameters
+
+        Returns:
+            User
+        """
+        params = {k: v for k, v in {
+            "data": data,
+            "workspace_gid": workspace_gid,
+            **kwargs
+        }.items() if v is not None}
+
+        result = await self._connector.execute("workspace_memberships", "create", params)
+        return result
+
+

@@ -1,0 +1,233 @@
+"""
+Auto-generated cassette tests for {{ connector_name.title() }} connector.
+
+These tests are generated from cassette YAML files and test the connector
+against recorded API responses.
+"""
+
+import pytest
+from unittest.mock import AsyncMock, patch
+
+from {{ package_name }} import {{ class_name }}
+{% if auth_config %}
+{%- if auth_config.options | length == 1 %}
+from {{ package_name }}.models import {{ auth_config.type_name }}
+{%- else %}
+from {{ package_name }}.models import {{ auth_config.type_name }}{% for option in auth_config.options %}, {{ auth_config.base_name }}{{ option.type_suffix }}AuthConfig{% endfor %}
+{%- endif %}
+{% endif %}
+
+{% for test in cassette_tests %}
+
+@pytest.mark.asyncio
+async def test_{{ test.test_name }}():
+    """{{ test.description }}"""
+{% if test.is_download %}
+    import base64
+    from unittest.mock import Mock
+
+    # Expected binary data from cassette
+    expected_base64 = """{{ test.expected_base64 }}"""
+    expected_data = base64.b64decode(expected_base64)
+
+    # Mock metadata response (first request)
+    mock_metadata_response = {{ test.response_repr }}
+
+    # Mock file download response (second request)
+    mock_file_response = Mock()
+    mock_file_response.status_code = 200
+    mock_file_response.headers = {}
+    mock_file_response.raise_for_status.return_value = None
+
+    async def mock_aiter_bytes(chunk_size=None):
+        yield expected_data
+
+    mock_file_response.aiter_bytes = mock_aiter_bytes
+
+    # Create mock that returns different values based on stream parameter
+    # This handles both two-step downloads (metadata + file) and one-step direct downloads
+    async def mock_request_with_stream(*args, **kwargs):
+        stream = kwargs.get('stream', False)
+        if stream:
+            # Streaming request: file download
+            return (mock_file_response, {})
+        else:
+            # Non-streaming request: metadata request
+            return (mock_metadata_response, {})
+
+    connector = {{ class_name }}(auth_config={% if test.auth_config_class_name %}{{ test.auth_config_class_name }}{% else %}{{ auth_config.type_name }}{% endif %}(**{ {{- test.secrets_dict -}} }){% if test.server_vars_kwargs %}, {{ test.server_vars_kwargs }}{% endif %})
+
+    with patch(
+        "{{ http_client_patch_path }}",
+        new=mock_request_with_stream
+    ):
+        result = await connector.{{ test.entity }}.{{ test.action }}({{ test.kwargs_str }})
+
+        # Consume the async iterator to get all chunks
+        chunks = []
+        async for chunk in result:
+            chunks.append(chunk)
+        downloaded_data = b''.join(chunks)
+
+    assert downloaded_data == expected_data
+{% else %}
+    mock_response = {{ test.response_repr }}
+
+    connector = {{ class_name }}(auth_config={% if test.auth_config_class_name %}{{ test.auth_config_class_name }}{% else %}{{ auth_config.type_name }}{% endif %}(**{ {{- test.secrets_dict -}} }){% if test.server_vars_kwargs %}, {{ test.server_vars_kwargs }}{% endif %})
+
+    with patch(
+        "{{ http_client_patch_path }}",
+        new=AsyncMock(return_value=(mock_response, {}))
+    ):
+        result = await connector.{{ test.entity }}.{{ test.action }}({{ test.kwargs_str }})
+{% if test.needs_envelope %}
+
+    # Verify envelope structure
+    assert hasattr(result, "data")
+
+    # Extract expected data from mock response using JSONPath
+    from jsonpath_ng import parse as parse_jsonpath
+    record_path = parse_jsonpath("{{ test.record_extractor }}")
+    record_matches = record_path.find(mock_response)
+
+    if record_matches:
+        # Mirror local_executor._extract_records discrimination:
+        # - len > 1: per-element projection, list of values.
+        # - len == 1: pass through if already-shaped (list / root / no-`[*]` extractor);
+        #   otherwise wrap as singleton list to honor `data: list[X]`.
+        _contains_wildcard = "[*]" in "{{ test.record_extractor }}"
+        if len(record_matches) == 1:
+            _single = record_matches[0].value
+            if isinstance(_single, list) or _single is mock_response or not _contains_wildcard:
+                expected_data = _single
+            else:
+                expected_data = [_single]
+        else:
+            expected_data = [m.value for m in record_matches]
+{% if test.record_transform %}
+
+        # Apply x-airbyte-record-transform to expected records.
+        # Mirrors SDK runtime order: extract -> transform -> filter.
+        # Primitive records are wrapped as {value: ...} matching LocalExecutor._apply_record_transform.
+        from jinja2 import Environment as _TEnv, StrictUndefined as _TStrictUndefined
+        _transform_env = _TEnv(undefined=_TStrictUndefined, autoescape=False)
+        _transform_map = {{ test.record_transform | tojson }}
+
+        def _apply_transform(rec):
+            ctx = rec if isinstance(rec, dict) else {"value": rec}
+            transformed = {k: _transform_env.from_string(v).render(record=ctx, config={}) for k, v in _transform_map.items()}
+            if isinstance(rec, dict):
+                return {**rec, **transformed}
+            return transformed
+
+        if isinstance(expected_data, list):
+            expected_data = [_apply_transform(r) for r in expected_data]
+        else:
+            expected_data = _apply_transform(expected_data)
+{% endif %}
+{% if test.record_filter %}
+
+        # Apply x-airbyte-record-filter (Jinja expression) to expected records.
+        # Evaluation errors propagate intentionally: mirrors runtime behavior in
+        # LocalExecutor._apply_record_filter, where fail-loud is the safe default
+        # for privacy-critical filters (see SDK docs for x-airbyte-record-filter).
+        from jinja2 import Environment, StrictUndefined
+        _filter_env = Environment(undefined=StrictUndefined, autoescape=False)
+        _filter_tpl = _filter_env.from_string({{ test.record_filter | tojson }})
+        _falsy_rendered = {"False", "false", "0", "None", "none", "null", ""}
+
+        def _record_filter_keep(r):
+            _rendered = _filter_tpl.render(record=r, config={})
+            if isinstance(_rendered, bool):
+                return _rendered
+            if isinstance(_rendered, str):
+                return _rendered.strip() not in _falsy_rendered
+            return bool(_rendered)
+
+        if isinstance(expected_data, list):
+            expected_data = [r for r in expected_data if not isinstance(r, dict) or _record_filter_keep(r)]
+        elif isinstance(expected_data, dict):
+            expected_data = expected_data if _record_filter_keep(expected_data) else []
+{% endif %}
+
+        # Convert Pydantic models to dict for comparison
+        if isinstance(result.data, list):
+            actual_data = [item.model_dump(exclude_none=True, by_alias=True) if hasattr(item, 'model_dump') else item for item in result.data]
+        elif hasattr(result.data, 'model_dump'):
+            actual_data = result.data.model_dump(exclude_none=True, by_alias=True)
+        else:
+            actual_data = result.data
+
+        assert actual_data == expected_data
+    else:
+        # When JSONPath doesn't match, expect None or empty array
+        assert result.data is None or result.data == []
+{% if test.meta_extractor %}
+
+    # Verify metadata
+    assert hasattr(result, "meta")
+{%- for meta_field_name, meta_jsonpath in test.meta_extractor.items() %}
+{%- if not meta_jsonpath.startswith("@link.") and not meta_jsonpath.startswith("@header.") %}
+
+    meta_path_{{ meta_field_name }} = parse_jsonpath("{{ meta_jsonpath }}")
+    meta_matches_{{ meta_field_name }} = meta_path_{{ meta_field_name }}.find(mock_response)
+    if meta_matches_{{ meta_field_name }}:
+        expected_meta_{{ meta_field_name }} = meta_matches_{{ meta_field_name }}[0].value
+        actual_meta_{{ meta_field_name }} = result.meta.{{ meta_field_name | snake_case }}
+        # Convert Pydantic model(s) to dict for comparison with the raw JSONPath match.
+        if isinstance(actual_meta_{{ meta_field_name }}, list):
+            actual_meta_{{ meta_field_name }} = [
+                item.model_dump(exclude_none=True, by_alias=True) if hasattr(item, 'model_dump') else item
+                for item in actual_meta_{{ meta_field_name }}
+            ]
+        elif hasattr(actual_meta_{{ meta_field_name }}, 'model_dump'):
+            actual_meta_{{ meta_field_name }} = actual_meta_{{ meta_field_name }}.model_dump(exclude_none=True, by_alias=True)
+        assert actual_meta_{{ meta_field_name }} == expected_meta_{{ meta_field_name }}
+{%- endif %}
+{%- endfor %}
+{%- endif %}
+{% else %}
+    # Extract expected data from mock response using JSONPath
+    from jsonpath_ng import parse as parse_jsonpath
+    record_path = parse_jsonpath("{{ test.record_extractor }}")
+    record_matches = record_path.find(mock_response)
+
+    if record_matches:
+        # Non-envelope (get/create/update/delete): runtime returns matches[0] directly
+        # (local_executor.py:1881). Mirror that here.
+        if len(record_matches) > 1:
+            expected_data = [m.value for m in record_matches]
+        else:
+            expected_data = record_matches[0].value
+{% if test.record_transform %}
+
+        # Apply x-airbyte-record-transform to expected records (non-envelope path).
+        # Runtime applies transform unconditionally — mirrors extract -> transform order.
+        from jinja2 import Environment as _TEnv2, StrictUndefined as _TStrict2
+        _ne_transform_env = _TEnv2(undefined=_TStrict2, autoescape=False)
+        _ne_transform_map = {{ test.record_transform | tojson }}
+
+        def _ne_apply_transform(rec):
+            ctx = rec if isinstance(rec, dict) else {"value": rec}
+            return {k: _ne_transform_env.from_string(v).render(record=ctx, config={}) for k, v in _ne_transform_map.items()}
+
+        if isinstance(expected_data, list):
+            expected_data = [_ne_apply_transform(r) for r in expected_data]
+        else:
+            expected_data = _ne_apply_transform(expected_data)
+{% endif %}
+
+        # Convert Pydantic models to dict for comparison
+        if hasattr(result, 'model_dump'):
+            actual_data = result.model_dump(exclude_none=True, by_alias=True)
+        else:
+            actual_data = result
+
+        assert actual_data == expected_data
+    else:
+        # When JSONPath doesn't match, expect None
+        assert result is None
+{%- endif %}
+{%- endif %}
+
+{% endfor %}

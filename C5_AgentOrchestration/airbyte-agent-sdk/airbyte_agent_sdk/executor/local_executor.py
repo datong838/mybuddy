@@ -1,0 +1,3051 @@
+"""Local executor for direct HTTP execution of connector operations."""
+
+from __future__ import annotations
+
+import asyncio
+import base64
+import codecs
+import inspect
+import json as json_module
+import logging
+import os
+import re
+import time
+import uuid
+from collections.abc import AsyncIterator, Awaitable
+from datetime import UTC, datetime, timedelta
+from typing import Any, Protocol, overload
+from urllib.parse import quote
+
+from jinja2 import Environment, StrictUndefined, Template
+from jinja2.sandbox import SandboxedEnvironment
+from jsonpath_ng import parse as parse_jsonpath
+from opentelemetry import trace
+
+from airbyte_agent_sdk.auth_template import apply_auth_mapping
+from airbyte_agent_sdk.connector_model_loader import load_connector_model
+from airbyte_agent_sdk.constants import (
+    DEFAULT_MAX_CONNECTIONS,
+    DEFAULT_MAX_KEEPALIVE_CONNECTIONS,
+)
+from airbyte_agent_sdk.http.exceptions import ConnectorValidationError, HTTPClientError
+from airbyte_agent_sdk.http_client import HTTPClient, TokenRefreshCallback
+from airbyte_agent_sdk.logging import NullLogger, RequestLogger
+from airbyte_agent_sdk.observability import ObservabilitySession
+from airbyte_agent_sdk.schema.extensions import EntityRelationshipConfig, RetryConfig, ScopingParamConfig
+from airbyte_agent_sdk.schema.security import AuthConfigSpec
+from airbyte_agent_sdk.secrets import SecretStr
+from airbyte_agent_sdk.telemetry import SegmentTracker
+from airbyte_agent_sdk.types import (
+    Action,
+    AuthConfig,
+    AuthOption,
+    ConnectorModel,
+    EndpointDefinition,
+    EntityDefinition,
+)
+from airbyte_agent_sdk.utils import find_matching_auth_options
+
+from .models import (
+    ActionNotSupportedError,
+    DownloadChunkResult,
+    EntityNotFoundError,
+    ExecutionConfig,
+    ExecutionResult,
+    ExecutorError,
+    InvalidParameterError,
+    MissingParameterError,
+    StandardExecuteResult,
+    find_check_operation,
+)
+
+_logger = logging.getLogger(__name__)
+
+MAX_PARAM_RESOLUTION_DEPTH = 5
+
+CHECK_STATUS_HEALTHY = "healthy"
+CHECK_STATUS_UNHEALTHY = "unhealthy"
+CHECK_STATUS_SKIPPED = "skipped"
+CHECK_STATUS_FAILED = "failed"
+_UNRESOLVED_SCOPING_VALUE = object()
+_SCOPING_DECLINED = object()
+_AIRBYTE_RESPONSE_TYPE_PARAM = "_airbyte_response_type"
+_AIRBYTE_RESPONSE_FORMAT_PARAM = "_airbyte_response_format"
+_AIRBYTE_RESPONSE_TYPE_STREAM = "stream"
+_AIRBYTE_RESPONSE_TYPE_JSON = "json"
+_AIRBYTE_RESPONSE_FORMAT_TEXT = "text"
+_AIRBYTE_RESPONSE_FORMAT_BASE64 = "base64"
+_DEFAULT_DOWNLOAD_JSON_BASE64_RANGE_HEADER = "bytes=0-49151"
+_DEFAULT_DOWNLOAD_JSON_TEXT_RANGE_HEADER = "bytes=0-15359"
+_MAX_DOWNLOAD_JSON_BYTES = 65_536
+_RANGE_HEADER_RE = re.compile(r"^bytes=(\d+)-(\d*)$")
+_CONTENT_RANGE_RE = re.compile(r"^bytes\s+(\d+)-(\d+)/(\d+|\*)$")
+
+
+def _strip_airbyte_response_params(params: dict[str, Any]) -> dict[str, Any]:
+    return {key: value for key, value in params.items() if not str(key).startswith("_airbyte_response_")}
+
+
+def _download_json_requested(params: dict[str, Any]) -> bool:
+    response_type = params.get(_AIRBYTE_RESPONSE_TYPE_PARAM)
+    if response_type is None or response_type == _AIRBYTE_RESPONSE_TYPE_STREAM:
+        return False
+    if response_type == _AIRBYTE_RESPONSE_TYPE_JSON:
+        return True
+    raise InvalidParameterError(f"{_AIRBYTE_RESPONSE_TYPE_PARAM} must be '{_AIRBYTE_RESPONSE_TYPE_STREAM}' or '{_AIRBYTE_RESPONSE_TYPE_JSON}'.")
+
+
+def _download_json_format(params: dict[str, Any]) -> str:
+    response_format = params.get(_AIRBYTE_RESPONSE_FORMAT_PARAM, _AIRBYTE_RESPONSE_FORMAT_BASE64)
+    if response_format in {_AIRBYTE_RESPONSE_FORMAT_TEXT, _AIRBYTE_RESPONSE_FORMAT_BASE64}:
+        return str(response_format)
+    raise InvalidParameterError(f"{_AIRBYTE_RESPONSE_FORMAT_PARAM} must be '{_AIRBYTE_RESPONSE_FORMAT_TEXT}' or '{_AIRBYTE_RESPONSE_FORMAT_BASE64}'.")
+
+
+def _parse_bounded_range_header(range_header: str) -> tuple[int, int]:
+    match = _RANGE_HEADER_RE.match(range_header)
+    if match is None:
+        raise InvalidParameterError(f"range_header must use byte range format like 'bytes=0-49151', got {range_header!r}.")
+
+    start = int(match.group(1))
+    raw_end = match.group(2)
+    if raw_end == "":
+        raise InvalidParameterError("Structured download JSON responses require a bounded range_header like 'bytes=0-49151'.")
+
+    end = int(raw_end)
+    if end < start:
+        raise InvalidParameterError(f"range_header end must be greater than or equal to start, got {range_header!r}.")
+    if end - start + 1 > _MAX_DOWNLOAD_JSON_BYTES:
+        raise InvalidParameterError(f"Structured download JSON responses are capped at {_MAX_DOWNLOAD_JSON_BYTES} bytes per call.")
+    return start, end
+
+
+def _parse_content_range_header(content_range: str | None) -> tuple[int, int, int | None] | None:
+    if not content_range:
+        return None
+
+    match = _CONTENT_RANGE_RE.match(content_range.strip())
+    if match is None:
+        return None
+
+    total = None if match.group(3) == "*" else int(match.group(3))
+    return int(match.group(1)), int(match.group(2)), total
+
+
+def _get_header(headers: dict[str, str] | None, name: str) -> str | None:
+    if not headers:
+        return None
+    name_lower = name.lower()
+    for key, value in headers.items():
+        if key.lower() == name_lower:
+            return value
+    return None
+
+
+def _response_status_code(download_iterator: AsyncIterator[bytes]) -> int | None:
+    status_code = getattr(download_iterator, "response_status_code", None)
+    return status_code if isinstance(status_code, int) else None
+
+
+def _response_headers(download_iterator: AsyncIterator[bytes]) -> dict[str, str]:
+    headers = getattr(download_iterator, "response_headers", None)
+    return headers if isinstance(headers, dict) else {}
+
+
+async def _read_stream_body(response: Any) -> bytes:
+    chunks: list[bytes] = []
+    async for chunk in response.aiter_bytes():
+        chunks.append(chunk)
+    return b"".join(chunks)
+
+
+async def _materialize_download_json(
+    download_iterator: AsyncIterator[bytes],
+    *,
+    response_format: str,
+    range_header: str,
+) -> dict[str, Any]:
+    start, end = _parse_bounded_range_header(range_header)
+    requested_length = end - start + 1
+    read_limit = requested_length
+    skip_remaining = 0
+    collected = 0
+    chunks: list[bytes] = []
+    metadata_captured = False
+    range_ignored = False
+    content_range_total: int | None = None
+
+    def capture_response_metadata() -> None:
+        nonlocal content_range_total, metadata_captured, range_ignored, read_limit, skip_remaining
+        if metadata_captured:
+            return
+        metadata_captured = True
+
+        headers = _response_headers(download_iterator)
+        content_range = _parse_content_range_header(_get_header(headers, "content-range"))
+        if content_range is not None:
+            content_range_total = content_range[2]
+
+        status_code = _response_status_code(download_iterator)
+        range_ignored = status_code == 200 and content_range is None
+        if range_ignored:
+            skip_remaining = start
+
+    try:
+        async for chunk in download_iterator:
+            if not chunk:
+                continue
+            capture_response_metadata()
+            if skip_remaining:
+                if len(chunk) <= skip_remaining:
+                    skip_remaining -= len(chunk)
+                    continue
+                chunk = chunk[skip_remaining:]
+                skip_remaining = 0
+            remaining = read_limit - collected
+            if remaining <= 0:
+                break
+            if len(chunk) > remaining:
+                chunks.append(chunk[:remaining])
+                collected += remaining
+                break
+            chunks.append(chunk)
+            collected += len(chunk)
+            if collected == read_limit:
+                break
+    finally:
+        aclose = getattr(download_iterator, "aclose", None)
+        if aclose is not None:
+            await aclose()
+
+    capture_response_metadata()
+    body_with_extra = b"".join(chunks)
+    body = body_with_extra[:requested_length]
+    bytes_returned = len(body)
+    if response_format == _AIRBYTE_RESPONSE_FORMAT_TEXT:
+        try:
+            decoder = codecs.getincrementaldecoder("utf-8")()
+            content = decoder.decode(body, final=False)
+            trailing_bytes = decoder.getstate()[0]
+        except UnicodeDecodeError as exc:
+            raise InvalidParameterError(
+                "Downloaded bytes are not valid UTF-8. Use _airbyte_response_format='base64' for binary files, "
+                "or export the file as a text MIME type before requesting text."
+            ) from exc
+        if trailing_bytes:
+            bytes_returned -= len(trailing_bytes)
+            if bytes_returned == 0:
+                raise InvalidParameterError("range_header is too small to include a complete UTF-8 character.")
+        encoding = "utf-8"
+    else:
+        content = base64.b64encode(body).decode("ascii")
+        encoding = "base64"
+
+    next_start = start + bytes_returned
+    if content_range_total is not None:
+        has_more = next_start < content_range_total
+    elif range_ignored:
+        has_more = False
+    else:
+        has_more = len(body) == requested_length and requested_length > 0
+    next_end = next_start + requested_length - 1
+    result = DownloadChunkResult(
+        content=content,
+        encoding=encoding,
+        bytes_returned=bytes_returned,
+        range_requested=range_header,
+        next_range_header=f"bytes={next_start}-{next_end}" if has_more else None,
+        has_more=has_more,
+        content_type=None,
+    )
+    return result.to_dict()
+
+
+class ParamResolutionError(Exception):
+    """Raised when a path parameter cannot be resolved for entity probing.
+
+    Covers structural resolution failures (unresolvable param, self-reference,
+    parent with no LIST op, parent returning no records, missing parent key,
+    max recursion depth). ``_probe_entity`` converts these into UNHEALTHY
+    results so the backend controller classifies them as INCONCLUSIVE. SKIPPED
+    is reserved exclusively for "this entity has no list/get action at all".
+
+    Execution failures from probing a parent entity use ParentProbeError
+    instead, so the child can inherit the parent's ``status_code`` for
+    401/403 -> FAILED classification.
+    """
+
+
+class ParentProbeError(Exception):
+    """Raised when a parent entity's LIST probe fails during param resolution.
+
+    Wraps the original exception's message with parent-entity context for
+    debuggability, while preserving the parent's ``status_code`` so the child
+    can be classified the same way the parent would be (401/403 -> FAILED,
+    everything else -> INCONCLUSIVE at the backend controller layer).
+
+    Distinct from ``ParamResolutionError`` so the ``status_code`` survives --
+    both route through ``_probe_entity``'s UNHEALTHY branch, but only
+    ParentProbeError carries the parent's HTTP status.
+    """
+
+    def __init__(self, message: str, status_code: int | None = None) -> None:
+        super().__init__(message)
+        self.status_code = status_code
+
+
+def _parse_iso_duration(iso_str: str) -> timedelta:
+    """Parse an ISO 8601 duration string into a `timedelta`.
+
+    Supports the `P[n]D`, `P[n]DT[n]H[n]M[n]S` patterns used by connector
+    probe defaults (e.g. `'P730D'`, `'P90D'`, `'PT2M'`).
+    """
+    m = re.match(r"^P(?:(\d+)D)?(?:T(?:(\d+)H)?(?:(\d+)M)?(?:(\d+)S)?)?$", iso_str)
+    if not m:
+        raise ValueError(f"Unsupported ISO 8601 duration: {iso_str}")
+    days = int(m.group(1) or 0)
+    hours = int(m.group(2) or 0)
+    minutes = int(m.group(3) or 0)
+    seconds = int(m.group(4) or 0)
+    return timedelta(days=days, hours=hours, minutes=minutes, seconds=seconds)
+
+
+def _evaluate_probe_default(default_value: str, replication_constants: dict[str, Any]) -> str:
+    """Evaluate a Jinja expression in a schema default value for probe requests.
+
+    If `default_value` contains `{{`, it is rendered as a Jinja2 template with
+    `now_utc`, `duration`, `max`, `min`, and a `config` dict derived from
+    `replication_config_constants`. Plain strings are returned unchanged.
+    """
+    if "{{" not in str(default_value):
+        return default_value
+
+    env = Environment(undefined=StrictUndefined, autoescape=False)
+    template = env.from_string(str(default_value))
+    return template.render(
+        now_utc=lambda: datetime.now(UTC),
+        duration=_parse_iso_duration,
+        config=replication_constants,
+        max=max,
+        min=min,
+    )
+
+
+class _OperationContext:
+    """Shared context for operation handlers."""
+
+    def __init__(self, executor: LocalExecutor):
+        self.executor = executor
+        self.http_client = executor.http_client
+        self.tracker = executor.tracker
+        self.session = executor.session
+        self.logger = executor.logger
+        self.entity_index = executor._entity_index
+        self.operation_index = executor._operation_index
+        # Bind helper methods
+        self.build_path = executor._build_path
+        self.extract_query_params = executor._extract_query_params
+        self.extract_body = executor._extract_body
+        self.extract_header_params = executor._extract_header_params
+        self.build_request_body = executor._build_request_body
+        self.determine_request_format = executor._determine_request_format
+        self.validate_required_body_fields = executor._validate_required_body_fields
+        self.validate_enum_params = executor._validate_enum_params
+        self.extract_records = executor._extract_records
+
+    @property
+    def standard_handler(self) -> _StandardOperationHandler | None:
+        """Return the standard operation handler, or None if not registered."""
+        for h in self.executor._operation_handlers:
+            if isinstance(h, _StandardOperationHandler):
+                return h
+        return None
+
+
+class _OperationHandler(Protocol):
+    """Protocol for operation handlers."""
+
+    def can_handle(self, action: Action) -> bool:
+        """Check if this handler can handle the given action."""
+        ...
+
+    def execute_operation(
+        self,
+        entity: str,
+        action: Action,
+        params: dict[str, Any],
+    ) -> Awaitable[StandardExecuteResult] | AsyncIterator[bytes]:
+        """Execute the operation and return result.
+
+        Returns:
+            StandardExecuteResult for standard operations (GET, LIST, CREATE, etc.)
+            AsyncIterator[bytes] for download operations
+        """
+        ...
+
+
+class _BufferedAsyncResponse:
+    """Re-wraps already-read bytes so they can flow through `aiter_bytes(chunk_size=...)`.
+
+    Used by the download handler when `x-airbyte-response-error-check` forces a
+    buffered read of a JSON body that did not match the error envelope — the
+    caller still needs the body, and the existing streaming block expects an
+    object with an async `aiter_bytes(chunk_size=...)` method.
+    """
+
+    def __init__(self, body: bytes, headers: dict[str, str]) -> None:
+        self._body = body
+        self.headers = headers
+
+    async def aiter_bytes(self, chunk_size: int = 8 * 1024 * 1024) -> AsyncIterator[bytes]:
+        if not self._body:
+            return
+        for i in range(0, len(self._body), chunk_size):
+            yield self._body[i : i + chunk_size]
+
+
+class _DownloadResponseStream:
+    """Async byte stream that exposes response metadata to structured downloads."""
+
+    def __init__(self, handler: _DownloadOperationHandler, entity: str, action: Action, params: dict[str, Any]) -> None:
+        self._handler = handler
+        self._entity = entity
+        self._action = action
+        self._params = params
+        self._iterator: AsyncIterator[bytes] | None = None
+        self.response_headers: dict[str, str] = {}
+        self.response_status_code: int | None = None
+        self.range_header: str | None = None
+
+    def __aiter__(self) -> AsyncIterator[bytes]:
+        self._iterator = self._handler._iter_download(self._entity, self._action, self._params, self)
+        return self._iterator
+
+    async def aclose(self) -> None:
+        if self._iterator is None:
+            return
+        aclose = getattr(self._iterator, "aclose", None)
+        if aclose is not None:
+            await aclose()
+
+
+class LocalExecutor:
+    """Async executor for Entity×Action operations with direct HTTP execution.
+
+    This is the "local mode" executor that makes direct HTTP calls to external APIs.
+    It performs local entity/action lookups, validation, and request building.
+
+    Implements ExecutorProtocol.
+    """
+
+    def __init__(
+        self,
+        config_path: str | None = None,
+        model: ConnectorModel | None = None,
+        secrets: dict[str, SecretStr] | None = None,
+        auth_config: dict[str, SecretStr] | None = None,
+        auth_scheme: str | None = None,
+        enable_logging: bool = False,
+        log_file: str | None = None,
+        execution_context: str | None = None,
+        max_connections: int = DEFAULT_MAX_CONNECTIONS,
+        max_keepalive_connections: int = DEFAULT_MAX_KEEPALIVE_CONNECTIONS,
+        max_logs: int | None = 10000,
+        config_values: dict[str, str] | None = None,
+        on_token_refresh: TokenRefreshCallback = None,
+        retry_config: RetryConfig | None = None,
+    ):
+        """Initialize async executor.
+
+        Args:
+            config_path: Path to connector.yaml.
+                If neither config_path nor model is provided, an error will be raised.
+            model: ConnectorModel object to execute.
+            secrets: (Legacy) Auth parameters that bypass x-airbyte-auth-config mapping.
+                Directly passed to auth strategies (e.g., {"username": "...", "password": "..."}).
+                Cannot be used together with auth_config.
+            auth_config: User-facing auth configuration following x-airbyte-auth-config spec.
+                Will be transformed via auth_mapping to produce auth parameters.
+                Cannot be used together with secrets.
+            auth_scheme: (Multi-auth only) Explicit security scheme name to use.
+                If None, SDK will auto-select based on provided credentials.
+                Example: auth_scheme="githubOAuth"
+            enable_logging: Enable request/response logging
+            log_file: Path to log file (if enable_logging=True)
+            execution_context: Execution context (mcp, direct, blessed, agent)
+            max_connections: Maximum number of concurrent connections
+            max_keepalive_connections: Maximum number of keepalive connections
+            max_logs: Maximum number of logs to keep in memory before rotation.
+                Set to None for unlimited (not recommended for production).
+                Defaults to 10000.
+            config_values: Optional dict of config values for server variable substitution
+                (e.g., {"subdomain": "acme"} for URLs like https://{subdomain}.api.example.com).
+            on_token_refresh: Optional callback function(new_tokens: dict) called when
+                OAuth2 tokens are refreshed. Use this to persist updated tokens.
+                Can be sync or async. Example: lambda tokens: save_to_db(tokens)
+            retry_config: Optional retry configuration override. If provided, overrides
+                the connector.yaml x-airbyte-retry-config. If None, uses connector.yaml
+                config or SDK defaults.
+        """
+        # Validate mutual exclusivity of secrets and auth_config
+        if secrets is not None and auth_config is not None:
+            raise ValueError(
+                "Cannot provide both 'secrets' and 'auth_config' parameters. "
+                "Use 'auth_config' for user-facing credentials (recommended), "
+                "or 'secrets' for direct auth parameters (legacy)."
+            )
+
+        # Validate mutual exclusivity of config_path and model
+        if config_path is not None and model is not None:
+            raise ValueError("Cannot provide both 'config_path' and 'model' parameters.")
+
+        if config_path is None and model is None:
+            raise ValueError("Must provide either 'config_path' or 'model' parameter.")
+
+        # Load model from path or use provided model
+        if config_path is not None:
+            self.model: ConnectorModel = load_connector_model(config_path)
+        else:
+            self.model: ConnectorModel = model
+
+        self.on_token_refresh = on_token_refresh
+
+        # Merge server variable defaults as fallbacks for config_values.
+        # User-provided config_values take priority over OpenAPI server variable defaults.
+        merged_config_values = dict(self.model.server_variable_defaults)
+        if config_values:
+            merged_config_values.update(config_values)
+        self.config_values = merged_config_values
+
+        # Handle auth selection for multi-auth or single-auth connectors
+        user_credentials = auth_config if auth_config is not None else secrets
+        selected_auth_config, self.secrets = self._initialize_auth(user_credentials, auth_scheme)
+
+        # Create shared observability session
+        self.session = ObservabilitySession(
+            connector_name=self.model.name,
+            connector_version=getattr(self.model, "version", None),
+            execution_context=(execution_context or os.getenv("AIRBYTE_EXECUTION_CONTEXT", "direct")),
+        )
+
+        # Initialize telemetry tracker
+        self.tracker = SegmentTracker(self.session)
+        self.tracker.track_connector_init(connector_version=getattr(self.model, "version", None))
+
+        # Initialize logger
+        if enable_logging:
+            self.logger = RequestLogger(
+                log_file=log_file,
+                connector_name=self.model.name,
+                max_logs=max_logs,
+            )
+        else:
+            self.logger = NullLogger()
+
+        # Initialize async HTTP client with connection pooling
+        self.http_client = HTTPClient(
+            base_url=self.model.base_url,
+            auth_config=selected_auth_config,
+            secrets=self.secrets,
+            config_values=self.config_values,
+            logger=self.logger,
+            max_connections=max_connections,
+            max_keepalive_connections=max_keepalive_connections,
+            on_token_refresh=on_token_refresh,
+            retry_config=retry_config or self.model.retry_config,
+        )
+
+        # Build O(1) lookup indexes
+        self._entity_index: dict[str, EntityDefinition] = {entity.name: entity for entity in self.model.entities}
+
+        # Build O(1) operation index: (entity, action) -> endpoint
+        self._operation_index: dict[tuple[str, Action], Any] = {}
+        for entity in self.model.entities:
+            for action in entity.actions:
+                endpoint = entity.endpoints.get(action)
+                if endpoint:
+                    self._operation_index[(entity.name, action)] = endpoint
+
+        # Build O(1) scoping index: param_name -> scoping config
+        self._scoping_index: dict[str, ScopingParamConfig] = {s.param: s for s in self.model.scoping}
+
+        # Build O(1) global foreign-key index: fk_name -> (target_entity, target_key)
+        # Used as a fallback when the current entity has no relationship for a param
+        # but another entity in the connector declares one with the same foreign_key.
+        self._global_fk_index: dict[str, tuple[str, str]] = {}
+        for entity in self.model.entities:
+            for rel in entity.relationships:
+                if rel.foreign_key not in self._global_fk_index:
+                    self._global_fk_index[rel.foreign_key] = (rel.target_entity, rel.target_key)
+
+        # Register operation handlers (order matters for can_handle priority)
+        op_context = _OperationContext(self)
+        self._operation_handlers: list[_OperationHandler] = [
+            _DownloadOperationHandler(op_context),
+            _StandardOperationHandler(op_context),
+        ]
+
+    def _get_replication_constants(self) -> dict[str, Any]:
+        """Extract `replication_config_constants` from the OpenAPI spec, if available."""
+        spec = getattr(self.model, "openapi_spec", None)
+        if spec is None:
+            return {}
+        info = getattr(spec, "info", None)
+        if info is None:
+            return {}
+        repl_config = getattr(info, "x_airbyte_replication_config", None)
+        if repl_config is None:
+            return {}
+        return dict(getattr(repl_config, "replication_config_constants", {}) or {})
+
+    @staticmethod
+    def _get_additional_headers_only_fields(
+        user_config_spec: AuthConfigSpec,
+    ) -> set[str]:
+        """Get property names referenced only in additional_headers, not in auth_mapping.
+
+        These fields need to be passed through to secrets so they're available
+        for Jinja2 template resolution in additional_headers (e.g., developer_token
+        for Google Ads).
+        """
+        if not user_config_spec.additional_headers or not user_config_spec.auth_mapping:
+            return set()
+
+        auth_mapping_fields: set[str] = set()
+        for template_value in user_config_spec.auth_mapping.values():
+            auth_mapping_fields.update(re.findall(r"\$\{(\w+)\}", template_value))
+
+        additional_headers_fields: set[str] = set()
+        for template_value in user_config_spec.additional_headers.values():
+            additional_headers_fields.update(re.findall(r"\{\{\s*(\w+)\s*\}\}", template_value))
+
+        return additional_headers_fields - auth_mapping_fields
+
+    @staticmethod
+    def _apply_auth_config_mapping(
+        user_secrets: dict[str, SecretStr],
+        user_config_spec: AuthConfigSpec | None,
+    ) -> dict[str, SecretStr]:
+        """Apply auth_mapping from x-airbyte-auth-config to transform user secrets.
+
+        This method takes user-provided secrets (e.g., {"api_token": "abc123"}) and
+        transforms them into the auth scheme format (e.g., {"username": "abc123", "password": "api_token"})
+        using the template mappings defined in x-airbyte-auth-config.
+
+        Properties referenced only in additional_headers (not in auth_mapping) are
+        passed through to secrets so they're available for Jinja2 template resolution.
+
+        Args:
+            user_secrets: User-provided secrets from config
+            user_config_spec: Auth config spec with auth_mapping and optional additional_headers
+
+        Returns:
+            Transformed secrets matching the auth scheme requirements
+        """
+        if not user_config_spec:
+            return user_secrets
+
+        auth_mapping = user_config_spec.auth_mapping
+        required_fields = user_config_spec.required
+
+        if not auth_mapping:
+            return user_secrets
+
+        if required_fields and not user_secrets:
+            return user_secrets
+
+        user_config_values = {
+            key: (value.get_secret_value() if hasattr(value, "get_secret_value") else str(value)) for key, value in user_secrets.items()
+        }
+
+        mapped_values = apply_auth_mapping(auth_mapping, user_config_values, required_fields=required_fields)
+
+        mapped_secrets = {key: SecretStr(value) for key, value in mapped_values.items()}
+
+        for field_name in LocalExecutor._get_additional_headers_only_fields(user_config_spec):
+            if field_name in user_secrets and field_name not in mapped_secrets:
+                value = user_secrets[field_name]
+                mapped_secrets[field_name] = value if isinstance(value, SecretStr) else SecretStr(str(value))
+
+        return mapped_secrets
+
+    def _initialize_auth(
+        self,
+        user_credentials: dict[str, SecretStr] | None,
+        explicit_scheme: str | None,
+    ) -> tuple[AuthConfig, dict[str, SecretStr] | None]:
+        """Initialize authentication for single or multi-auth connectors.
+
+        Handles both legacy single-auth and new multi-auth connectors.
+        For multi-auth, the auth scheme can be explicitly provided or inferred
+        from the provided credentials by matching against each scheme's required fields.
+
+        Args:
+            user_credentials: User-provided credentials (auth_config or secrets)
+            explicit_scheme: Explicit scheme name for multi-auth (optional, will be
+                inferred from credentials if not provided)
+
+        Returns:
+            Tuple of (selected AuthConfig for HTTPClient, transformed secrets)
+
+        Raises:
+            ValueError: If multi-auth connector can't determine which scheme to use
+        """
+        # Multi-auth: explicit scheme selection or inference from credentials
+        if self.model.auth.is_multi_auth():
+            if not user_credentials:
+                available_schemes = [opt.scheme_name for opt in self.model.auth.options]
+                raise ValueError(f"Multi-auth connector requires credentials. Available schemes: {available_schemes}")
+
+            # If explicit scheme provided, use it directly
+            if explicit_scheme:
+                selected_option, transformed_secrets = self._select_auth_option(user_credentials, explicit_scheme)
+            else:
+                # Infer auth scheme from provided credentials
+                selected_option, transformed_secrets = self._infer_auth_scheme(user_credentials)
+
+            # Convert AuthOption to single-auth AuthConfig for HTTPClient
+            selected_auth_config = AuthConfig(
+                type=selected_option.type,
+                config=selected_option.config,
+                user_config_spec=None,  # Not needed by HTTPClient
+            )
+
+            return (selected_auth_config, transformed_secrets)
+
+        # Single-auth: use existing logic
+        if user_credentials is not None:
+            transformed_secrets = self._apply_auth_config_mapping(user_credentials, self.model.auth.user_config_spec)
+        else:
+            transformed_secrets = None
+
+        return (self.model.auth, transformed_secrets)
+
+    def _infer_auth_scheme(
+        self,
+        user_credentials: dict[str, SecretStr],
+    ) -> tuple[AuthOption, dict[str, SecretStr]]:
+        """Infer authentication scheme from provided credentials.
+
+        Uses shared utility find_matching_auth_options to match credentials
+        against each auth option's required fields.
+
+        Args:
+            user_credentials: User-provided credentials
+
+        Returns:
+            Tuple of (inferred AuthOption, transformed secrets)
+
+        Raises:
+            ValueError: If no scheme matches, or multiple schemes match
+        """
+        options = self.model.auth.options
+        if not options:
+            raise ValueError("No auth options available in multi-auth config")
+
+        # Get the credential keys provided by the user
+        provided_keys = set(user_credentials.keys())
+
+        # Use shared utility to find matching options
+        matching_options = find_matching_auth_options(provided_keys, options)
+
+        # Handle matching results
+        if len(matching_options) == 0:
+            # No matches - provide helpful error message
+            scheme_requirements = []
+            for opt in options:
+                required = opt.user_config_spec.required if opt.user_config_spec and opt.user_config_spec.required else []
+                scheme_requirements.append(f"  - {opt.scheme_name}: requires {required}")
+            raise ValueError(
+                f"Could not infer auth scheme from provided credentials. "
+                f"Provided keys: {list(provided_keys)}. "
+                f"Available schemes and their required fields:\n" + "\n".join(scheme_requirements)
+            )
+
+        if len(matching_options) > 1:
+            # Multiple matches - need explicit scheme
+            matching_names = [opt.scheme_name for opt in matching_options]
+            raise ValueError(
+                f"Multiple auth schemes match the provided credentials: {matching_names}. Please specify 'auth_scheme' explicitly to disambiguate."
+            )
+
+        # Exactly one match - use it
+        selected_option = matching_options[0]
+        transformed_secrets = self._apply_auth_config_mapping(user_credentials, selected_option.user_config_spec)
+        return (selected_option, transformed_secrets)
+
+    def _select_auth_option(
+        self,
+        user_credentials: dict[str, SecretStr],
+        scheme_name: str,
+    ) -> tuple[AuthOption, dict[str, SecretStr]]:
+        """Select authentication option by explicit scheme name.
+
+        Args:
+            user_credentials: User-provided credentials
+            scheme_name: Explicit scheme name (e.g., "githubOAuth")
+
+        Returns:
+            Tuple of (selected AuthOption, transformed secrets)
+
+        Raises:
+            ValueError: If scheme not found
+        """
+        options = self.model.auth.options
+        if not options:
+            raise ValueError("No auth options available in multi-auth config")
+
+        # Find matching scheme
+        for option in options:
+            if option.scheme_name == scheme_name:
+                transformed_secrets = self._apply_auth_config_mapping(user_credentials, option.user_config_spec)
+                return (option, transformed_secrets)
+
+        # Scheme not found
+        available = [opt.scheme_name for opt in options]
+        raise ValueError(f"Auth scheme '{scheme_name}' not found. Available schemes: {available}")
+
+    @overload
+    async def execute(self, config: ExecutionConfig) -> ExecutionResult: ...
+
+    @overload
+    async def execute(self, entity: str, action: str, *, params: dict[str, Any] | None = None) -> ExecutionResult: ...
+
+    async def execute(
+        self,
+        config_or_entity: ExecutionConfig | str,
+        action: str | None = None,
+        *,
+        params: dict[str, Any] | None = None,
+    ) -> ExecutionResult:
+        """Execute connector operation using handler pattern.
+
+        Accepts either an :class:`ExecutionConfig` or positional ``(entity, action)``
+        strings with an optional ``params`` keyword argument.
+
+        Args:
+            config_or_entity: ExecutionConfig object *or* entity name string
+            action: Action string (required when entity is a string)
+            params: Optional parameters dict (only with string form)
+
+        Returns:
+            ExecutionResult with success/failure status and data
+
+        Example:
+            config = ExecutionConfig(
+                entity="customers",
+                action="list",
+                params={"limit": 10}
+            )
+            result = await executor.execute(config)
+            if result.success:
+                print(result.data)
+
+            # Shorthand form:
+            result = await executor.execute("customers", "list", params={"limit": 10})
+        """
+        if isinstance(config_or_entity, str):
+            if action is None:
+                raise TypeError("action is required when passing entity as a string")
+            config = ExecutionConfig(entity=config_or_entity, action=action, params=params)
+        else:
+            if action is not None or params is not None:
+                raise TypeError("Cannot pass action or params when using ExecutionConfig")
+            config = config_or_entity
+        try:
+            # Check for hosted-only actions before converting to Action enum
+            if config.action == "context_store_search":
+                raise NotImplementedError(
+                    "context_store_search is only available in hosted execution mode."
+                    " Initialize the connector with an AirbyteAuthConfig to use this feature."
+                )
+
+            # Convert config to internal format
+            action = Action(config.action) if isinstance(config.action, str) else config.action
+            params = self._merge_scoping_defaults(config.params or {})
+            download_json_requested = action == Action.DOWNLOAD and _download_json_requested(params)
+            download_json_format = _download_json_format(params) if download_json_requested else None
+            if action == Action.DOWNLOAD:
+                operation_params = _strip_airbyte_response_params(params)
+                if download_json_requested and not operation_params.get("range_header"):
+                    operation_params["range_header"] = (
+                        _DEFAULT_DOWNLOAD_JSON_TEXT_RANGE_HEADER
+                        if download_json_format == _AIRBYTE_RESPONSE_FORMAT_TEXT
+                        else _DEFAULT_DOWNLOAD_JSON_BASE64_RANGE_HEADER
+                    )
+                if download_json_requested:
+                    _parse_bounded_range_header(str(operation_params.get("range_header")))
+            else:
+                operation_params = params
+
+            # Dispatch to handler (handlers handle telemetry internally)
+            handler = next((h for h in self._operation_handlers if h.can_handle(action)), None)
+            if not handler:
+                raise ExecutorError(f"No handler registered for action '{action.value}'.")
+
+            # Execute handler
+            result = handler.execute_operation(config.entity, action, operation_params)
+
+            # Check if it's an async byte stream (download) or awaitable (standard)
+            if inspect.isasyncgen(result) or hasattr(result, "__aiter__"):
+                if download_json_requested:
+                    return ExecutionResult(
+                        success=True,
+                        data=await _materialize_download_json(
+                            result,
+                            response_format=download_json_format or _AIRBYTE_RESPONSE_FORMAT_BASE64,
+                            range_header=str(operation_params["range_header"]),
+                        ),
+                        error=None,
+                        meta=None,
+                    )
+                # Download operation: return generator directly
+                return ExecutionResult(
+                    success=True,
+                    data=result,
+                    error=None,
+                    meta=None,
+                )
+            else:
+                # Standard operation: await and extract data and metadata
+                handler_result = await result
+                return ExecutionResult(
+                    success=True,
+                    data=handler_result.data,
+                    error=None,
+                    meta=handler_result.metadata,
+                )
+
+        except (
+            EntityNotFoundError,
+            ActionNotSupportedError,
+            MissingParameterError,
+            InvalidParameterError,
+        ) as e:
+            # These are "expected" execution errors - return them in ExecutionResult
+            return ExecutionResult(success=False, data={}, error=str(e))
+
+    async def check(self) -> ExecutionResult:
+        """Perform a health check by running a lightweight operation.
+
+        Uses shared find_check_operation() to find the best operation, then
+        executes it to verify connectivity and credentials.
+
+        Returns:
+            ExecutionResult with data containing status, error, and checked operation details.
+        """
+        check_op = find_check_operation(self.model)
+        if check_op is None:
+            return ExecutionResult(
+                success=True,
+                data={
+                    "status": CHECK_STATUS_SKIPPED,
+                    "error": "No operation available for health check",
+                },
+            )
+
+        check_entity, check_action, params = check_op
+
+        # Find the standard handler to execute the operation
+        standard_handler = next(
+            (h for h in self._operation_handlers if isinstance(h, _StandardOperationHandler)),
+            None,
+        )
+
+        if standard_handler is None:
+            return ExecutionResult(
+                success=True,
+                data={
+                    "status": CHECK_STATUS_SKIPPED,
+                    "error": "No standard handler available",
+                },
+            )
+
+        try:
+            await standard_handler.execute_operation(check_entity, check_action, params)
+            return ExecutionResult(
+                success=True,
+                data={
+                    "status": CHECK_STATUS_HEALTHY,
+                    "checked_entity": check_entity,
+                    "checked_action": check_action.value,
+                },
+            )
+        except Exception as e:
+            return ExecutionResult(
+                success=False,
+                data={
+                    "status": CHECK_STATUS_UNHEALTHY,
+                    "error": str(e),
+                    "checked_entity": check_entity,
+                    "checked_action": check_action.value,
+                },
+                error=str(e),
+            )
+
+    async def check_entities(self, entities: list[str]) -> ExecutionResult:
+        """Perform health checks for specific entities by probing their list or get operations.
+
+        For each entity, looks up (entity_name, Action.LIST) in the operation index.
+        If not found, falls back to (entity_name, Action.GET). Runs all probes
+        concurrently and returns per-entity results.
+
+        Args:
+            entities: List of entity names to check.
+
+        Returns:
+            ExecutionResult with per-entity health check results.
+        """
+        logging.debug("check_entities: probing entities %s", entities)
+
+        standard_handler = next(
+            (h for h in self._operation_handlers if isinstance(h, _StandardOperationHandler)),
+            None,
+        )
+
+        if standard_handler is None:
+            entity_results = [
+                {"entity": name, "status": CHECK_STATUS_SKIPPED, "error": "No standard handler available", "checked_action": None}
+                for name in entities
+            ]
+            return ExecutionResult(
+                success=not entities,
+                data={"entity_results": entity_results, "status": CHECK_STATUS_UNHEALTHY if entities else CHECK_STATUS_HEALTHY},
+            )
+
+        parent_cache: dict[str, list[dict]] = {}
+        tasks = [self._probe_entity(name, standard_handler, parent_cache) for name in entities]
+        entity_results = await asyncio.gather(*tasks)
+
+        acceptable = {CHECK_STATUS_HEALTHY, CHECK_STATUS_SKIPPED}
+        all_ok = all(r["status"] in acceptable for r in entity_results)
+        failed = [r for r in entity_results if r["status"] not in acceptable]
+        error = None
+        if failed:
+            names = ", ".join(r["entity"] for r in failed)
+            error = f"Entity check failed for: {names}"
+        return ExecutionResult(
+            success=all_ok,
+            data={
+                "entity_results": list(entity_results),
+                "status": CHECK_STATUS_HEALTHY if all_ok else CHECK_STATUS_UNHEALTHY,
+            },
+            error=error,
+        )
+
+    async def _probe_entity(
+        self,
+        entity_name: str,
+        standard_handler: _StandardOperationHandler,
+        parent_cache: dict[str, list[dict]],
+    ) -> dict[str, Any]:
+        """Probe a single entity's health by executing its list or get operation."""
+        endpoint = self._operation_index.get((entity_name, Action.LIST))
+        action = Action.LIST
+        if endpoint is None:
+            endpoint = self._operation_index.get((entity_name, Action.GET))
+            action = Action.GET
+        if endpoint is None:
+            has_other_action = any(ent == entity_name for ent, _ in self._operation_index)
+            return {
+                "entity": entity_name,
+                "status": CHECK_STATUS_SKIPPED if has_other_action else CHECK_STATUS_FAILED,
+                "error": f"Entity '{entity_name}' has no list or get operation available for checking",
+                "status_code": None,
+                "checked_action": None,
+            }
+        try:
+            params = {"limit": 1} if action == Action.LIST else {}
+            # Inject query-param probe defaults from schema so that required
+            # params (e.g. Salesforce SOQL `q`) are included in the probe
+            # request without needing explicit configuration.
+            #
+            # Precedence: explicit `params` > `x-airbyte-probe-default` > `default`.
+            # `x-airbyte-probe-default` is consulted first so a connector author
+            # can declare a synthetic probe-time value distinct from the
+            # runtime `default`. Defaults may contain Jinja `{{ }}` expressions
+            # (e.g. dynamic dates) which are evaluated at probe time.
+            replication_constants = self._get_replication_constants()
+            for param_name, schema in endpoint.query_params_schema.items():
+                if param_name in params:
+                    continue
+                probe_default = schema.get("x-airbyte-probe-default")
+                if probe_default is None:
+                    probe_default = schema.get("default")
+                if probe_default is not None:
+                    params[param_name] = (
+                        _evaluate_probe_default(probe_default, replication_constants) if isinstance(probe_default, str) else probe_default
+                    )
+            # Mirror for header params. `default` is already applied at runtime by
+            # `_extract_header_params`, so the probe loop only needs to handle
+            # `x-airbyte-probe-default`. Writing it into `params` lets
+            # `_extract_header_params` pick it up as if user-supplied.
+            for header_name, header_schema in endpoint.header_params_schema.items():
+                if header_name in params:
+                    continue
+                probe_default = header_schema.get("x-airbyte-probe-default")
+                if probe_default is not None:
+                    params[header_name] = (
+                        _evaluate_probe_default(probe_default, replication_constants) if isinstance(probe_default, str) else probe_default
+                    )
+            # Inject body-field probe defaults from `x-airbyte-probe-default`.
+            # Note the asymmetry vs query params: there is no fallback to the
+            # body field's `default` here, because `default` on body fields is
+            # owned by `_build_request_body` for runtime use and must not gain
+            # probe-time semantics. Probe defaults are written into `params`,
+            # not a body dict, so the downstream `_extract_body(...)` picks
+            # them up as if user-supplied. This is the structural guarantee
+            # that keeps probe defaults out of agent runtime calls.
+            for field_name, probe_default in endpoint.request_body_probe_defaults.items():
+                if field_name in params:
+                    continue
+                params[field_name] = (
+                    _evaluate_probe_default(probe_default, replication_constants) if isinstance(probe_default, str) else probe_default
+                )
+            # Collect all params that need resolution: path params, entity-
+            # relationship foreign_keys, and query params with matching config
+            # keys (so config values can override schema defaults).
+            params_needing_resolution = list(endpoint.path_params)
+            entity_def = self._entity_index.get(entity_name)
+            if entity_def:
+                for rel in entity_def.relationships:
+                    if rel.foreign_key not in params_needing_resolution:
+                        params_needing_resolution.append(rel.foreign_key)
+            # Also resolve query params that have a matching scoping or config
+            # key, so explicit config values take precedence over defaults.
+            for qp in endpoint.query_params:
+                if qp not in params_needing_resolution and (qp in self._scoping_index or qp in self.config_values):
+                    params_needing_resolution.append(qp)
+            if params_needing_resolution:
+                try:
+                    resolved = await self._resolve_path_params(
+                        entity_name,
+                        endpoint,
+                        standard_handler,
+                        parent_cache,
+                        params_to_resolve=params_needing_resolution,
+                    )
+                    params.update(resolved)
+                    if resolved:
+                        _logger.info(
+                            "Entity '%s' probe proceeding with resolved params: %s",
+                            entity_name,
+                            sorted(resolved.keys()),
+                        )
+                except ParamResolutionError as exc:
+                    return {
+                        "entity": entity_name,
+                        "status": CHECK_STATUS_UNHEALTHY,
+                        "error": str(exc),
+                        "status_code": None,
+                        "checked_action": action.value,
+                    }
+            await standard_handler.execute_operation(entity_name, action, params)
+            return {
+                "entity": entity_name,
+                "status": CHECK_STATUS_HEALTHY,
+                "error": None,
+                "status_code": None,
+                "checked_action": action.value,
+            }
+        except Exception as e:
+            return {
+                "entity": entity_name,
+                "status": CHECK_STATUS_UNHEALTHY,
+                "error": str(e),
+                "status_code": getattr(e, "status_code", None),
+                "checked_action": action.value,
+            }
+
+    async def _resolve_path_params(
+        self,
+        entity_name: str,
+        endpoint: EndpointDefinition,
+        standard_handler: _StandardOperationHandler,
+        parent_cache: dict[str, list[dict]],
+        depth: int = 0,
+        params_to_resolve: list[str] | None = None,
+    ) -> dict[str, Any]:
+        """Resolve params using scoping, config fallback, and entity relationships.
+
+        Resolution priority for each path param:
+        1. Scoping index (from ConnectorModel.scoping) -> config_values
+        2. Config fallback (param name matches a config_values key)
+        3. Entity relationships (from entity.relationships by foreign_key)
+
+        Returns dict of {param_name: resolved_value}.
+        Raises ParamResolutionError if any param cannot be resolved.
+        """
+        if depth > MAX_PARAM_RESOLUTION_DEPTH:
+            raise ParamResolutionError(f"Max resolution depth exceeded for '{entity_name}'")
+
+        # Build relationship index for this entity: foreign_key -> EntityRelationshipConfig
+        entity_def = self._entity_index.get(entity_name)
+        rel_index: dict[str, EntityRelationshipConfig] = {}
+        if entity_def:
+            for rel in entity_def.relationships:
+                rel_index[rel.foreign_key] = rel
+
+        target_params = params_to_resolve if params_to_resolve is not None else list(endpoint.path_params)
+
+        resolved: dict[str, Any] = {}
+        for param_name in target_params:
+            # 1. Check scoping index (sample=True: health-check probes pick
+            # one element from multi-value configs as a representative sample)
+            scoping_value = self._resolve_scoping_value(param_name, sample=True)
+            if scoping_value is _SCOPING_DECLINED:
+                raise ParamResolutionError(f"Cannot resolve param '{param_name}' for entity '{entity_name}'")
+            if scoping_value is not _UNRESOLVED_SCOPING_VALUE:
+                resolved[param_name] = scoping_value
+                continue
+
+            # 2. Config fallback: param name matches a config_values key
+            if param_name in self.config_values:
+                resolved[param_name] = self.config_values[param_name]
+                continue
+
+            # 3. Check entity relationships by foreign_key
+            record_filter: dict[str, list[str]] | None = None
+            if param_name in rel_index:
+                rel = rel_index[param_name]
+                parent_entity_name, parent_key = rel.target_entity, rel.target_key
+                record_filter = rel.parent_record_filter
+            elif param_name in self._global_fk_index:
+                # Fallback: another entity declares a relationship for this foreign key
+                parent_entity_name, parent_key = self._global_fk_index[param_name]
+            else:
+                raise ParamResolutionError(f"Cannot resolve param '{param_name}' for entity '{entity_name}'")
+            if parent_entity_name == entity_name:
+                raise ParamResolutionError(f"Self-referential param '{param_name}' on entity '{entity_name}'")
+
+            # Determine whether we need to (re-)fetch the parent entity.
+            # The cache may have been populated by a limit=1 probe from an
+            # unfiltered sibling running concurrently.  When a record_filter is
+            # present we must verify the cached set actually satisfies the
+            # filter; if not, refetch without limit so we have the full set.
+            needs_fetch = parent_entity_name not in parent_cache
+            if not needs_fetch and record_filter:
+                cached_candidates = [
+                    r
+                    for r in parent_cache[parent_entity_name]
+                    if all(field in r and str(r[field]) in values for field, values in record_filter.items())
+                ]
+                if not cached_candidates:
+                    needs_fetch = True
+
+            if needs_fetch:
+                _logger.info(
+                    "Resolving param '%s' for entity '%s' via parent entity '%s'",
+                    param_name,
+                    entity_name,
+                    parent_entity_name,
+                )
+                parent_endpoint = self._operation_index.get((parent_entity_name, Action.LIST))
+                if parent_endpoint is None:
+                    raise ParamResolutionError(f"Parent entity '{parent_entity_name}' has no LIST operation")
+                parent_params: dict[str, Any] = {} if record_filter else {"limit": 1}
+                # Inject probe defaults for parent entity (mirrors _probe_entity logic):
+                # - Query params: `x-airbyte-probe-default` > `default`.
+                # - Header params: `x-airbyte-probe-default` only (`default` is
+                #   already applied at runtime by `_extract_header_params`).
+                # - Body fields: `x-airbyte-probe-default` only (written into
+                #   `parent_params` so `_extract_body` picks them up downstream).
+                parent_repl_constants = self._get_replication_constants()
+                for pname, pschema in parent_endpoint.query_params_schema.items():
+                    if pname in parent_params:
+                        continue
+                    parent_probe_default = pschema.get("x-airbyte-probe-default")
+                    if parent_probe_default is None:
+                        parent_probe_default = pschema.get("default")
+                    if parent_probe_default is not None:
+                        parent_params[pname] = (
+                            _evaluate_probe_default(parent_probe_default, parent_repl_constants)
+                            if isinstance(parent_probe_default, str)
+                            else parent_probe_default
+                        )
+                for hname, hschema in parent_endpoint.header_params_schema.items():
+                    if hname in parent_params:
+                        continue
+                    parent_probe_default = hschema.get("x-airbyte-probe-default")
+                    if parent_probe_default is not None:
+                        parent_params[hname] = (
+                            _evaluate_probe_default(parent_probe_default, parent_repl_constants)
+                            if isinstance(parent_probe_default, str)
+                            else parent_probe_default
+                        )
+                for parent_field_name, parent_probe_default in parent_endpoint.request_body_probe_defaults.items():
+                    if parent_field_name in parent_params:
+                        continue
+                    parent_params[parent_field_name] = (
+                        _evaluate_probe_default(parent_probe_default, parent_repl_constants)
+                        if isinstance(parent_probe_default, str)
+                        else parent_probe_default
+                    )
+                parent_resolve_list = list(parent_endpoint.path_params)
+                parent_entity_def = self._entity_index.get(parent_entity_name)
+                if parent_entity_def:
+                    for prel in parent_entity_def.relationships:
+                        if prel.foreign_key not in parent_resolve_list and prel.foreign_key not in parent_params:
+                            parent_resolve_list.append(prel.foreign_key)
+                if parent_resolve_list:
+                    parent_resolved = await self._resolve_path_params(
+                        parent_entity_name,
+                        parent_endpoint,
+                        standard_handler,
+                        parent_cache,
+                        depth + 1,
+                        params_to_resolve=parent_resolve_list,
+                    )
+                    parent_params.update(parent_resolved)
+                try:
+                    result = await standard_handler.execute_operation(parent_entity_name, Action.LIST, parent_params)
+                except Exception as exc:
+                    raise ParentProbeError(
+                        f"Parent entity '{parent_entity_name}' probe failed: {exc}",
+                        status_code=getattr(exc, "status_code", None),
+                    ) from exc
+                records = result.data if isinstance(result.data, list) else []
+                if not records:
+                    raise ParamResolutionError(f"Parent entity '{parent_entity_name}' returned no records")
+                parent_cache[parent_entity_name] = records
+
+            candidates = parent_cache[parent_entity_name]
+            if record_filter:
+                candidates = [r for r in candidates if all(field in r and str(r[field]) in values for field, values in record_filter.items())]
+                if not candidates:
+                    raise ParamResolutionError(
+                        f"No records from parent entity '{parent_entity_name}' match parent_record_filter for entity '{entity_name}'"
+                    )
+            record = candidates[0]
+            value = record.get(parent_key)
+            if value is None:
+                raise ParamResolutionError(f"Parent key '{parent_key}' not found in '{parent_entity_name}' response")
+            resolved[param_name] = value
+            _logger.info(
+                "Resolved param '%s' for entity '%s' via parent entity '%s'",
+                param_name,
+                entity_name,
+                parent_entity_name,
+            )
+
+        return resolved
+
+    async def _execute_operation(
+        self,
+        entity: str,
+        action: str | Action,
+        params: dict[str, Any] | None = None,
+    ) -> dict[str, Any]:
+        """Internal method: Execute an action on an entity asynchronously.
+
+        This method now delegates to the appropriate handler and extracts just the data.
+        External code should use execute(config) instead for full ExecutionResult with metadata.
+
+        Args:
+            entity: Entity name (e.g., "Customer")
+            action: Action to execute (e.g., "get" or Action.GET)
+            params: Parameters for the operation
+                - For GET: {"id": "cus_123"} for path params
+                - For LIST: {"limit": 10} for query params
+                - For CREATE/UPDATE: {"email": "...", "name": "..."} for body
+
+        Returns:
+            API response as dictionary
+
+        Raises:
+            ValueError: If entity or action not found
+            HTTPClientError: If API request fails
+        """
+        params = self._merge_scoping_defaults(params or {})
+        action = Action(action) if isinstance(action, str) else action
+
+        # Delegate to the appropriate handler
+        handler = next((h for h in self._operation_handlers if h.can_handle(action)), None)
+        if not handler:
+            raise ExecutorError(f"No handler registered for action '{action.value}'.")
+
+        # Execute handler and extract just the data for backward compatibility
+        result = await handler.execute_operation(entity, action, params)
+        if isinstance(result, StandardExecuteResult):
+            return result.data
+        else:
+            # Download operation returns AsyncIterator directly
+            return result
+
+    async def execute_batch(self, operations: list[tuple[str, str | Action, dict[str, Any] | None]]) -> list[dict[str, Any] | AsyncIterator[bytes]]:
+        """Execute multiple operations concurrently (supports all action types including download).
+
+        Args:
+            operations: List of (entity, action, params) tuples
+
+        Returns:
+            List of responses in the same order as operations.
+            Standard operations return dict[str, Any].
+            Download operations return AsyncIterator[bytes].
+
+        Raises:
+            ValueError: If any entity or action not found
+            HTTPClientError: If any API request fails
+
+        Example:
+            results = await executor.execute_batch([
+                ("Customer", "list", {"limit": 10}),
+                ("Customer", "get", {"id": "cus_123"}),
+                ("attachments", "download", {"id": "att_456"}),
+            ])
+        """
+        # Build tasks by dispatching directly to handlers
+        tasks = []
+        for entity, action, params in operations:
+            # Convert action to Action enum if needed
+            action = Action(action) if isinstance(action, str) else action
+            params = self._merge_scoping_defaults(params or {})
+
+            # Find appropriate handler
+            handler = next((h for h in self._operation_handlers if h.can_handle(action)), None)
+            if not handler:
+                raise ExecutorError(f"No handler registered for action '{action.value}'.")
+
+            # Call handler directly (exceptions propagate naturally)
+            tasks.append(handler.execute_operation(entity, action, params))
+
+        # Execute all tasks concurrently - exceptions propagate via asyncio.gather
+        results = await asyncio.gather(*tasks)
+
+        # Extract data from results
+        extracted_results = []
+        for result in results:
+            if isinstance(result, StandardExecuteResult):
+                # Standard operation: extract data
+                extracted_results.append(result.data)
+            else:
+                # Download operation: return iterator as-is
+                extracted_results.append(result)
+
+        return extracted_results
+
+    _SCOPING_FALSY_STRINGS = frozenset({"None", "none", "null", ""})
+
+    def _resolve_scoping_value(self, param_name: str, *, sample: bool = False) -> Any:
+        """Resolve a scoping param from config.
+
+        Returns the resolved value, `_UNRESOLVED_SCOPING_VALUE` when no
+        scoping entry exists for `param_name`, or `_SCOPING_DECLINED` when
+        a scoping entry exists but its `value_template` intentionally
+        rendered to none/null/empty (the caller should NOT fall through to
+        the raw config fallback in that case).
+
+        When `sample` is True (health-check probes), list-valued configs
+        are sampled to their first element.  When False (normal execute),
+        list-valued configs are left unresolved so the caller must supply
+        an explicit param.
+        """
+        scoping = self._scoping_index.get(param_name)
+        if scoping is None:
+            return _UNRESOLVED_SCOPING_VALUE
+
+        config_key = scoping.config_key or scoping.param
+        if config_key not in self.config_values:
+            return _UNRESOLVED_SCOPING_VALUE
+
+        value = self.config_values[config_key]
+        if isinstance(value, list):
+            if len(value) == 0:
+                return _UNRESOLVED_SCOPING_VALUE
+            if not sample:
+                if len(value) > 1:
+                    return _UNRESOLVED_SCOPING_VALUE
+            value = value[0]
+
+        if scoping.value_template is None:
+            return value
+
+        template = self._SCOPING_VALUE_TEMPLATE_ENV.from_string(scoping.value_template)
+        rendered = template.render(value=value, config=self.config_values, param=scoping.param).strip()
+        if rendered in self._SCOPING_FALSY_STRINGS:
+            return _SCOPING_DECLINED
+        return rendered
+
+    def _merge_scoping_defaults(self, params: dict[str, Any], *, sample: bool = False) -> dict[str, Any]:
+        """Merge declared `x-airbyte-scoping` values into `params`.
+
+        For each entry in `_scoping_index`, resolves the value from
+        `config_values` when not already supplied by the caller.
+        User-supplied `params` always take precedence.
+
+        Only resolves params explicitly declared in `x-airbyte-scoping`;
+        arbitrary `config_values` keys are **not** merged.
+        """
+        if not self._scoping_index:
+            return params
+
+        merged: dict[str, Any] | None = None
+        for param_name in self._scoping_index:
+            if param_name in params:
+                continue
+            scoping_value = self._resolve_scoping_value(param_name, sample=sample)
+            if scoping_value is not _UNRESOLVED_SCOPING_VALUE and scoping_value is not _SCOPING_DECLINED:
+                if merged is None:
+                    merged = dict(params)
+                merged[param_name] = scoping_value
+
+        return merged if merged is not None else params
+
+    def _build_path(self, path_template: str, params: dict[str, Any]) -> str:
+        """Build path by replacing {param} placeholders with URL-encoded values.
+
+        Args:
+            path_template: Path with placeholders (e.g., /v1/customers/{id})
+            params: Parameters containing values for placeholders
+
+        Returns:
+            Completed path with URL-encoded values (e.g., /v1/customers/cus_123)
+
+        Raises:
+            MissingParameterError: If required path parameter is missing
+        """
+        placeholders = re.findall(r"\{(\w+)\}", path_template)
+
+        path = path_template
+        for placeholder in placeholders:
+            if placeholder not in params:
+                raise MissingParameterError(
+                    f"Missing required path parameter '{placeholder}' for path '{path_template}'. Provided parameters: {list(params.keys())}"
+                )
+
+            # Validate parameter value is not None or empty string
+            value = params[placeholder]
+            if value is None or (isinstance(value, str) and value.strip() == ""):
+                raise InvalidParameterError(f"Path parameter '{placeholder}' cannot be None or empty string")
+
+            encoded_value = quote(str(value), safe="")
+            path = path.replace(f"{{{placeholder}}}", encoded_value)
+
+        return path
+
+    def _extract_query_params(
+        self,
+        allowed_params: list[str],
+        params: dict[str, Any],
+        query_params_schema: dict[str, dict[str, Any]] | None = None,
+        *,
+        apply_schema_defaults: bool = False,
+    ) -> dict[str, Any]:
+        """Extract query parameters from params, applying config injection.
+
+        Args:
+            allowed_params: List of allowed query parameter names
+            params: All parameters
+            query_params_schema: Schema for query params including config_inject
+            apply_schema_defaults: When True, fill in a param's OpenAPI ``default`` when the
+                caller omitted it (mirrors header-default behavior). Off by default to preserve
+                existing query behavior; the download handler enables it so semantically-required
+                constants like Google Drive's ``alt=media`` are always sent.
+
+        Returns:
+            Dictionary of query parameters
+        """
+        result = {key: value for key, value in params.items() if key in allowed_params}
+        if query_params_schema:
+            for param_name in allowed_params:
+                if param_name not in result and param_name in query_params_schema:
+                    schema = query_params_schema[param_name]
+                    config_inject = schema.get("config_inject")
+                    if config_inject:
+                        source_key = config_inject["source"]
+                        source_value = self.config_values.get(source_key)
+                        if source_value is not None:
+                            value_map = config_inject.get("map")
+                            if value_map:
+                                mapped = value_map.get(source_value)
+                                if mapped is None:
+                                    mapped = value_map.get(source_value.upper())
+                                if mapped is not None:
+                                    result[param_name] = mapped
+                            else:
+                                result[param_name] = source_value
+                    elif apply_schema_defaults and schema.get("default") is not None:
+                        result[param_name] = schema["default"]
+        return result
+
+    def _extract_body(self, allowed_fields: list[str], params: dict[str, Any]) -> dict[str, Any]:
+        """Extract body fields from params, filtering out None values.
+
+        Args:
+            allowed_fields: List of allowed body field names
+            params: All parameters
+
+        Returns:
+            Dictionary of body fields with None values filtered out
+        """
+        if allowed_fields == ["*"]:
+            reserved_fields = {"id", "sobjectType"}
+            return {key: value for key, value in params.items() if key not in reserved_fields and value is not None}
+        return {key: value for key, value in params.items() if key in allowed_fields and value is not None}
+
+    def _extract_header_params(self, endpoint: EndpointDefinition, params: dict[str, Any], body: dict[str, Any] | None = None) -> dict[str, str]:
+        """Extract header parameters from params and schema defaults.
+
+        Also adds Content-Type header when there's a request body (unless already specified
+        as a header parameter in the OpenAPI spec).
+
+        Args:
+            endpoint: Endpoint definition with header_params and header_params_schema
+            params: All parameters
+            body: Request body (if any) - used to determine if Content-Type should be added
+
+        Returns:
+            Dictionary of header name -> value
+        """
+        headers: dict[str, str] = {}
+
+        for header_name in endpoint.header_params:
+            # Check if value is provided in params
+            if header_name in params and params[header_name] is not None:
+                headers[header_name] = str(params[header_name])
+            # Otherwise, use default from schema if available
+            elif header_name in endpoint.header_params_schema:
+                default_value = endpoint.header_params_schema[header_name].get("default")
+                if default_value is not None:
+                    headers[header_name] = str(default_value)
+
+        # Add Content-Type header when there's a request body, but only if not already
+        # specified as a header parameter (which allows custom content types like
+        # application/vnd.spCampaign.v3+json)
+        if body is not None and endpoint.content_type and "Content-Type" not in headers:
+            headers["Content-Type"] = endpoint.content_type.value
+
+        return headers
+
+    def _serialize_deep_object_params(self, params: dict[str, Any], deep_object_param_names: list[str]) -> dict[str, Any]:
+        """Serialize deepObject parameters to bracket notation format.
+
+        Converts nested dict parameters to the deepObject format expected by APIs
+        like Stripe. For example:
+        - Input: {'created': {'gte': 123, 'lte': 456}}
+        - Output: {'created[gte]': 123, 'created[lte]': 456}
+
+        Args:
+            params: Query parameters dict (may contain nested dicts)
+            deep_object_param_names: List of parameter names that use deepObject style
+
+        Returns:
+            Dictionary with deepObject params serialized to bracket notation
+        """
+        serialized = {}
+
+        for key, value in params.items():
+            if key in deep_object_param_names and isinstance(value, dict):
+                # Serialize nested dict to bracket notation
+                for subkey, subvalue in value.items():
+                    if subvalue is not None:  # Skip None values
+                        serialized[f"{key}[{subkey}]"] = subvalue
+            else:
+                # Keep non-deepObject params as-is (already validated by _extract_query_params)
+                serialized[key] = value
+
+        return serialized
+
+    @staticmethod
+    def _apply_response_error_check(model: ConnectorModel, response_data: Any) -> None:
+        """Raise `HTTPClientError` when the response matches the connector's declared error envelope.
+
+        Implements the `x-airbyte-response-error-check` OpenAPI extension: when
+        `model.response_error_check` is set, a dict response whose `field` equals
+        `on_value` is treated as an application-level error even if the HTTP status
+        was 200. The raised message mirrors the format used by the standard path
+        so caller error-handling is uniform across all action types.
+
+        No-op when `model.response_error_check` is `None` or `response_data` is
+        not a dict.
+        """
+        check = model.response_error_check
+        if check is None or not isinstance(response_data, dict):
+            return
+        if response_data.get(check.field) == check.on_value:
+            error_msg = (
+                str(response_data.get(check.message_field, "unknown_error")) if check.message_field else "API returned application-level error"
+            )
+            raise HTTPClientError(f"API error: {error_msg}")
+
+    @staticmethod
+    def _extract_download_url(
+        response: dict[str, Any],
+        file_field: str,
+        entity: str,
+    ) -> str:
+        """Extract download URL from metadata response using `x-airbyte-file-url`.
+
+        Parses the post-substitution `file_field` input and navigates the metadata
+        response. This is NOT a JSONPath expression — do not prefix with `$.`; see
+        the canonical contract on `airbyte_agent_sdk.extensions.AIRBYTE_FILE_URL_DOC`
+        for the full syntax and distinction from `x-airbyte-record-extractor` /
+        `x-airbyte-meta-extractor` (which DO use JSONPath).
+
+        Directly supported syntax:
+
+        - Simple field name (e.g., `content_url`)
+        - Dot-separated nested path (e.g., `data.download_link`, `article.content_url`)
+        - Fixed-index bracket navigation (e.g., `calls[0].media.audioUrl`)
+
+        Templated bracket segments (e.g., `attachments[{attachment_index}].url`) ARE
+        supported in the end-to-end `x-airbyte-file-url` extension value, but they
+        are resolved by `_substitute_file_field_params` before reaching this helper —
+        so this helper only ever sees resolved, integer-indexed bracket segments.
+
+        Args:
+            response: Metadata response containing file reference
+            file_field: Post-substitution dot-separated field path to the file URL
+                (from the `x-airbyte-file-url` extension, after
+                `_substitute_file_field_params` has resolved any `{param}` segments)
+            entity: Entity name (for error messages)
+
+        Returns:
+            Extracted file URL
+
+        Raises:
+            ExecutorError: If file field not found or invalid
+        """
+        # Navigate nested path (e.g., "article_attachment.content_url" or "calls[0].media.audioUrl")
+        parts = file_field.split(".")
+        current = response
+
+        for i, part in enumerate(parts):
+            # Check if part has array indexing (e.g., "calls[0]")
+            array_match = re.match(r"^(\w+)\[(\d+)\]$", part)
+
+            if array_match:
+                field_name = array_match.group(1)
+                index = int(array_match.group(2))
+
+                # Navigate to the field
+                if not isinstance(current, dict):
+                    raise ExecutorError(
+                        f"Cannot extract download URL for {entity}: Expected dict at '{'.'.join(parts[:i])}', got {type(current).__name__}"
+                    )
+
+                if field_name not in current:
+                    raise ExecutorError(
+                        f"Cannot extract download URL for {entity}: "
+                        f"Field '{field_name}' not found in response. Available fields: {list(current.keys())}"
+                    )
+
+                # Get the array
+                array_value = current[field_name]
+                if not isinstance(array_value, list):
+                    raise ExecutorError(
+                        f"Cannot extract download URL for {entity}: Expected list at '{field_name}', got {type(array_value).__name__}"
+                    )
+
+                # Check index bounds
+                if index >= len(array_value):
+                    raise ExecutorError(
+                        f"Cannot extract download URL for {entity}: Index {index} out of bounds for '{field_name}' (length: {len(array_value)})"
+                    )
+
+                current = array_value[index]
+            else:
+                # Regular dict navigation
+                if not isinstance(current, dict):
+                    raise ExecutorError(
+                        f"Cannot extract download URL for {entity}: Expected dict at '{'.'.join(parts[:i])}', got {type(current).__name__}"
+                    )
+
+                if part not in current:
+                    raise ExecutorError(
+                        f"Cannot extract download URL for {entity}: Field '{part}' not found in response. Available fields: {list(current.keys())}"
+                    )
+
+                current = current[part]
+
+        if not isinstance(current, str):
+            raise ExecutorError(f"Cannot extract download URL for {entity}: Expected string at '{file_field}', got {type(current).__name__}")
+
+        return current
+
+    @staticmethod
+    def _substitute_file_field_params(
+        file_field: str,
+        params: dict[str, Any],
+    ) -> str:
+        """Substitute template variables in file_field with parameter values.
+
+        Uses Jinja2 with custom delimiters to support OpenAPI-style syntax like
+        "attachments[{index}].url" where {index} is replaced with params["index"].
+
+        Args:
+            file_field: File field path with optional template variables
+            params: Parameters from execute() call
+
+        Returns:
+            File field with template variables substituted
+
+        Example:
+            >>> _substitute_file_field_params("attachments[{attachment_index}].url", {"attachment_index": 0})
+            "attachments[0].url"
+        """
+
+        # Use custom delimiters to match OpenAPI path parameter syntax {var}
+        # StrictUndefined raises clear error if a template variable is missing
+        env = Environment(
+            variable_start_string="{",
+            variable_end_string="}",
+            undefined=StrictUndefined,
+        )
+        template = env.from_string(file_field)
+        return template.render(params)
+
+    def _build_request_body(self, endpoint: EndpointDefinition, params: dict[str, Any]) -> dict[str, Any] | list[dict[str, Any]] | None:
+        """Build request body (GraphQL, standard object, or array).
+
+        Args:
+            endpoint: Endpoint definition
+            params: Parameters from execute() call
+
+        Returns:
+            Request body dict, list of dicts (array body), or None if no body needed
+        """
+        if endpoint.graphql_body:
+            # Extract defaults from query_params_schema for GraphQL variable interpolation
+            param_defaults = {name: schema.get("default") for name, schema in endpoint.query_params_schema.items() if "default" in schema}
+            return self._build_graphql_body(endpoint.graphql_body, params, param_defaults)
+        elif endpoint.body_fields:
+            # Start with defaults from request body schema
+            body = dict(endpoint.request_body_defaults)
+            # Override with user-provided params (filtering out None values)
+            user_body = self._extract_body(endpoint.body_fields, params)
+            body.update(user_body)
+            if not body:
+                return None
+            if endpoint.body_is_array:
+                # Wrap the constructed dict in a single-element list so the
+                # HTTP client sends a JSON array (e.g. ``[{...}]``).
+                return [body]
+            return body
+        elif endpoint.request_body_defaults:
+            # If no body_fields but we have defaults, return the defaults
+            return dict(endpoint.request_body_defaults)
+        return None
+
+    def _flatten_form_data(self, data: dict[str, Any], parent_key: str = "") -> dict[str, Any]:
+        """Flatten nested dict/list structures into bracket notation for form encoding.
+
+        Stripe and similar APIs require nested arrays/objects to be encoded using bracket
+        notation when using application/x-www-form-urlencoded content type.
+
+        Args:
+            data: Nested dict with arrays/objects to flatten
+            parent_key: Parent key for nested structures (used in recursion)
+
+        Returns:
+            Flattened dict with bracket notation keys
+
+        Examples:
+            >>> _flatten_form_data({"items": [{"price": "p1", "qty": 1}]})
+            {"items[0][price]": "p1", "items[0][qty]": 1}
+
+            >>> _flatten_form_data({"customer": "cus_123", "metadata": {"key": "value"}})
+            {"customer": "cus_123", "metadata[key]": "value"}
+        """
+        flattened = {}
+
+        for key, value in data.items():
+            new_key = f"{parent_key}[{key}]" if parent_key else key
+
+            if isinstance(value, dict):
+                # Recursively flatten nested dicts
+                flattened.update(self._flatten_form_data(value, new_key))
+            elif isinstance(value, list):
+                # Flatten arrays with indexed bracket notation
+                for i, item in enumerate(value):
+                    indexed_key = f"{new_key}[{i}]"
+                    if isinstance(item, dict):
+                        # Nested dict in array - recurse
+                        flattened.update(self._flatten_form_data(item, indexed_key))
+                    elif isinstance(item, list):
+                        # Nested list in array - recurse
+                        flattened.update(self._flatten_form_data({str(i): item}, new_key))
+                    else:
+                        # Primitive value in array
+                        flattened[indexed_key] = item
+            else:
+                # Primitive value - add directly
+                flattened[new_key] = value
+
+        return flattened
+
+    def _build_multipart_related(self, endpoint: EndpointDefinition, body: dict[str, Any]) -> dict[str, Any]:
+        """Build a multipart/related request body for file uploads.
+
+        Creates an RFC 2387 multipart/related body with two parts:
+        - Part 1: JSON metadata (file name, parents, etc.)
+        - Part 2: Binary file content (base64-decoded from the upload param)
+
+        Args:
+            endpoint: Endpoint definition with upload_file_param
+            body: Request body containing metadata and base64-encoded file content
+
+        Returns:
+            Dict with 'content' (raw bytes) and 'headers' (Content-Type with boundary)
+        """
+        file_param = endpoint.upload_file_param or "file_content"
+
+        # Copy to avoid mutating the caller's dict (e.g. if retried after an error)
+        body = dict(body)
+        file_content_b64 = body.pop(file_param, None)
+        file_mime_type = body.pop("file_mime_type", "application/octet-stream")
+
+        if not file_content_b64:
+            return {"json": body}
+
+        try:
+            file_bytes = base64.b64decode(file_content_b64)
+        except Exception as exc:
+            raise ValueError(f"Parameter '{file_param}' must be valid base64-encoded content.") from exc
+
+        boundary = f"airbyte_boundary_{uuid.uuid4().hex}"
+
+        metadata_json = json_module.dumps(body).encode("utf-8")
+
+        parts = []
+        parts.append(f"--{boundary}\r\n".encode())
+        parts.append(b"Content-Type: application/json; charset=UTF-8\r\n\r\n")
+        parts.append(metadata_json)
+        parts.append(b"\r\n")
+        parts.append(f"--{boundary}\r\n".encode())
+        parts.append(f"Content-Type: {file_mime_type}\r\n\r\n".encode())
+        parts.append(file_bytes)
+        parts.append(b"\r\n")
+        parts.append(f"--{boundary}--\r\n".encode())
+
+        content_bytes = b"".join(parts)
+
+        return {
+            "content": content_bytes,
+            "headers": {"Content-Type": f"multipart/related; boundary={boundary}"},
+        }
+
+    def _determine_request_format(self, endpoint: EndpointDefinition, body: dict[str, Any] | list[dict[str, Any]] | None) -> dict[str, Any]:
+        """Determine json/data parameters for HTTP request.
+
+        GraphQL always uses JSON, regardless of content_type setting.
+        For form-encoded requests, nested structures are flattened into bracket notation.
+
+        Args:
+            endpoint: Endpoint definition
+            body: Request body dict, list of dicts (array body), or None
+
+        Returns:
+            Dict with 'json' and/or 'data' keys for http_client.request()
+        """
+        if not body:
+            return {}
+
+        is_graphql = endpoint.graphql_body is not None
+
+        if is_graphql or endpoint.content_type.value == "application/json":
+            return {"json": body}
+        elif endpoint.content_type.value == "application/x-www-form-urlencoded":
+            # Flatten nested structures for form encoding
+            flattened_body = self._flatten_form_data(body)
+            return {"data": flattened_body}
+        elif endpoint.content_type.value == "multipart/related":
+            return self._build_multipart_related(endpoint, body)
+
+        return {}
+
+    def _process_graphql_fields(self, query: str, graphql_config: dict[str, Any], params: dict[str, Any]) -> str:
+        """Process GraphQL query field selection.
+
+        Handles:
+        - Dynamic fields from params['fields']
+        - Default fields from config
+        - String vs list format for default_fields
+
+        Args:
+            query: GraphQL query string (may contain {{ fields }} placeholder)
+            graphql_config: GraphQL configuration dict
+            params: Parameters from execute() call
+
+        Returns:
+            Processed query string with fields injected
+        """
+        if "{{ fields }}" not in query:
+            return query
+
+        # Check for explicit fields parameter
+        if "fields" in params and params["fields"]:
+            return self._inject_graphql_fields(query, params["fields"])
+
+        # Use default fields if available
+        if "default_fields" not in graphql_config:
+            return query  # Placeholder remains (could raise error in the future)
+
+        default_fields = graphql_config["default_fields"]
+        if isinstance(default_fields, str):
+            # Already in GraphQL format - direct replacement
+            return query.replace("{{ fields }}", default_fields)
+        elif isinstance(default_fields, list):
+            # List format - convert to GraphQL
+            return self._inject_graphql_fields(query, default_fields)
+
+        return query
+
+    def _build_graphql_body(
+        self,
+        graphql_config: dict[str, Any],
+        params: dict[str, Any],
+        param_defaults: dict[str, Any] | None = None,
+    ) -> dict[str, Any]:
+        """Build GraphQL request body with variable substitution and field selection.
+
+        Args:
+            graphql_config: GraphQL configuration from x-airbyte-body-type extension
+            params: Parameters from execute() call
+            param_defaults: Default values for params from query_params_schema
+
+        Returns:
+            GraphQL request body: {"query": "...", "variables": {...}}
+        """
+        query = graphql_config["query"]
+
+        # Process field selection (dynamic fields or default fields)
+        query = self._process_graphql_fields(query, graphql_config, params)
+
+        body = {"query": query}
+
+        # Substitute variables from params
+        if "variables" in graphql_config and graphql_config["variables"]:
+            variables = self._interpolate_variables(graphql_config["variables"], params, param_defaults)
+            # Filter out None values (optional fields not provided) - matches REST _extract_body() behavior
+            # But preserve None for variables explicitly marked as nullable (e.g., to unassign a user)
+            nullable_vars = set(graphql_config.get("x-airbyte-nullable-variables") or [])
+            body["variables"] = {k: v for k, v in variables.items() if v is not None or k in nullable_vars}
+
+        # Add operation name if specified
+        if "operationName" in graphql_config:
+            body["operationName"] = graphql_config["operationName"]
+
+        return body
+
+    def _convert_nested_field_to_graphql(self, field: str) -> str:
+        """Convert dot-notation field to GraphQL field selection.
+
+        Example: "primaryLanguage.name" -> "primaryLanguage { name }"
+
+        Args:
+            field: Field name in dot notation (e.g., "primaryLanguage.name")
+
+        Returns:
+            GraphQL field selection string
+        """
+        if "." not in field:
+            return field
+
+        parts = field.split(".")
+        result = parts[0]
+        for part in parts[1:]:
+            result += f" {{ {part}"
+        result += " }" * (len(parts) - 1)
+        return result
+
+    def _inject_graphql_fields(self, query: str, fields: list[str]) -> str:
+        """Inject field selection into GraphQL query.
+
+        Replaces field selection placeholders ({{ fields }}) with actual field list.
+        Supports nested fields using dot notation (e.g., "primaryLanguage.name").
+
+        Args:
+            query: GraphQL query string (may contain {{ fields }} placeholder)
+            fields: List of fields to select (e.g., ["id", "name", "primaryLanguage.name"])
+
+        Returns:
+            GraphQL query with fields injected
+
+        Example:
+            Input query: "query { repository { {{ fields }} } }"
+            Fields: ["id", "name", "primaryLanguage { name }"]
+            Output: "query { repository { id name primaryLanguage { name } } }"
+        """
+        # Check if query has field placeholder
+        if "{{ fields }}" not in query:
+            # No placeholder - return query as-is (backward compatible)
+            return query
+
+        # Convert field list to GraphQL field selection
+        graphql_fields = [self._convert_nested_field_to_graphql(field) for field in fields]
+
+        # Replace placeholder with field list
+        fields_str = " ".join(graphql_fields)
+        return query.replace("{{ fields }}", fields_str)
+
+    def _interpolate_variables(
+        self,
+        variables: dict[str, Any],
+        params: dict[str, Any],
+        param_defaults: dict[str, Any] | None = None,
+    ) -> dict[str, Any]:
+        """Recursively interpolate variables using params.
+
+        Preserves types (doesn't stringify everything).
+
+        Supports:
+        - Direct replacement: "{{ owner }}" → params["owner"] (preserves type)
+        - Nested objects: {"input": {"name": "{{ name }}"}}
+        - Arrays: [{"id": "{{ id }}"}]
+        - Default values: "{{ per_page }}" → param_defaults["per_page"] if not in params
+        - Unsubstituted placeholders: "{{ states }}" → None (for optional params without defaults)
+
+        Args:
+            variables: Variables dict with template placeholders
+            params: Parameters to substitute
+            param_defaults: Default values for params from query_params_schema
+
+        Returns:
+            Interpolated variables dict with types preserved
+        """
+        defaults = param_defaults or {}
+
+        def interpolate_value(value: Any) -> Any:
+            if isinstance(value, str):
+                # Check for exact template match (preserve type)
+                for key, param_value in params.items():
+                    placeholder = f"{{{{ {key} }}}}"
+                    if value == placeholder:
+                        return param_value  # Return actual value (int, list, etc.)
+                    elif placeholder in value:
+                        # Partial match - do string replacement
+                        value = value.replace(placeholder, str(param_value))
+
+                # Check if any unsubstituted placeholders remain
+                if re.search(r"\{\{\s*\w+\s*\}\}", value):
+                    # Extract placeholder name and check for default value
+                    match = re.search(r"\{\{\s*(\w+)\s*\}\}", value)
+                    if match:
+                        param_name = match.group(1)
+                        if param_name in defaults:
+                            # Use default value (preserves type)
+                            return defaults[param_name]
+                    # No default found - return None (for optional params)
+                    return None
+
+                return value
+            elif isinstance(value, dict):
+                return {k: interpolate_value(v) for k, v in value.items()}
+            elif isinstance(value, list):
+                return [interpolate_value(item) for item in value]
+            else:
+                return value
+
+        return interpolate_value(variables)
+
+    def _wrap_primitives(self, data: Any) -> dict[str, Any] | list[dict[str, Any]] | None:
+        """Wrap primitive values in dict format for consistent response structure.
+
+        Transforms primitive API responses into dict format so downstream code
+        can always expect dict-based data structures.
+
+        Args:
+            data: Response data (could be primitive, list, dict, or None)
+
+        Returns:
+            - If data is a primitive (str, int, float, bool): {"value": data}
+            - If data is a list: wraps all non-dict elements as {"value": item}
+            - If data is already a dict or list of dicts: unchanged
+            - If data is None: None
+
+        Examples:
+            >>> executor._wrap_primitives(42)
+            {"value": 42}
+            >>> executor._wrap_primitives([1, 2, 3])
+            [{"value": 1}, {"value": 2}, {"value": 3}]
+            >>> executor._wrap_primitives([1, {"id": 2}, 3])
+            [{"value": 1}, {"id": 2}, {"value": 3}]
+            >>> executor._wrap_primitives([[1, 2], 3])
+            [{"value": [1, 2]}, {"value": 3}]
+            >>> executor._wrap_primitives({"id": 1})
+            {"id": 1}  # unchanged
+        """
+        if data is None:
+            return None
+
+        # Handle primitive scalars
+        if isinstance(data, (bool, str, int, float)):
+            return {"value": data}
+
+        # Handle lists - wrap non-dict elements
+        if isinstance(data, list):
+            if not data:
+                return []  # Empty list unchanged
+
+            wrapped = []
+            for item in data:
+                if isinstance(item, dict):
+                    wrapped.append(item)
+                else:
+                    wrapped.append({"value": item})
+            return wrapped
+
+        # Dict - return unchanged
+        if isinstance(data, dict):
+            return data
+
+        # Unknown type - wrap for safety
+        return {"value": data}
+
+    def _extract_records(
+        self,
+        response_data: Any,
+        endpoint: EndpointDefinition,
+        config: dict[str, Any] | None = None,
+    ) -> dict[str, Any] | list[dict[str, Any]] | None:
+        """Extract records from response using record extractor, transform, and filter.
+
+        Type inference based on action:
+        - list, search: Returns array ([] if not found)
+        - get, create, update, delete: Returns single record (None if not found)
+
+        Automatically wraps primitive values (int, str, float, bool) in {"value": primitive}
+        format to ensure consistent dict-based responses for downstream code.
+
+        If the endpoint defines `record_transform`, it is evaluated per extracted
+        record after JSONPath extraction and before record_filter. This allows
+        connectors to reshape primitive or nested records into object records
+        that downstream code can reference by field name.
+
+        If the endpoint defines `record_filter` (Jinja expression), it is evaluated
+        per record after JSONPath extraction; records for which the expression is
+        truthy are kept, others are dropped. Only applies to list/api_search actions.
+
+        Args:
+            response_data: Full API response (can be dict, list, primitive, or None)
+            endpoint: Endpoint with optional record extractor, record filter, and action
+            config: Connector config available to the Jinja filter as `config`
+
+        Returns:
+            - Extracted data if extractor configured and path found
+            - [] or None if path not found (based on action)
+            - Original response if no extractor configured or on error
+            - Primitives are wrapped as {"value": primitive}
+        """
+        # Check if endpoint has record extractor
+        extractor = endpoint.record_extractor
+        if not extractor:
+            return self._wrap_primitives(response_data)
+
+        # Determine if this action returns array or single record
+        action = endpoint.action
+        if not action:
+            return self._wrap_primitives(response_data)
+
+        is_array_action = action in (Action.LIST, Action.API_SEARCH)
+
+        try:
+            # Parse and apply JSONPath expression
+            jsonpath_expr = parse_jsonpath(extractor)
+            matches = [match.value for match in jsonpath_expr.find(response_data)]
+
+            if not matches:
+                # Path not found - return empty based on action
+                return [] if is_array_action else None
+
+            # Return extracted data with primitive wrapping. Mirror codegen's
+            # `_determine_extracted_type` so runtime shape matches the typed envelope:
+            # codegen emits `list[X]` only when the JSONPath traverses `[*]`. Without
+            # `[*]` the extractor surfaces a single value whose shape codegen takes
+            # at face value.
+            if is_array_action:
+                contains_wildcard = "[*]" in extractor
+                if len(matches) == 1:
+                    single = matches[0]
+                    if isinstance(single, list) or single is response_data or not contains_wildcard:
+                        # Pass through:
+                        #   - already a list (extractor pointed at the array container, e.g. `$.users`)
+                        #   - the root response (`$` or jsonpath_ng quirks like `$[*][*]`)
+                        #   - no `[*]` projection (`$.data` returning a single object,
+                        #     `$.account_overview` returning a stats dict — codegen emits a
+                        #     non-list type for these)
+                        result = single
+                    else:
+                        # Wildcard projection with one element: wrap as singleton list so
+                        # the typed envelope's `data: list[X]` contract is honored.
+                        result = [single]
+                else:
+                    # Multiple matches always come from per-element projection.
+                    result = matches
+            else:
+                # For single record actions, return first match
+                result = matches[0]
+
+        except Exception as e:
+            record_transform = getattr(endpoint, "record_transform", None)
+            record_filter = getattr(endpoint, "record_filter", None)
+            if isinstance(record_transform, dict) and record_transform:
+                logging.error(
+                    f"Record extractor '{extractor}' failed on an endpoint with a record_transform; "
+                    f"propagating rather than returning untransformed data: {e}"
+                )
+                raise
+            if is_array_action and isinstance(record_filter, str) and record_filter:
+                # Extractor failed on an endpoint that declares a record_filter.
+                # Silently returning the unfiltered response would bypass a
+                # privacy-critical filter (e.g. Gong's `isPrivate`) and leak the
+                # exact records the filter is meant to drop. Fail loud instead.
+                logging.error(
+                    f"Record extractor '{extractor}' failed on an endpoint with a record_filter; "
+                    f"propagating rather than returning unfiltered data: {e}"
+                )
+                raise
+            logging.warning(f"Failed to apply record extractor '{extractor}': {e}. Returning original response.")
+            return self._wrap_primitives(response_data)
+
+        record_transform = getattr(endpoint, "record_transform", None)
+        if isinstance(record_transform, dict) and record_transform and result is not None:
+            result = self._apply_record_transform(result, record_transform, config or {})
+
+        result = self._wrap_primitives(result)
+
+        # Apply record_filter (Jinja expression) on list/api_search actions.
+        # Intentionally outside the try/except above: a failing record_filter is
+        # a connector configuration bug, and for privacy-critical filters silent
+        # recovery would leak records. Let the exception propagate.
+        record_filter = getattr(endpoint, "record_filter", None)
+        if is_array_action and isinstance(record_filter, str) and record_filter and result is not None:
+            result = self._apply_record_filter(result, record_filter, config or {})
+
+        return result
+
+    # Strings that a rendered Jinja expression should resolve to a boolean False.
+    # Mirrors Airbyte declarative CDK's InterpolatedBoolean.FALSY_STRINGS.
+    _FALSY_RENDERED_STRINGS = frozenset({"False", "false", "0", "None", "none", "null", ""})
+
+    # Shared Jinja environment for record_filter evaluation. `Environment` is
+    # thread-safe for rendering, so a single module-level instance avoids the
+    # per-record allocation cost of spinning up a new one each call.
+    _RECORD_FILTER_ENV = SandboxedEnvironment(undefined=StrictUndefined, autoescape=False)
+    _RECORD_TRANSFORM_ENV = SandboxedEnvironment(undefined=StrictUndefined, autoescape=False)
+    _SCOPING_VALUE_TEMPLATE_ENV = SandboxedEnvironment(undefined=StrictUndefined, autoescape=False)
+
+    @classmethod
+    def _evaluate_compiled_record_filter(
+        cls,
+        template: Template,
+        record: dict[str, Any],
+        config: dict[str, Any],
+    ) -> bool:
+        """Render a compiled `record_filter` template and coerce the result to bool.
+
+        The template receives the current record as `record` and the connector
+        config as `config`. Booleans are returned verbatim; strings use Airbyte
+        CDK's falsy-string semantics (`False`, `false`, `0`, `None`, `none`,
+        `null`, empty string are falsy).
+        """
+        rendered = template.render(record=record, config=config)
+        if isinstance(rendered, bool):
+            return rendered
+        if isinstance(rendered, str):
+            return rendered.strip() not in cls._FALSY_RENDERED_STRINGS
+        return bool(rendered)
+
+    def _apply_record_filter(
+        self,
+        records: dict[str, Any] | list[dict[str, Any]],
+        condition: str,
+        config: dict[str, Any],
+    ) -> dict[str, Any] | list[dict[str, Any]]:
+        """Filter extracted records using a Jinja boolean expression.
+
+        Keeps records where the expression renders truthy. Preserves the
+        input container type: a list stays a list; a single-dict result
+        becomes either the same dict (kept) or an empty list (dropped).
+
+        The Jinja template is compiled **once per call** and reused across
+        every record in the batch — compiling per-record would add an O(N)
+        grammar-parse + AST-compile overhead on large list responses.
+
+        Evaluation errors (e.g. missing fields under ``StrictUndefined``,
+        invalid template syntax) are intentionally propagated — for
+        privacy-critical filters like Gong's ``isPrivate`` the safe default
+        is to *fail the sync* rather than silently let records through.
+        Connector authors can pre-guard fields in the expression itself
+        (e.g. ``{{ not record.get('isPrivate', false) }}``) when the
+        upstream API may omit the field.
+        """
+        template = self._RECORD_FILTER_ENV.from_string(condition)
+
+        if isinstance(records, list):
+            filtered: list[dict[str, Any]] = []
+            for record in records:
+                if not isinstance(record, dict):
+                    # Non-dict items can't be filtered by field — keep them.
+                    filtered.append(record)
+                    continue
+                if self._evaluate_compiled_record_filter(template, record, config):
+                    filtered.append(record)
+            return filtered
+
+        if isinstance(records, dict):
+            if self._evaluate_compiled_record_filter(template, records, config):
+                return records
+            # Dropped: return an empty list so downstream list-action consumers
+            # still see an iterable.
+            return []
+
+        # Unknown shape — return unchanged.
+        return records
+
+    def _apply_record_transform(
+        self,
+        records: dict[str, Any] | list[dict[str, Any]],
+        transform: dict[str, str],
+        config: dict[str, Any],
+    ) -> dict[str, Any] | list[dict[str, Any]]:
+        """Reshape extracted records via a per-field Jinja mapping."""
+        compiled = {field_name: self._RECORD_TRANSFORM_ENV.from_string(template) for field_name, template in transform.items()}
+
+        def transform_record(record: Any) -> dict[str, Any]:
+            record_context = record if isinstance(record, dict) else {"value": record}
+            transformed = {field_name: template.render(record=record_context, config=config) for field_name, template in compiled.items()}
+            if isinstance(record, dict):
+                return {**record, **transformed}
+            return transformed
+
+        if isinstance(records, list):
+            return [transform_record(record) for record in records]
+        if isinstance(records, dict):
+            return transform_record(records)
+        return records
+
+    def _extract_metadata(
+        self,
+        response_data: dict[str, Any],
+        response_headers: dict[str, str],
+        endpoint: EndpointDefinition,
+    ) -> dict[str, Any] | None:
+        """Extract metadata from response using meta extractor.
+
+        Each field in meta_extractor dict is independently extracted using JSONPath
+        for body extraction, or special prefixes for header extraction:
+        - @link.{rel}: Extract URL from RFC 5988 Link header by rel type
+        - @header.{name}: Extract raw header value by header name
+        - Otherwise: JSONPath expression for body extraction
+
+        Missing or invalid paths result in None for that field (no crash).
+
+        Args:
+            response_data: Full API response (before record extraction)
+            response_headers: HTTP response headers
+            endpoint: Endpoint with optional meta extractor configuration
+
+        Returns:
+            - Dict of extracted metadata if extractor configured
+            - None if no extractor configured
+            - Dict with None values for failed extractions
+
+        Example:
+            meta_extractor = {
+                "pagination": "$.records",
+                "request_id": "$.requestId",
+                "next_page_url": "@link.next",
+                "rate_limit": "@header.X-RateLimit-Remaining"
+            }
+            Returns: {
+                "pagination": {"cursor": "abc", "total": 100},
+                "request_id": "xyz123",
+                "next_page_url": "https://api.example.com/data?cursor=abc",
+                "rate_limit": "99"
+            }
+        """
+        # Check if endpoint has meta extractor
+        if endpoint.meta_extractor is None:
+            return None
+
+        extracted_meta: dict[str, Any] = {}
+
+        # Extract each field independently
+        for field_name, extractor_expr in endpoint.meta_extractor.items():
+            try:
+                if extractor_expr.startswith("@link."):
+                    # RFC 5988 Link header extraction
+                    rel = extractor_expr[6:]
+                    extracted_meta[field_name] = self._extract_link_url(response_headers, rel)
+                elif extractor_expr.startswith("@header."):
+                    # Raw header value extraction (case-insensitive lookup)
+                    header_name = extractor_expr[8:]
+                    extracted_meta[field_name] = self._get_header_value(response_headers, header_name)
+                else:
+                    # JSONPath body extraction
+                    jsonpath_expr = parse_jsonpath(extractor_expr)
+                    matches = [match.value for match in jsonpath_expr.find(response_data)]
+
+                    if matches:
+                        # Return first match (most common case)
+                        extracted_meta[field_name] = matches[0]
+                    else:
+                        # Path not found - set to None
+                        extracted_meta[field_name] = None
+
+            except Exception as e:
+                # Log error but continue with other fields
+                logging.warning(f"Failed to apply meta extractor for field '{field_name}' with expression '{extractor_expr}': {e}. Setting to None.")
+                extracted_meta[field_name] = None
+
+        return extracted_meta
+
+    @staticmethod
+    def _extract_link_url(headers: dict[str, str], rel: str) -> str | None:
+        """Extract URL from RFC 5988 Link header by rel type.
+
+        Parses Link header format: <url>; param1="value1"; rel="next"; param2="value2"
+
+        Supports:
+        - Multiple parameters per link in any order
+        - Both quoted and unquoted rel values
+        - Multiple links separated by commas
+
+        Args:
+            headers: Response headers dict
+            rel: The rel type to extract (e.g., "next", "prev", "first", "last")
+
+        Returns:
+            The URL for the specified rel type, or None if not found
+        """
+        link_header = headers.get("Link") or headers.get("link", "")
+        if not link_header:
+            return None
+
+        for link_segment in re.split(r",(?=\s*<)", link_header):
+            link_segment = link_segment.strip()
+
+            url_match = re.match(r"<([^>]+)>", link_segment)
+            if not url_match:
+                continue
+
+            url = url_match.group(1)
+            params_str = link_segment[url_match.end() :]
+
+            rel_match = re.search(r';\s*rel="?([^";,]+)"?', params_str, re.IGNORECASE)
+            if rel_match and rel_match.group(1).strip() == rel:
+                return url
+
+        return None
+
+    @staticmethod
+    def _get_header_value(headers: dict[str, str], header_name: str) -> str | None:
+        """Get header value with case-insensitive lookup.
+
+        Args:
+            headers: Response headers dict
+            header_name: Header name to look up
+
+        Returns:
+            Header value or None if not found
+        """
+        # Try exact match first
+        if header_name in headers:
+            return headers[header_name]
+
+        # Case-insensitive lookup
+        header_name_lower = header_name.lower()
+        for key, value in headers.items():
+            if key.lower() == header_name_lower:
+                return value
+
+        return None
+
+    def _validate_required_body_fields(self, endpoint: Any, params: dict[str, Any], action: Action, entity: str) -> None:
+        """Validate that required body fields are present for CREATE/UPDATE operations.
+
+        Args:
+            endpoint: Endpoint definition
+            params: Parameters provided
+            action: Operation action
+            entity: Entity name
+
+        Raises:
+            MissingParameterError: If required body fields are missing
+        """
+        # Only validate for operations that typically have required body fields
+        if action not in (Action.CREATE, Action.UPDATE):
+            return
+
+        # Get the request schema to find truly required fields
+        request_schema = endpoint.request_schema
+        if not request_schema:
+            return
+
+        # Only validate fields explicitly marked as required in the schema
+        required_fields = request_schema.get("required", [])
+        missing_fields = [field for field in required_fields if field not in params]
+
+        if missing_fields:
+            raise MissingParameterError(
+                f"Missing required body fields for {entity}.{action.value}: {missing_fields}. Provided parameters: {list(params.keys())}"
+            )
+
+    def _validate_enum_params(self, endpoint: EndpointDefinition, params: dict[str, Any]) -> None:
+        """Validate enum-constrained query/body params BEFORE the HTTP call.
+
+        Walks ``endpoint.query_params_schema`` and the top level of
+        ``endpoint.request_schema.properties`` (scope limited to top level
+        for this phase). Any value not in the schema's ``enum`` list (or, for
+        arrays with ``items.enum``, any element not in that list) triggers a
+        :class:`ConnectorValidationError` with the offending field name and
+        the allowed values. No network call is made on invalid input.
+
+        Also raises when a schema declares ``type: array`` but the provided
+        value is a scalar — the schema contract is violated even if the scalar
+        happens to be a member of ``items.enum``.
+
+        Args:
+            endpoint: Endpoint definition with query/body schemas.
+            params: Caller-provided parameters.
+
+        Raises:
+            ConnectorValidationError: If any value violates an enum or the
+                array/scalar contract.
+        """
+
+        def check(name: str, schema: dict[str, Any], value: Any) -> None:
+            if not isinstance(schema, dict):
+                return
+            enum_values = schema.get("enum")
+            raw_items = schema.get("items")
+            items = raw_items if isinstance(raw_items, dict) else None
+            items_enum = items.get("enum") if items else None
+
+            if enum_values and value not in enum_values:
+                raise ConnectorValidationError(f"Invalid value {value!r} for parameter {name!r}; expected one of: {enum_values}")
+
+            if items_enum:
+                if isinstance(value, list):
+                    bad = [v for v in value if v not in items_enum]
+                    if bad:
+                        raise ConnectorValidationError(f"Invalid value(s) {bad!r} for parameter {name!r}; expected each element in: {items_enum}")
+                elif schema.get("type") == "array":
+                    raise ConnectorValidationError(f"Parameter {name!r} expects an array of values from {items_enum}; got scalar {value!r}")
+            elif schema.get("type") == "array" and value is not None and not isinstance(value, list):
+                # Array contract violated regardless of whether items carry an enum.
+                raise ConnectorValidationError(f"Parameter {name!r} expects an array; got scalar {value!r}")
+
+        for name, schema in (endpoint.query_params_schema or {}).items():
+            if name in params:
+                check(name, schema, params[name])
+
+        # Top-level request body properties only — nested object validation
+        # is intentionally out of scope for this phase.
+        request_schema = endpoint.request_schema or {}
+        properties = request_schema.get("properties") if isinstance(request_schema, dict) else None
+        if isinstance(properties, dict):
+            for name, schema in properties.items():
+                if name in params:
+                    check(name, schema, params[name])
+
+    async def close(self):
+        """Close async HTTP client and logger."""
+        self.tracker.track_session_end()
+        await self.http_client.close()
+        self.logger.close()
+
+    async def __aenter__(self):
+        """Async context manager entry."""
+        return self
+
+    async def __aexit__(self, exc_type, exc_val, exc_tb):
+        """Async context manager exit."""
+        await self.close()
+
+
+# =============================================================================
+# Operation Handlers
+# =============================================================================
+
+
+class _StandardOperationHandler:
+    """Handler for standard REST operations (GET, LIST, CREATE, UPDATE, DELETE, API_SEARCH, AUTHORIZE)."""
+
+    def __init__(self, context: _OperationContext):
+        self.ctx = context
+
+    def can_handle(self, action: Action) -> bool:
+        """Check if this handler can handle the given action."""
+        return action in {
+            Action.GET,
+            Action.LIST,
+            Action.CREATE,
+            Action.UPDATE,
+            Action.DELETE,
+            Action.API_SEARCH,
+            Action.AUTHORIZE,
+        }
+
+    async def execute_operation(self, entity: str, action: Action, params: dict[str, Any]) -> StandardExecuteResult:
+        """Execute standard REST operation with full telemetry and error handling."""
+        tracer = trace.get_tracer("airbyte.connector-sdk.executor.local")
+
+        with tracer.start_as_current_span("airbyte.local_executor.execute_operation") as span:
+            # Add span attributes
+            span.set_attribute("connector.name", self.ctx.executor.model.name)
+            span.set_attribute("connector.entity", entity)
+            span.set_attribute("connector.action", action.value)
+            if params:
+                span.set_attribute("connector.param_keys", list(params.keys()))
+
+            # Increment operation counter
+            self.ctx.session.increment_operations()
+
+            # Track operation timing and status
+            start_time = time.time()
+            error_type = None
+            status_code = None
+
+            try:
+                # O(1) entity lookup
+                entity_def = self.ctx.entity_index.get(entity)
+                if not entity_def:
+                    available_entities = list(self.ctx.entity_index.keys())
+                    raise EntityNotFoundError(f"Entity '{entity}' not found in connector. Available entities: {available_entities}")
+
+                # Check if action is supported
+                if action not in entity_def.actions:
+                    supported_actions = [a.value for a in entity_def.actions]
+                    raise ActionNotSupportedError(
+                        f"Action '{action.value}' not supported for entity '{entity}'. Supported actions: {supported_actions}"
+                    )
+
+                # O(1) operation lookup
+                endpoint = self.ctx.operation_index.get((entity, action))
+                if not endpoint:
+                    raise ExecutorError(f"No endpoint defined for {entity}.{action.value}. This is a configuration error.")
+
+                # Validate enum-constrained params before any HTTP traffic.
+                # ConnectorValidationError must propagate — do NOT add it to
+                # the logic-error catch list at _execute_operation.
+                self.ctx.validate_enum_params(endpoint, params)
+
+                # Validate required body fields for CREATE/UPDATE operations
+                self.ctx.validate_required_body_fields(endpoint, params, action, entity)
+
+                # Build request parameters
+                # Use path_override if available, otherwise use the OpenAPI path
+                actual_path = endpoint.path_override.path if endpoint.path_override else endpoint.path
+                path = self.ctx.build_path(actual_path, params)
+                query_params = self.ctx.extract_query_params(endpoint.query_params, params, endpoint.query_params_schema)
+
+                # Serialize deepObject parameters to bracket notation
+                if endpoint.deep_object_params:
+                    query_params = self.ctx.executor._serialize_deep_object_params(query_params, endpoint.deep_object_params)
+
+                # Build request body (GraphQL or standard)
+                body = self.ctx.build_request_body(endpoint, params)
+
+                # Determine request format (json/data/content parameters)
+                request_kwargs = self.ctx.determine_request_format(endpoint, body)
+
+                # Extract header parameters from OpenAPI operation (pass body to add Content-Type)
+                header_params = self.ctx.extract_header_params(endpoint, params, body)
+
+                # Merge headers from request_kwargs (e.g., multipart/related boundary)
+                extra_headers = request_kwargs.pop("headers", None)
+                if extra_headers:
+                    header_params = {**(header_params or {}), **extra_headers}
+
+                # Execute async HTTP request
+                response_data, response_headers = await self.ctx.http_client.request(
+                    method=endpoint.method,
+                    path=path,
+                    params=query_params if query_params else None,
+                    json=request_kwargs.get("json"),
+                    data=request_kwargs.get("data"),
+                    content=request_kwargs.get("content"),
+                    headers=header_params if header_params else None,
+                )
+
+                # Apply x-airbyte-response-error-check for HTTP 200 application-level errors
+                LocalExecutor._apply_response_error_check(self.ctx.executor.model, response_data)
+
+                # Extract metadata from original response (before record extraction)
+                metadata = self.ctx.executor._extract_metadata(response_data, response_headers, endpoint)
+
+                # Extract records if extractor configured
+                response = self.ctx.extract_records(response_data, endpoint, self.ctx.executor.config_values)
+
+                # Assume success with 200 status code if no exception raised
+                status_code = 200
+
+                # Mark span as successful
+                span.set_attribute("connector.success", True)
+                span.set_attribute("http.status_code", status_code)
+
+                # Return StandardExecuteResult with data and metadata
+                return StandardExecuteResult(data=response, metadata=metadata)
+
+            except (EntityNotFoundError, ActionNotSupportedError) as e:
+                # Validation errors - record in span
+                error_type = type(e).__name__
+                span.set_attribute("connector.success", False)
+                span.set_attribute("connector.error_type", error_type)
+                span.record_exception(e)
+                raise
+
+            except Exception as e:
+                # Capture error details
+                error_type = type(e).__name__
+
+                # Try to get status code from HTTP errors
+                if hasattr(e, "response") and hasattr(e.response, "status_code"):
+                    status_code = e.response.status_code
+                    span.set_attribute("http.status_code", status_code)
+
+                span.set_attribute("connector.success", False)
+                span.set_attribute("connector.error_type", error_type)
+                span.record_exception(e)
+                raise
+
+            finally:
+                # Always track operation (success or failure)
+                timing_ms = (time.time() - start_time) * 1000
+                self.ctx.tracker.track_operation(
+                    entity=entity,
+                    action=action.value if isinstance(action, Action) else action,
+                    status_code=status_code,
+                    timing_ms=timing_ms,
+                    error_type=error_type,
+                )
+
+
+class _DownloadOperationHandler:
+    """Handler for download operations.
+
+    Supports two modes:
+    - Two-step (with x-airbyte-file-url): metadata request → extract URL → stream file
+    - One-step (without x-airbyte-file-url): stream file directly from endpoint
+    """
+
+    def __init__(self, context: _OperationContext):
+        self.ctx = context
+
+    def can_handle(self, action: Action) -> bool:
+        """Check if this handler can handle the given action."""
+        return action == Action.DOWNLOAD
+
+    def execute_operation(self, entity: str, action: Action, params: dict[str, Any]) -> AsyncIterator[bytes]:
+        """Return a lazy download stream for one-step or two-step downloads."""
+        return _DownloadResponseStream(self, entity, action, params)
+
+    async def _iter_download(
+        self,
+        entity: str,
+        action: Action,
+        params: dict[str, Any],
+        stream: _DownloadResponseStream,
+    ) -> AsyncIterator[bytes]:
+        """Execute download operation (one-step or two-step) with full telemetry."""
+        tracer = trace.get_tracer("airbyte.connector-sdk.executor.local")
+
+        with tracer.start_as_current_span("airbyte.local_executor.execute_operation") as span:
+            # Add span attributes
+            span.set_attribute("connector.name", self.ctx.executor.model.name)
+            span.set_attribute("connector.entity", entity)
+            span.set_attribute("connector.action", action.value)
+            if params:
+                span.set_attribute("connector.param_keys", list(params.keys()))
+
+            # Increment operation counter
+            self.ctx.session.increment_operations()
+
+            # Track operation timing and status
+            start_time = time.time()
+            error_type = None
+            status_code = None
+
+            try:
+                # Look up entity
+                entity_def = self.ctx.entity_index.get(entity)
+                if not entity_def:
+                    raise EntityNotFoundError(f"Entity '{entity}' not found in connector. Available entities: {list(self.ctx.entity_index.keys())}")
+
+                # Look up operation
+                operation = self.ctx.operation_index.get((entity, action))
+                if not operation:
+                    raise ActionNotSupportedError(
+                        f"Action '{action.value}' not supported for entity '{entity}'. Supported actions: {[a.value for a in entity_def.actions]}"
+                    )
+
+                # Common setup for both download modes
+                actual_path = operation.path_override.path if operation.path_override else operation.path
+                path = self.ctx.build_path(actual_path, params)
+                # Apply schema defaults for downloads so semantically-required constants (e.g. Google
+                # Drive's alt=media) are sent even when the caller omits them; without alt=media Drive
+                # returns file metadata JSON instead of the file bytes.
+                query_params = self.ctx.extract_query_params(
+                    operation.query_params, params, operation.query_params_schema, apply_schema_defaults=True
+                )
+
+                # Serialize deepObject parameters to bracket notation
+                if operation.deep_object_params:
+                    query_params = self.ctx.executor._serialize_deep_object_params(query_params, operation.deep_object_params)
+
+                # Prepare headers (with optional Range support)
+                range_header = params.get("range_header")
+                headers = {"Accept": "*/*"}
+                if range_header is not None:
+                    headers["Range"] = range_header
+
+                # Check download mode: two-step (with file_field) or one-step (without)
+                file_field = operation.file_field
+
+                if file_field:
+                    # Substitute template variables in file_field (e.g., "attachments[{index}].url")
+                    file_field = LocalExecutor._substitute_file_field_params(file_field, params)
+
+                if file_field:
+                    # Two-step download: metadata → extract URL → stream file
+                    # Step 1: Get metadata (standard request)
+                    request_body = self.ctx.build_request_body(
+                        endpoint=operation,
+                        params=params,
+                    )
+                    request_format = self.ctx.determine_request_format(operation, request_body)
+                    self.ctx.validate_required_body_fields(operation, params, action, entity)
+
+                    metadata_response, _ = await self.ctx.http_client.request(
+                        method=operation.method,
+                        path=path,
+                        params=query_params,
+                        **request_format,
+                    )
+
+                    # Apply x-airbyte-response-error-check before URL extraction so
+                    # connectors that signal application-level errors on the metadata
+                    # request surface as HTTPClientError instead of an opaque
+                    # "field not found" ExecutorError.
+                    LocalExecutor._apply_response_error_check(self.ctx.executor.model, metadata_response)
+
+                    # Step 2: Extract file URL from metadata
+                    file_url = LocalExecutor._extract_download_url(
+                        response=metadata_response,
+                        file_field=file_field,
+                        entity=entity,
+                    )
+
+                    # Step 3: Stream file from extracted URL
+                    file_response, file_headers = await self.ctx.http_client.request(
+                        method="GET",
+                        path=file_url,
+                        headers=headers,
+                        stream=True,
+                    )
+                    file_status_code = getattr(file_response, "status_code", None)
+                else:
+                    # One-step direct download: stream file directly from endpoint
+                    file_response, file_headers = await self.ctx.http_client.request(
+                        method=operation.method,
+                        path=path,
+                        params=query_params,
+                        headers=headers,
+                        stream=True,
+                    )
+                    file_status_code = getattr(file_response, "status_code", None)
+
+                    # Apply x-airbyte-response-error-check to one-step download
+                    # responses. Only buffer the body when the connector declares
+                    # the extension AND the response looks like it could carry a
+                    # JSON error envelope — binary downloads must keep streaming
+                    # lazily to avoid full-memory reads. Range requests return 206
+                    # Partial Content whose body is a byte range of the file, not
+                    # a full envelope, so skip the check for those.
+                    error_check = self.ctx.executor.model.response_error_check
+                    if error_check is not None and (range_header is None or file_status_code != 206):
+                        content_type = file_headers.get("content-type", "").lower()
+                        if "json" in content_type:
+                            body_bytes = await _read_stream_body(file_response)
+                            try:
+                                payload = json_module.loads(body_bytes) if body_bytes else None
+                            except ValueError as exc:
+                                # Mirror HTTPClient.request(stream=False) behaviour: surface
+                                # malformed JSON instead of silently returning garbage bytes
+                                # as file content.
+                                raise HTTPClientError(
+                                    f"Failed to parse JSON response for download (content-type={file_headers.get('content-type', '')}): {exc}"
+                                )
+                            if isinstance(payload, dict):
+                                LocalExecutor._apply_response_error_check(self.ctx.executor.model, payload)
+                            # Envelope did not match (or payload was not a dict).
+                            # Re-wrap the already-read bytes so the existing
+                            # streaming block below runs unchanged — no early
+                            # return, no missed telemetry.
+                            file_response = _BufferedAsyncResponse(body_bytes, file_headers)
+
+                file_headers = file_headers or getattr(file_response, "headers", {}) or {}
+                stream.response_headers = {str(key).lower(): str(value) for key, value in file_headers.items()}
+                stream.response_status_code = file_status_code if isinstance(file_status_code, int) else None
+                stream.range_header = str(range_header) if range_header is not None else None
+
+                # Assume success once we start streaming
+                status_code = stream.response_status_code or 200
+
+                # Mark span as successful
+                span.set_attribute("connector.success", True)
+                span.set_attribute("http.status_code", status_code)
+
+                # Stream file chunks
+                default_chunk_size = 8 * 1024 * 1024  # 8 MB
+                async for chunk in file_response.aiter_bytes(chunk_size=default_chunk_size):
+                    self.ctx.logger.log_chunk_fetch(chunk)
+                    yield chunk
+
+            except (EntityNotFoundError, ActionNotSupportedError) as e:
+                # Validation errors - record in span
+                error_type = type(e).__name__
+                span.set_attribute("connector.success", False)
+                span.set_attribute("connector.error_type", error_type)
+                span.record_exception(e)
+
+                # Track the failed operation before re-raising
+                timing_ms = (time.time() - start_time) * 1000
+                self.ctx.tracker.track_operation(
+                    entity=entity,
+                    action=action.value,
+                    status_code=status_code,
+                    timing_ms=timing_ms,
+                    error_type=error_type,
+                )
+                raise
+
+            except Exception as e:
+                # Capture error details
+                error_type = type(e).__name__
+
+                # Try to get status code from HTTP errors
+                if hasattr(e, "response") and hasattr(e.response, "status_code"):
+                    status_code = e.response.status_code
+                    span.set_attribute("http.status_code", status_code)
+
+                span.set_attribute("connector.success", False)
+                span.set_attribute("connector.error_type", error_type)
+                span.record_exception(e)
+
+                # Track the failed operation before re-raising
+                timing_ms = (time.time() - start_time) * 1000
+                self.ctx.tracker.track_operation(
+                    entity=entity,
+                    action=action.value,
+                    status_code=status_code,
+                    timing_ms=timing_ms,
+                    error_type=error_type,
+                )
+                raise
+
+            finally:
+                # Track successful operation (if no exception was raised)
+                # Note: For generators, this runs after all chunks are yielded
+                if error_type is None:
+                    timing_ms = (time.time() - start_time) * 1000
+                    self.ctx.tracker.track_operation(
+                        entity=entity,
+                        action=action.value,
+                        status_code=status_code,
+                        timing_ms=timing_ms,
+                        error_type=None,
+                    )

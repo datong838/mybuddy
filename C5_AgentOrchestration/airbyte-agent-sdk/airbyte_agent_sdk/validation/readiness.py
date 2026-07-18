@@ -1,0 +1,1684 @@
+"""
+Validation tools for connector readiness and schema compliance.
+
+These tools help ensure that connectors are ready to ship by:
+- Checking that all entity/action operations have corresponding test cassettes
+- Validating that response schemas match the actual cassette responses
+- Detecting fields present in responses but not declared in schemas
+- Validating replication compatibility with Airbyte source connectors
+"""
+
+from collections import defaultdict
+from pathlib import Path
+from typing import Any, Dict, List, Tuple
+
+import jsonschema
+import yaml
+from jsonpath_ng import parse as parse_jsonpath
+
+from airbyte_agent_sdk.connector_model_loader import (
+    ConnectorModelLoaderError,
+    load_connector_model,
+)
+from airbyte_agent_sdk.schema.base import RuntimeMode
+from airbyte_agent_sdk.testing.spec_loader import load_test_spec
+from airbyte_agent_sdk.types import Action, ConnectorModel, EndpointDefinition
+from airbyte_agent_sdk.utils import infer_auth_scheme_name
+from airbyte_agent_sdk.validation.cache import validate_cache_against_manifest
+from airbyte_agent_sdk.validation.replication import validate_replication_compatibility
+
+
+def build_cassette_map(cassettes_dir: Path) -> Dict[Tuple[str, str], List[Path]]:
+    """Build a map of (entity, action) -> list of cassette paths.
+
+    Reads the entity/action from TestSpec.entity and TestSpec.action fields,
+    not from the filename.
+
+    Args:
+        cassettes_dir: Directory containing cassette YAML files
+
+    Returns:
+        Dictionary mapping (entity, action) tuples to lists of cassette file paths
+    """
+    cassette_map: Dict[Tuple[str, str], List[Path]] = defaultdict(list)
+
+    if not cassettes_dir.exists() or not cassettes_dir.is_dir():
+        return {}
+
+    for cassette_file in cassettes_dir.glob("*.yaml"):
+        try:
+            spec = load_test_spec(cassette_file, auth_config={})
+            key = (spec.entity, spec.action)
+            cassette_map[key].append(cassette_file)
+        except Exception:
+            continue
+
+    return dict(cassette_map)
+
+
+def build_auth_scheme_coverage(
+    cassettes_dir: Path,
+    auth_options: list | None = None,
+) -> Tuple[Dict[str | None, List[Path]], List[Tuple[Path, set[str]]]]:
+    """Build a map of auth_scheme -> list of cassette paths.
+
+    For multi-auth connectors, infers the auth scheme from the cassette's auth_config
+    keys using the same matching logic as the executor.
+
+    Args:
+        cassettes_dir: Directory containing cassette YAML files
+        auth_options: List of AuthOption from the connector model (for inference)
+
+    Returns:
+        Tuple of:
+        - Dictionary mapping auth_scheme names (or None for single-auth) to cassette paths
+        - List of (cassette_path, auth_config_keys) for cassettes that couldn't be matched
+    """
+    auth_scheme_map: Dict[str | None, List[Path]] = defaultdict(list)
+    unmatched_cassettes: List[Tuple[Path, set[str]]] = []
+
+    if not cassettes_dir.exists() or not cassettes_dir.is_dir():
+        return {}, []
+
+    for cassette_file in cassettes_dir.glob("*.yaml"):
+        try:
+            spec = load_test_spec(cassette_file, auth_config={})
+
+            # First, check if auth_scheme is explicitly set in the cassette
+            if spec.auth_scheme:
+                auth_scheme_map[spec.auth_scheme].append(cassette_file)
+            # Otherwise, try to infer from auth_config keys
+            elif spec.auth_config and auth_options:
+                auth_config_keys = set(spec.auth_config.keys())
+                inferred_scheme = infer_auth_scheme_name(auth_config_keys, auth_options)
+                if inferred_scheme is not None:
+                    auth_scheme_map[inferred_scheme].append(cassette_file)
+                else:
+                    # Couldn't infer - track as unmatched
+                    unmatched_cassettes.append((cassette_file, auth_config_keys))
+            else:
+                # No auth_scheme and no auth_config - treat as None
+                auth_scheme_map[None].append(cassette_file)
+        except Exception:
+            continue
+
+    return dict(auth_scheme_map), unmatched_cassettes
+
+
+def validate_auth_scheme_coverage(
+    config: ConnectorModel,
+    cassettes_dir: Path,
+) -> Tuple[bool, List[str], List[str], List[str], List[Tuple[Path, set[str]]]]:
+    """Validate that each auth scheme has at least one cassette.
+
+    For multi-auth connectors, every defined auth scheme must have coverage
+    unless marked with x-airbyte-untested: true.
+    For single-auth connectors, this check is skipped (existing cassette checks suffice).
+
+    Args:
+        config: Loaded connector model
+        cassettes_dir: Directory containing cassette files
+
+    Returns:
+        Tuple of (is_valid, errors, warnings, covered_schemes, unmatched_cassettes)
+    """
+    errors: List[str] = []
+    warnings: List[str] = []
+
+    # Skip check for single-auth connectors
+    if not config.auth.is_multi_auth():
+        return True, errors, warnings, [], []
+
+    # Get all defined auth schemes, separating tested from untested
+    options = config.auth.options or []
+
+    # Build auth scheme coverage from cassettes (pass options for inference)
+    auth_scheme_coverage, unmatched_cassettes = build_auth_scheme_coverage(cassettes_dir, options)
+    tested_schemes = {opt.scheme_name for opt in options if not opt.untested}
+    untested_schemes = {opt.scheme_name for opt in options if opt.untested}
+    covered_schemes = {scheme for scheme in auth_scheme_coverage.keys() if scheme is not None}
+
+    # Find missing tested schemes (errors)
+    missing_tested = tested_schemes - covered_schemes
+    for scheme in sorted(missing_tested):
+        errors.append(
+            f"Auth scheme '{scheme}' has no cassette coverage. "
+            f"Record at least one cassette using this authentication method, "
+            f"or add 'x-airbyte-untested: true' to skip this check."
+        )
+
+    # Warn about untested schemes without coverage
+    missing_untested = untested_schemes - covered_schemes
+    for scheme in sorted(missing_untested):
+        warnings.append(f"Auth scheme '{scheme}' is marked as untested (x-airbyte-untested: true) and has no cassette coverage. Validation skipped.")
+
+    # Warn about cassettes that couldn't be matched to any auth scheme
+    for cassette_path, auth_config_keys in unmatched_cassettes:
+        warnings.append(f"Cassette '{cassette_path.name}' could not be matched to any auth scheme. auth_config keys: {sorted(auth_config_keys)}")
+
+    is_valid = len(missing_tested) == 0
+    return is_valid, errors, warnings, sorted(covered_schemes), unmatched_cassettes
+
+
+def validate_response_against_schema(response_body: Any, schema: Dict[str, Any]) -> Tuple[bool, List[str]]:
+    """Validate a response body against a JSON schema.
+
+    Args:
+        response_body: The response body to validate (usually a dict or list)
+        schema: JSON schema to validate against
+
+    Returns:
+        Tuple of (is_valid, list_of_error_messages)
+    """
+    if not schema:
+        return True, []
+
+    try:
+        jsonschema.validate(instance=response_body, schema=schema)
+        return True, []
+    except jsonschema.ValidationError as e:
+        errors = [f"{e.message} at path: {'.'.join(str(p) for p in e.path)}"]
+        return False, errors
+    except jsonschema.SchemaError as e:
+        return False, [f"Invalid schema: {e.message}"]
+    except Exception as e:
+        return False, [f"Validation error: {str(e)}"]
+
+
+def find_undeclared_fields(response_body: Any, schema: Dict[str, Any], path: str = "") -> List[str]:
+    """Find fields present in response but not declared in schema.
+
+    Args:
+        response_body: The response body to check
+        schema: JSON schema to check against
+        path: Current path in the object (for recursive calls)
+
+    Returns:
+        List of paths to undeclared fields with array indices normalized
+        (e.g., ["data.items[].extra_field"] instead of reporting for each element)
+    """
+    if not schema:
+        return []
+
+    undeclared_fields = []
+
+    if isinstance(response_body, dict) and schema.get("type") == "object":
+        schema_properties = schema.get("properties", {})
+        additional_properties = schema.get("additionalProperties", True)
+
+        for key, value in response_body.items():
+            field_path = f"{path}.{key}" if path else key
+
+            if key not in schema_properties:
+                if additional_properties is False:
+                    undeclared_fields.append(field_path)
+                elif additional_properties is True or additional_properties == {}:
+                    undeclared_fields.append(field_path)
+                elif isinstance(additional_properties, dict):
+                    nested_undeclared = find_undeclared_fields(value, additional_properties, field_path)
+                    undeclared_fields.extend(nested_undeclared)
+            else:
+                property_schema = schema_properties[key]
+                nested_undeclared = find_undeclared_fields(value, property_schema, field_path)
+                undeclared_fields.extend(nested_undeclared)
+
+    elif isinstance(response_body, list) and schema.get("type") == "array":
+        items_schema = schema.get("items", {})
+        if response_body:
+            item_path = f"{path}[]"
+            nested_undeclared = find_undeclared_fields(response_body[0], items_schema, item_path)
+            undeclared_fields.extend(nested_undeclared)
+
+    elif "anyOf" in schema or "oneOf" in schema or "allOf" in schema:
+        union_key = "anyOf" if "anyOf" in schema else "oneOf" if "oneOf" in schema else "allOf"
+        all_undeclared = []
+
+        for sub_schema in schema[union_key]:
+            sub_undeclared = find_undeclared_fields(response_body, sub_schema, path)
+            all_undeclared.append(set(sub_undeclared))
+
+        if all_undeclared:
+            common_undeclared = set.intersection(*all_undeclared)
+            undeclared_fields.extend(list(common_undeclared))
+
+    return undeclared_fields
+
+
+def _extract_field_from_jsonpath(jsonpath_expr: str) -> str | None:
+    """Extract the full field path from a JSONPath expression.
+
+    Examples:
+        $.users -> "users"
+        $.data -> "data"
+        $.data.items -> "data.items" (returns full path)
+        $.data.repository -> "data.repository" (returns full path)
+        $.calls[0] -> "calls"
+
+    Args:
+        jsonpath_expr: JSONPath expression (e.g., "$.users" or "$.data.repository")
+
+    Returns:
+        Full field path or None if cannot parse
+    """
+    # Remove leading $. or $
+    expr = jsonpath_expr.strip()
+    if expr.startswith("$."):
+        expr = expr[2:]
+    elif expr.startswith("$"):
+        expr = expr[1:]
+
+    # Remove array indices and wildcards
+    expr = expr.replace("[0]", "").replace("[]", "").replace("[*]", "")
+
+    # Return the full path (not just the first segment)
+    return expr if expr else None
+
+
+def _is_dynamic_object(schema: Dict[str, Any]) -> bool:
+    """Check if a schema is a dynamic object (inline object with no declared properties).
+
+    Dynamic objects are flexible schemas that allow arbitrary keys, indicated by:
+    - type: object
+    - No properties defined (or empty properties)
+    - This pattern is used for custom objects, arbitrary key-value stores, etc.
+
+    Args:
+        schema: Schema to check
+
+    Returns:
+        True if schema is a dynamic object (no declared properties)
+    """
+    if not isinstance(schema, dict):
+        return False
+
+    # Must be an object type
+    if schema.get("type") != "object":
+        return False
+
+    # Check if properties are missing or empty
+    properties = schema.get("properties", {})
+    return not properties
+
+
+def _schema_has_ref_or_dynamic(field_schema: Dict[str, Any]) -> bool:
+    """Check if a schema field uses $ref or is a dynamic object.
+
+    For array fields, checks if the array items use $ref or are dynamic objects.
+    For object fields, checks if the field itself uses $ref or is a dynamic object.
+
+    Args:
+        field_schema: Schema to check
+
+    Returns:
+        True if field uses $ref, is a dynamic object, or contains items with $ref/dynamic objects
+    """
+    # If the field itself has a $ref, that's good
+    if "$ref" in field_schema:
+        return True
+
+    # If the field is a dynamic object (no declared properties), that's also acceptable
+    if _is_dynamic_object(field_schema):
+        return True
+
+    # If the field is an array, check if items have a $ref or are dynamic objects
+    if field_schema.get("type") == "array" and "items" in field_schema:
+        items_schema = field_schema["items"]
+        return "$ref" in items_schema or _is_dynamic_object(items_schema)
+
+    return False
+
+
+def _check_field_has_ref_or_dynamic(field_path: str, schema: Dict[str, Any]) -> bool:
+    """Check if a field in the schema uses $ref or is a dynamic object.
+
+    For array fields, checks if the array items use $ref or are dynamic objects.
+    For object fields, checks if the field itself uses $ref or is a dynamic object.
+
+    Dynamic objects (inline objects with no declared properties) are allowed because
+    they represent flexible schemas like custom objects or arbitrary key-value stores.
+
+    Args:
+        field_path: Field path (e.g., "users" or "data")
+        schema: Response schema (unresolved, to check for $ref presence)
+
+    Returns:
+        True if field uses $ref, is a dynamic object, or contains items with $ref/dynamic objects
+    """
+    if not schema or not isinstance(schema, dict):
+        return False
+
+    # For simple field (e.g., "users")
+    if "." not in field_path:
+        if "properties" in schema:
+            field_schema = schema["properties"].get(field_path, {})
+            return _schema_has_ref_or_dynamic(field_schema)
+        return False
+
+    # For nested field (e.g., "data.items"), traverse
+    parts = field_path.split(".")
+    current = schema
+
+    for part in parts:
+        if not isinstance(current, dict):
+            return False
+
+        # Handle array types by descending into items first
+        if current.get("type") == "array" and "items" in current:
+            current = current["items"]
+            if not isinstance(current, dict):
+                return False
+
+        if "properties" in current:
+            current = current["properties"].get(part, {})
+        else:
+            return False
+
+    # Check if the final field has a $ref, is a dynamic object, or is an array with items that qualify
+    return _schema_has_ref_or_dynamic(current)
+
+
+def _check_field_in_schema(jsonpath_expr: str, schema: Dict[str, Any]) -> bool:
+    """Check if a JSONPath expression corresponds to fields in schema.
+
+    Args:
+        jsonpath_expr: JSONPath (e.g., "$.records", "$.pagination.cursor")
+        schema: Response schema
+
+    Returns:
+        True if path exists in schema, False otherwise
+    """
+    field_path = _extract_field_from_jsonpath(jsonpath_expr)
+
+    if not field_path or not schema:
+        return False
+
+    # Navigate schema to check field exists
+    current = schema
+    parts = field_path.split(".")
+
+    for part in parts:
+        if not isinstance(current, dict):
+            return False
+
+        # Check in properties
+        if "properties" in current and part in current["properties"]:
+            current = current["properties"][part]
+            continue
+
+        # Check in additionalProperties (for dynamic schemas)
+        if "additionalProperties" in current:
+            return True  # Can't validate further for dynamic schemas
+
+        # Field not found
+        return False
+
+    return True
+
+
+def validate_record_extractor_has_ref(
+    endpoint: EndpointDefinition,
+    raw_spec: Dict[str, Any],
+    entity_name: str,
+    action: str,
+) -> Tuple[bool, List[str], List[str]]:
+    """
+    Validate that x-airbyte-record-extractor points to a field with a $ref or dynamic object.
+
+    When an operation defines x-airbyte-record-extractor, the JSONPath should point
+    to a field in the response schema that either:
+    1. Uses a $ref for proper typing with named schemas, OR
+    2. Is a dynamic object (type: object with no declared properties) for flexible schemas
+
+    Dynamic objects are acceptable for cases like custom objects or arbitrary key-value
+    stores where the schema is intentionally flexible.
+
+    Args:
+        endpoint: The endpoint definition with response_schema
+        raw_spec: Raw OpenAPI spec dict (unresolved) to check for $refs
+        entity_name: Entity name (for error messages)
+        action: Action name (for error messages)
+
+    Returns:
+        Tuple of (is_valid, errors, warnings)
+        - is_valid: False if extractor points to inline schema with declared properties
+        - errors: List of error messages
+        - warnings: List of warning messages
+
+    Example:
+        Good: x-airbyte-record-extractor: $.users
+              Response schema has: users: { $ref: "#/components/schemas/User" }
+
+        Good: x-airbyte-record-extractor: $.custom_fields
+              Response schema has: custom_fields: { type: object, additionalProperties: true }
+              (no properties declared = dynamic schema)
+
+        Bad:  x-airbyte-record-extractor: $.data
+              Response schema has: data: { type: object, properties: { id: {...}, name: {...} } }
+              (inline schema with declared properties)
+    """
+    errors = []
+    warnings = []
+
+    if not endpoint.record_extractor:
+        return True, errors, warnings
+
+    if not endpoint.response_schema:
+        warnings.append(f"{entity_name}.{action}: Has x-airbyte-record-extractor but no response schema defined")
+        return True, errors, warnings
+
+    # Parse JSONPath to find target field
+    extractor_path = endpoint.record_extractor
+
+    try:
+        # Extract the field name from JSONPath (e.g., "$.users" -> "users")
+        target_field = _extract_field_from_jsonpath(extractor_path)
+
+        if not target_field:
+            warnings.append(f"{entity_name}.{action}: Cannot parse x-airbyte-record-extractor JSONPath: {extractor_path}")
+            return True, errors, warnings
+
+        # Find the unresolved response schema in the raw spec to check for $ref
+        unresolved_schema = _find_unresolved_response_schema(raw_spec, endpoint.path, endpoint.method)
+
+        if not unresolved_schema:
+            # If we can't find the unresolved schema, skip validation
+            return True, errors, warnings
+
+        # Check if the target field has a $ref or is a dynamic object in the unresolved schema
+        has_ref_or_dynamic = _check_field_has_ref_or_dynamic(target_field, unresolved_schema)
+
+        if not has_ref_or_dynamic:
+            errors.append(
+                f"{entity_name}.{action}: x-airbyte-record-extractor '{extractor_path}' points to field "
+                f"'{target_field}' which uses an inline schema with declared properties. Records should "
+                f"reference a named schema (e.g., $ref: '#/components/schemas/{target_field.title()}') for proper typing."
+            )
+            return False, errors, warnings
+
+    except Exception as e:
+        warnings.append(f"{entity_name}.{action}: Error validating x-airbyte-record-extractor: {str(e)}")
+        return True, errors, warnings
+
+    return True, errors, warnings
+
+
+def _find_unresolved_response_schema(raw_spec: Dict[str, Any], path: str, method: str) -> Dict[str, Any] | None:
+    """Find the unresolved response schema from the raw OpenAPI spec.
+
+    If the response schema itself is a $ref, resolves it once to get the actual schema.
+    This allows us to check the properties within that schema for nested $refs.
+
+    Args:
+        raw_spec: Raw OpenAPI spec dict
+        path: API path (e.g., "/v1/users")
+        method: HTTP method (e.g., "GET")
+
+    Returns:
+        Unresolved response schema dict or None if not found
+    """
+    try:
+        paths = raw_spec.get("paths", {})
+        if path not in paths:
+            return None
+
+        path_item = paths[path]
+        operation = path_item.get(method.lower())
+        if not operation:
+            return None
+
+        responses = operation.get("responses", {})
+        response_200 = responses.get("200")
+        if not response_200:
+            return None
+
+        content = response_200.get("content", {})
+        json_content = content.get("application/json")
+        if not json_content:
+            return None
+
+        schema = json_content.get("schema")
+
+        # If the schema itself is a $ref, resolve it once to get to the actual schema
+        # This is needed for cases like: schema: { $ref: "#/components/schemas/UsersResponse" }
+        # We want to check the properties inside UsersResponse
+        if schema and "$ref" in schema:
+            ref_path = schema["$ref"]
+            # Parse the reference (e.g., "#/components/schemas/UsersResponse")
+            if ref_path.startswith("#/"):
+                parts = ref_path[2:].split("/")
+                resolved = raw_spec
+                for part in parts:
+                    resolved = resolved.get(part, {})
+                    if not resolved:
+                        return None
+                return resolved
+
+        return schema
+    except Exception:
+        return None
+
+
+def validate_meta_extractor_fields(
+    endpoint: EndpointDefinition,
+    cassette_path: Path,
+    entity_name: str,
+    action: str,
+) -> Tuple[bool, List[str], List[str]]:
+    """
+    Validate x-airbyte-meta-extractor fields exist in cassettes and schema.
+
+    Checks that:
+    1. Fields extracted by meta-extractor exist in actual cassette responses
+    2. Those fields are declared in the response schema
+
+    Args:
+        endpoint: Endpoint definition with meta_extractor and response_schema
+        cassette_path: Path to cassette file
+        entity_name: Entity name (for error messages)
+        action: Action name (for error messages)
+
+    Returns:
+        Tuple of (is_valid, errors, warnings)
+        - is_valid: Always True (missing fields are warnings, not errors)
+        - errors: Empty (meta-extractor issues are non-blocking)
+        - warnings: List of warning messages
+    """
+    errors = []
+    warnings = []
+
+    if not endpoint.meta_extractor:
+        return True, errors, warnings
+
+    try:
+        # Load cassette to get actual response
+        spec = load_test_spec(cassette_path, auth_config={})
+        response_body = spec.captured_response.body
+
+        # Validate each meta extractor field
+        for field_name, extractor_expr in endpoint.meta_extractor.items():
+            # Skip header-based extractors - they extract from headers, not response body
+            # @link.next extracts from RFC 5988 Link header
+            # @header.X-Name extracts raw header value
+            if extractor_expr.startswith("@link.") or extractor_expr.startswith("@header."):
+                continue
+
+            # Check 1: Does the JSONPath find data in the actual response?
+            try:
+                parsed_expr = parse_jsonpath(extractor_expr)
+                matches = [match.value for match in parsed_expr.find(response_body)]
+
+                if not matches:
+                    warnings.append(
+                        f"{entity_name}.{action}: x-airbyte-meta-extractor field '{field_name}' "
+                        f"with JSONPath '{extractor_expr}' found no matches in cassette response"
+                    )
+            except Exception as e:
+                warnings.append(
+                    f"{entity_name}.{action}: x-airbyte-meta-extractor field '{field_name}' has invalid JSONPath '{extractor_expr}': {str(e)}"
+                )
+
+            # Check 2: Is this field path declared in the response schema?
+            if endpoint.response_schema:
+                field_in_schema = _check_field_in_schema(extractor_expr, endpoint.response_schema)
+
+                if not field_in_schema:
+                    warnings.append(
+                        f"{entity_name}.{action}: x-airbyte-meta-extractor field '{field_name}' "
+                        f"extracts from '{extractor_expr}' but this path is not declared in response schema"
+                    )
+
+    except Exception as e:
+        warnings.append(f"{entity_name}.{action}: Error validating x-airbyte-meta-extractor: {str(e)}")
+
+    return True, errors, warnings
+
+
+def _check_entity_relationships(config: ConnectorModel) -> List[str]:
+    """Check that entity relationship target_entity values reference real entities.
+
+    Returns a list of warning strings for relationships where target_entity
+    does not match any defined entity name.
+    """
+    warnings: List[str] = []
+    entity_names = {e.name for e in config.entities}
+    for entity in config.entities:
+        for rel in entity.relationships:
+            if rel.target_entity not in entity_names:
+                warnings.append(
+                    f"Entity '{entity.name}' has relationship with target_entity " f"'{rel.target_entity}' which does not match any defined entity."
+                )
+    return warnings
+
+
+def _compute_implicit_config_keys(config: ConnectorModel) -> set[str]:
+    """Compute the set of config keys available for implicit parameter resolution.
+
+    Includes auth config property names and server variable default keys.
+    These are the keys the SDK can resolve automatically when a parameter name
+    matches a `config_values` entry.
+    """
+    keys: set[str] = set()
+    if config.auth and config.auth.options:
+        for opt in config.auth.options:
+            if opt.user_config_spec and opt.user_config_spec.properties:
+                keys.update(opt.user_config_spec.properties.keys())
+    elif config.auth and config.auth.user_config_spec and config.auth.user_config_spec.properties:
+        keys.update(config.auth.user_config_spec.properties.keys())
+    keys.update(config.server_variable_defaults.keys())
+    return keys
+
+
+# Actions whose parameters are supplied by the caller (agent or list results)
+# rather than requiring static resolution via relationships/scoping/config.
+_CALLER_SUPPLIED_PARAM_ACTIONS = {
+    Action.GET,
+    Action.CREATE,
+    Action.UPDATE,
+    Action.DELETE,
+    Action.DOWNLOAD,
+    Action.AUTHORIZE,
+    Action.API_SEARCH,
+}
+
+
+def _check_entity_relationships_coverage(config: ConnectorModel) -> Tuple[List[str], List[str]]:
+    """Check that endpoints with path params or required query params are covered.
+
+    Validates that path parameters and required query parameters (no default,
+    no `config_inject`) have a resolution source: entity relationships,
+    scoping, or implicit config key match.
+
+    List operations with uncovered params are errors (they cause runtime
+    `ParamResolutionError` during health checks). Non-list operations are warnings.
+
+    Skips caller-supplied-param actions (get, create, update, delete, download,
+    authorize, api_search) when the entity also has a list action, since those
+    params are the entity's own primary key or agent-supplied values.
+    """
+    errors: List[str] = []
+    warnings: List[str] = []
+
+    implicit_config_keys = _compute_implicit_config_keys(config)
+    scoping_params = {s.param for s in config.scoping}
+
+    for entity in config.entities:
+        has_list = Action.LIST in entity.endpoints
+        relationship_keys = {rel.foreign_key for rel in entity.relationships}
+        for action, endpoint in entity.endpoints.items():
+            if has_list and action in _CALLER_SUPPLIED_PARAM_ACTIONS:
+                continue
+
+            # Check path params
+            for param in endpoint.path_params:
+                if param in relationship_keys:
+                    continue
+                if param in scoping_params:
+                    continue
+                if param in implicit_config_keys:
+                    continue
+                msg = (
+                    f"Entity '{entity.name}' operation '{action.value}' has path parameter "
+                    f"'{param}' with no entity relationship or scoping declaration. "
+                    f"Add an x-airbyte-entity-relationships entry or x-airbyte-scoping entry "
+                    f"to enable per-entity health checks."
+                )
+                if action == Action.LIST:
+                    errors.append(msg)
+                else:
+                    warnings.append(msg)
+
+            # Check required query params without resolution sources
+            for qp_name, qp_schema in endpoint.query_params_schema.items():
+                if not qp_schema.get("required"):
+                    continue
+                if qp_schema.get("default") is not None:
+                    continue
+                if qp_schema.get("config_inject"):
+                    continue
+                if qp_name in relationship_keys:
+                    continue
+                if qp_name in scoping_params:
+                    continue
+                if qp_name in implicit_config_keys:
+                    continue
+                msg = (
+                    f"Entity '{entity.name}' operation '{action.value}' has required query "
+                    f"parameter '{qp_name}' with no default, config_inject, entity relationship, "
+                    f"or scoping declaration. This parameter has no resolution source and will be "
+                    f"omitted at runtime."
+                )
+                if action == Action.LIST:
+                    errors.append(msg)
+                else:
+                    warnings.append(msg)
+    return errors, warnings
+
+
+def _check_required_header_params(config: ConnectorModel) -> Tuple[List[str], List[str]]:
+    """Check that required header params have a resolution source.
+
+    Headers have fewer resolution paths than path/query params -- they are
+    not resolved via relationships or scoping.  A required header with no
+    default and no matching config key will be silently omitted at runtime.
+
+    All findings are warnings (not errors) because headers may be injected
+    by auth middleware or custom HTTP client interceptors that readiness
+    cannot introspect.
+    """
+    errors: List[str] = []
+    warnings: List[str] = []
+
+    implicit_config_keys = _compute_implicit_config_keys(config)
+
+    for entity in config.entities:
+        for action, endpoint in entity.endpoints.items():
+            if not endpoint.header_params_schema:
+                continue
+            for header_name, schema in endpoint.header_params_schema.items():
+                if not schema.get("required"):
+                    continue
+                if schema.get("default") is not None:
+                    continue
+                if header_name in implicit_config_keys:
+                    continue
+                warnings.append(
+                    f"Entity '{entity.name}' operation '{action.value}' has required header "
+                    f"parameter '{header_name}' with no default value or config resolution source."
+                )
+    return errors, warnings
+
+
+def _check_scoping_config_keys(config: ConnectorModel) -> List[str]:
+    """Validate that `x-airbyte-scoping` config_key references resolve to known config keys.
+
+    Each scoping entry declares a `config_key` (or defaults to `param`) that
+    the executor looks up in `config_values` at runtime.  A misspelled or
+    missing key silently fails parameter resolution.
+    """
+    warnings: List[str] = []
+    implicit_config_keys = _compute_implicit_config_keys(config)
+
+    for scoping_entry in config.scoping:
+        key = scoping_entry.config_key or scoping_entry.param
+        if key not in implicit_config_keys:
+            warnings.append(
+                f"Scoping entry for param '{scoping_entry.param}' references config_key "
+                f"'{key}' which is not found in auth config properties or server variable defaults."
+            )
+    return warnings
+
+
+def _validate_entity_relationships(config: ConnectorModel, raw_spec: Dict[str, Any]) -> List[str]:
+    """Validate entity relationship structural integrity.
+
+    Checks beyond target_entity existence (handled by _check_entity_relationships):
+    - Orphaned source_entity/target_entity values in raw YAML
+    - Conflicting duplicate foreign_key declarations across entities
+    - foreign_key maps to a path or query param on the source entity
+    - target_key exists in the target entity's schema
+    - target entity has a LIST action for runtime resolution
+    """
+    warnings: List[str] = []
+    entity_names = {e.name for e in config.entities}
+    entity_map = {e.name: e for e in config.entities}
+
+    # Check 1: Orphaned relationships in raw YAML
+    raw_relationships = raw_spec.get("info", {}).get("x-airbyte-entity-relationships", [])
+    for raw_rel in raw_relationships:
+        src = raw_rel.get("source_entity", "")
+        tgt = raw_rel.get("target_entity", "")
+        if src and src not in entity_names:
+            warnings.append(f"Relationship with source_entity '{src}' does not match any " f"defined entity. It will be silently ignored at runtime.")
+        if tgt and tgt not in entity_names:
+            warnings.append(f"Relationship with target_entity '{tgt}' (from source_entity " f"'{src}') does not match any defined entity.")
+
+    # Check 2: Conflicting duplicate foreign_key declarations
+    fk_map: Dict[str, List[Tuple[str, str, str]]] = {}
+    for entity in config.entities:
+        for rel in entity.relationships:
+            entry = (entity.name, rel.target_entity, rel.target_key)
+            fk_map.setdefault(rel.foreign_key, []).append(entry)
+    for fk, entries in fk_map.items():
+        targets = {(te, tk) for _, te, tk in entries}
+        if len(targets) > 1:
+            sources = [src for src, _, _ in entries]
+            warnings.append(
+                f"Foreign key '{fk}' is declared by entities "
+                f"{sources} with conflicting targets: {sorted(targets)}. "
+                f"The SDK global FK index uses first-match only."
+            )
+
+    # Checks 3-5: Per-entity relationship validation
+    for entity in config.entities:
+        all_params: set[str] = set()
+        for endpoint in entity.endpoints.values():
+            all_params.update(endpoint.path_params)
+            all_params.update(endpoint.query_params)
+
+        for rel in entity.relationships:
+            # Check 3: foreign_key maps to a param
+            if rel.foreign_key not in all_params:
+                warnings.append(
+                    f"Entity '{entity.name}' relationship to '{rel.target_entity}' declares "
+                    f"foreign_key '{rel.foreign_key}' which is not a path or query parameter "
+                    f"on any of its endpoints."
+                )
+
+            # Check 4: target_key in target schema
+            target_entity = entity_map.get(rel.target_entity)
+            if target_entity and target_entity.entity_schema:
+                props = target_entity.entity_schema.get("properties", {})
+                if props and rel.target_key not in props:
+                    warnings.append(
+                        f"Entity '{entity.name}' relationship to '{rel.target_entity}' declares "
+                        f"target_key '{rel.target_key}' which is not a property in the "
+                        f"'{rel.target_entity}' entity schema."
+                    )
+
+            # Check 5: target entity has LIST
+            if target_entity and Action.LIST not in target_entity.endpoints:
+                warnings.append(
+                    f"Entity '{entity.name}' relationship targets '{rel.target_entity}' which "
+                    f"has no LIST action. The SDK requires LIST on the target entity to resolve "
+                    f"the foreign key at runtime."
+                )
+
+    return warnings
+
+
+def _entity_has_ai_hints(entity: Any) -> bool:
+    """Return True if an entity has schema-level or operation-level AI hints."""
+    if getattr(entity, "ai_hints", None):
+        return True
+
+    endpoints = getattr(entity, "endpoints", {}) or {}
+    return any(getattr(endpoint, "ai_hints", None) for endpoint in endpoints.values())
+
+
+# Substrings that, when found in an x-airbyte-meta-extractor key or JSONPath value,
+# indicate the extractor is capturing pagination state (next cursor, next link, has-more flag, etc.)
+_PAGINATION_META_HINTS: tuple[str, ...] = (
+    "next",
+    "cursor",
+    "after",
+    "page",
+    "paging",
+    "offset",
+    "marker",
+    "has_more",
+    "hasmore",
+    "more",
+    "link",
+    "continuation",
+    "scroll",
+)
+
+
+def _meta_extractor_has_pagination_field(meta: Dict[str, str] | None) -> bool:
+    """Return True if a `x-airbyte-meta-extractor` mapping contains at least one next-page / cursor style field.
+
+    Heuristic: a field is considered pagination-related if either its key or the JSONPath
+    value it maps to contains a known pagination substring (case-insensitive), or if the
+    value extracts from the RFC 5988 `Link` header (`@link.next`) or a pagination-style
+    response header (`@header.x-next-*`).
+    """
+    if not meta:
+        return False
+
+    for key, value in meta.items():
+        key_l = (key or "").lower()
+        value_l = (value or "").lower()
+
+        if value_l.startswith("@link."):
+            return True
+        if value_l.startswith("@header.") and any(hint in value_l for hint in ("next", "cursor", "page", "after")):
+            return True
+        if any(hint in key_l for hint in _PAGINATION_META_HINTS):
+            return True
+        if any(hint in value_l for hint in _PAGINATION_META_HINTS):
+            return True
+
+    return False
+
+
+_VALID_RUNTIME_MODES = {m.value for m in RuntimeMode}
+
+_REPLICATION_METADATA_KEYS = (
+    "x-airbyte-replication-config",
+    "x-airbyte-replication-version",
+    "x-airbyte-replication-compatibility",
+)
+
+
+def _check_runtime_mode(raw_spec: dict[str, Any]) -> tuple[list[str], list[str], bool, bool]:
+    """Validate `x-airbyte-runtime-mode` in the connector spec.
+
+    Returns `(errors, warnings, is_direct_only, has_explicit_mode)`.
+
+    * `is_direct_only` — True when the declared mode is `direct_only`,
+      meaning replication / context-store checks should be skipped.
+    * `has_explicit_mode` — True when the field is present (even if invalid),
+      so callers can distinguish "legacy / not declared" from "declared".
+    """
+    errors: list[str] = []
+    warnings: list[str] = []
+    is_direct_only = False
+    has_explicit_mode = False
+
+    info = raw_spec.get("info", {})
+    raw_mode = info.get("x-airbyte-runtime-mode")
+
+    if raw_mode is None:
+        return errors, warnings, is_direct_only, has_explicit_mode
+
+    has_explicit_mode = True
+
+    # --- structural checks ---
+    if not isinstance(raw_mode, str):
+        errors.append(f"x-airbyte-runtime-mode must be a string. Got {type(raw_mode).__name__}.")
+        return errors, warnings, is_direct_only, has_explicit_mode
+
+    if raw_mode not in _VALID_RUNTIME_MODES:
+        errors.append(f"x-airbyte-runtime-mode has unknown value: {raw_mode!r}. Allowed: {sorted(_VALID_RUNTIME_MODES)}.")
+        return errors, warnings, is_direct_only, has_explicit_mode
+
+    # --- semantic checks per mode ---
+    if raw_mode == RuntimeMode.DIRECT_ONLY:
+        is_direct_only = True
+        skip_cs = info.get("x-airbyte-skip-context-store")
+        if not skip_cs:
+            errors.append("x-airbyte-runtime-mode: direct_only requires x-airbyte-skip-context-store " "with a non-empty justification.")
+        elif isinstance(skip_cs, str) and not skip_cs.strip():
+            errors.append("x-airbyte-skip-context-store is set but empty. Provide a non-empty justification for direct_only connectors.")
+        cs_config = info.get("x-airbyte-context-store")
+        if cs_config is not None:
+            errors.append(
+                "x-airbyte-runtime-mode: direct_only must not declare x-airbyte-context-store. "
+                "Either remove x-airbyte-context-store or change runtime mode."
+            )
+        present_repl = [k for k in _REPLICATION_METADATA_KEYS if info.get(k) is not None]
+        if present_repl:
+            errors.append(f"x-airbyte-runtime-mode: direct_only must not declare replication metadata. " f"Remove: {', '.join(present_repl)}.")
+
+    elif raw_mode in (RuntimeMode.CONTEXT_STORE_ONLY, RuntimeMode.DIRECT_AND_CONTEXT_STORE):
+        cs_config = info.get("x-airbyte-context-store")
+        if cs_config is None:
+            errors.append(f"x-airbyte-runtime-mode: {raw_mode} requires x-airbyte-context-store with entity definitions.")
+        elif isinstance(cs_config, dict) and not cs_config.get("entities"):
+            errors.append(f"x-airbyte-runtime-mode: {raw_mode}: x-airbyte-context-store.entities is empty. Declare at least one entity.")
+        skip_cs = info.get("x-airbyte-skip-context-store")
+        if skip_cs is not None:
+            errors.append(
+                f"x-airbyte-runtime-mode: {raw_mode} must not declare x-airbyte-skip-context-store. "
+                "Remove x-airbyte-skip-context-store when the connector supports Context Store."
+            )
+
+    return errors, warnings, is_direct_only, has_explicit_mode
+
+
+def _check_cache_entity_fields(raw_spec: Dict[str, Any]) -> Tuple[List[str], List[str]]:
+    """Validate that each x-airbyte-context-store entity declares at least one searchable field.
+
+    Every entity under `info.x-airbyte-context-store.entities` must either:
+    1. declare a non-empty `fields` list, so agents have a concrete signal of what they
+       can filter on; or
+    2. explicitly opt out via `x-airbyte-skip-searchable-fields: "<justification>"` with a
+       non-empty string explaining why the entity has no per-field search surface.
+
+    Returns a tuple of (errors, warnings). Errors block readiness; warnings surface
+    opt-out justifications so they remain visible in the readiness report.
+    """
+    errors: List[str] = []
+    warnings: List[str] = []
+
+    cache_config = raw_spec.get("info", {}).get("x-airbyte-context-store")
+    if not isinstance(cache_config, dict):
+        return errors, warnings
+
+    entities = cache_config.get("entities") or []
+    if not isinstance(entities, list):
+        return errors, warnings
+
+    for entity in entities:
+        if not isinstance(entity, dict):
+            continue
+        entity_name = entity.get("entity") or "<unnamed>"
+
+        skip = entity.get("x-airbyte-skip-searchable-fields")
+        if skip is not None:
+            justification = skip.strip() if isinstance(skip, str) else ""
+            if not justification:
+                errors.append(
+                    f"Cache entity '{entity_name}': x-airbyte-skip-searchable-fields is set but empty. "
+                    "Provide a non-empty justification string, or remove the extension and declare "
+                    "at least one entry under fields."
+                )
+                continue
+            warnings.append(f"Cache entity '{entity_name}': searchable-fields opt-out via " f"x-airbyte-skip-searchable-fields: {justification}")
+            continue
+
+        fields = entity.get("fields")
+        if not isinstance(fields, list) or len(fields) == 0:
+            errors.append(
+                f"Cache entity '{entity_name}' has no searchable fields declared. "
+                "Add at least one entry under fields, or set x-airbyte-skip-searchable-fields "
+                "with a non-empty justification if the entity genuinely has no per-field search surface."
+            )
+
+    return errors, warnings
+
+
+def _check_list_pagination_coverage(config: ConnectorModel) -> Tuple[List[str], List[str]]:
+    """Validate that every list operation declares pagination metadata.
+
+    Every `Action.LIST` endpoint must either:
+    1. declare `x-airbyte-meta-extractor` containing at least one pagination-style field
+       (e.g., `next_cursor`, `next_page`, `@link.next`), so the executor can continue
+       paginating; or
+    2. explicitly opt out via `x-airbyte-no-pagination: "<justification>"` with a
+       non-empty string explaining why the underlying API genuinely does not paginate.
+
+    Returns a tuple of (errors, warnings). Errors block readiness; warnings surface
+    opt-out justifications so they remain visible in the readiness report.
+    """
+    errors: List[str] = []
+    warnings: List[str] = []
+
+    for entity in config.entities:
+        for action in entity.actions:
+            if action != Action.LIST:
+                continue
+
+            endpoint = entity.endpoints.get(action)
+            if endpoint is None:
+                continue
+
+            no_pagination = getattr(endpoint, "no_pagination", None)
+            if no_pagination is not None:
+                justification = no_pagination.strip() if isinstance(no_pagination, str) else ""
+                if not justification:
+                    errors.append(
+                        f"{entity.name}.list: x-airbyte-no-pagination is set but empty. "
+                        "Provide a non-empty justification string explaining why the API does not paginate, "
+                        "or remove the extension and declare x-airbyte-meta-extractor with a next-page / cursor field."
+                    )
+                    continue
+                warnings.append(f"{entity.name}.list: pagination opt-out via x-airbyte-no-pagination: {justification}")
+                continue
+
+            meta = getattr(endpoint, "meta_extractor", None)
+            if not meta:
+                errors.append(
+                    f"{entity.name}.list: list operation is missing x-airbyte-meta-extractor. "
+                    "Declare a meta extractor with a next-page / cursor field "
+                    "(e.g., next_cursor, next_page, @link.next), or add x-airbyte-no-pagination "
+                    "with a non-empty justification if the API genuinely does not paginate."
+                )
+                continue
+
+            if not _meta_extractor_has_pagination_field(meta):
+                errors.append(
+                    f"{entity.name}.list: x-airbyte-meta-extractor does not contain a pagination field. "
+                    "Add a next-page / cursor field (e.g., next_cursor, next_page, has_more, @link.next), "
+                    "or add x-airbyte-no-pagination with a non-empty justification if the API does not paginate."
+                )
+
+    return errors, warnings
+
+
+def validate_connector_readiness(connector_dir: str | Path) -> Dict[str, Any]:
+    """
+    Validate that a connector is ready to ship.
+
+    Checks that:
+    - connector.yaml exists and is valid
+    - For each entity/action defined, corresponding cassette(s) exist
+    - Response schemas in connector.yaml match cassette responses
+    - Detects fields in responses that are not declared in the schema (as warnings)
+
+    Args:
+        connector_dir: Path to the connector directory (e.g., "/path/to/integrations/stripe")
+
+    Returns:
+        Dict with validation results including:
+        - success: Overall success status
+        - connector_name: Name of the connector
+        - validation_results: List of results for each entity/action
+        - summary: Summary statistics
+
+    Each validation result includes:
+        - warnings: Human-readable warnings (e.g., "Undeclared field in response: data[].extra_field")
+        - errors: Actual schema validation errors (e.g., missing required fields, type mismatches)
+
+    Note: Undeclared fields are surfaced as warnings, not errors. This allows connectors
+    with dynamic/flexible schemas (like custom objects) to pass validation while still
+    highlighting fields that could be added to the schema. Non-dynamic schemas are expected
+    to have all fields in the schema.
+
+    Example:
+        validate_connector_readiness("/path/to/integrations/stripe")
+    """
+    connector_path = Path(connector_dir)
+
+    if not connector_path.exists():
+        return {
+            "success": False,
+            "error": f"Connector directory not found: {connector_dir}",
+        }
+
+    config_file = connector_path / "connector.yaml"
+    if not config_file.exists():
+        return {
+            "success": False,
+            "error": f"connector.yaml not found in {connector_dir}",
+        }
+
+    try:
+        config = load_connector_model(config_file)
+    except ConnectorModelLoaderError as e:
+        return {"success": False, "error": f"Failed to load connector.yaml: {str(e)}"}
+
+    # Load the raw spec for extractor validation
+    try:
+        with open(config_file) as f:
+            raw_spec = yaml.safe_load(f)
+    except Exception:
+        raw_spec = {}
+
+    cassettes_dir = connector_path / "tests" / "cassettes"
+    cassette_map = build_cassette_map(cassettes_dir)
+
+    # Validate auth scheme coverage for multi-auth connectors
+    auth_valid, auth_errors, auth_warnings, auth_covered_schemes, auth_unmatched_cassettes = validate_auth_scheme_coverage(config, cassettes_dir)
+
+    validation_results = []
+    total_operations = 0
+    operations_with_cassettes = 0
+    operations_missing_cassettes = 0
+    total_cassettes = 0
+    cassettes_valid = 0
+    cassettes_invalid = 0
+    total_warnings = 0
+    total_errors = 0
+
+    for entity in config.entities:
+        for action in entity.actions:
+            total_operations += 1
+
+            key = (entity.name, action.value)
+            cassette_paths = cassette_map.get(key, [])
+
+            endpoint = entity.endpoints[action]
+            # Check if this is a download action
+            is_download = action == Action.DOWNLOAD
+            # Check if operation is marked as untested
+            is_untested = endpoint.untested
+
+            if not cassette_paths:
+                # For untested operations, add a warning instead of an error
+                if is_untested:
+                    total_warnings += 1
+                    validation_results.append(
+                        {
+                            "entity": entity.name,
+                            "action": action.value,
+                            "cassettes_found": 0,
+                            "cassette_paths": [],
+                            "schema_defined": endpoint.response_schema is not None,
+                            "is_download": is_download,
+                            "untested": True,
+                            "schema_validation": [],
+                            "warnings": [
+                                f"Operation {entity.name}.{action.value} is marked as untested "
+                                f"(x-airbyte-untested: true) and has no cassettes. Validation skipped."
+                            ],
+                        }
+                    )
+                    continue
+
+                # For tested operations, this is an error
+                operations_missing_cassettes += 1
+                validation_results.append(
+                    {
+                        "entity": entity.name,
+                        "action": action.value,
+                        "cassettes_found": 0,
+                        "cassette_paths": [],
+                        "schema_defined": endpoint.response_schema is not None,
+                        "is_download": is_download,
+                        "schema_validation": [],
+                    }
+                )
+                continue
+
+            operations_with_cassettes += 1
+            total_cassettes += len(cassette_paths)
+
+            response_schema = endpoint.response_schema
+            schema_defined = response_schema is not None
+
+            # Validate x-airbyte-record-extractor (once per endpoint, not per cassette)
+            if endpoint.record_extractor and not is_download:
+                is_valid, extractor_errors, extractor_warnings = validate_record_extractor_has_ref(
+                    endpoint=endpoint,
+                    raw_spec=raw_spec,
+                    entity_name=entity.name,
+                    action=action.value,
+                )
+
+                if not is_valid:
+                    cassettes_invalid += len(cassette_paths)
+                    total_errors += len(extractor_errors) * len(cassette_paths)
+
+                total_warnings += len(extractor_warnings)
+
+                # If record extractor validation fails, add error to all cassettes for this endpoint
+                if not is_valid:
+                    schema_validation = [
+                        {
+                            "cassette": str(p.name),
+                            "valid": False,
+                            "errors": extractor_errors,
+                            "warnings": extractor_warnings,
+                        }
+                        for p in cassette_paths
+                    ]
+                    validation_results.append(
+                        {
+                            "entity": entity.name,
+                            "action": action.value,
+                            "cassettes_found": len(cassette_paths),
+                            "cassette_paths": [str(p.name) for p in cassette_paths],
+                            "schema_defined": schema_defined,
+                            "is_download": is_download,
+                            "schema_validation": schema_validation,
+                        }
+                    )
+                    continue
+
+            schema_validation = []
+            for cassette_path in cassette_paths:
+                try:
+                    spec = load_test_spec(cassette_path, auth_config={})
+
+                    # For download actions, validate that captured_file_request/response exist
+                    if is_download:
+                        has_file_request = hasattr(spec, "captured_file_request") and spec.captured_file_request is not None
+                        has_file_response = hasattr(spec, "captured_file_response") and spec.captured_file_response is not None
+
+                        if has_file_request and has_file_response:
+                            cassettes_valid += 1
+                            schema_validation.append(
+                                {
+                                    "cassette": str(cassette_path.name),
+                                    "valid": True,
+                                    "errors": [],
+                                    "warnings": [],
+                                }
+                            )
+                        else:
+                            cassettes_invalid += 1
+                            total_errors += 1
+                            errors = []
+                            if not has_file_request:
+                                errors.append("Missing captured_file_request for download action")
+                            elif not has_file_response:
+                                errors.append("Missing captured_file_response for download action")
+                            schema_validation.append(
+                                {
+                                    "cassette": str(cassette_path.name),
+                                    "valid": False,
+                                    "errors": errors,
+                                    "warnings": [],
+                                }
+                            )
+                        continue
+
+                    # For non-download actions, validate response schema
+                    if response_schema:
+                        # When x-airbyte-record-transform is present, the schema
+                        # describes the post-transform shape while the cassette
+                        # contains the raw API response — skip schema body
+                        # validation but still run meta_extractor checks.
+                        if endpoint.record_transform:
+                            is_valid = True
+                            errors = []
+                            undeclared_fields = []
+                        else:
+                            response_body = spec.captured_response.body
+                            is_valid, errors = validate_response_against_schema(response_body, response_schema)
+                            undeclared_fields = find_undeclared_fields(response_body, response_schema)
+
+                        warnings = []
+                        if undeclared_fields:
+                            warnings = [f"Undeclared field in response: {field}" for field in undeclared_fields]
+
+                        # Validate x-airbyte-meta-extractor fields
+                        if endpoint.meta_extractor:
+                            (
+                                _,
+                                meta_errors,
+                                meta_warnings,
+                            ) = validate_meta_extractor_fields(
+                                endpoint=endpoint,
+                                cassette_path=cassette_path,
+                                entity_name=entity.name,
+                                action=action.value,
+                            )
+                            warnings.extend(meta_warnings)
+                            # Meta extractor errors are also treated as warnings (non-blocking)
+                            warnings.extend(meta_errors)
+
+                        if is_valid:
+                            cassettes_valid += 1
+                        else:
+                            cassettes_invalid += 1
+
+                        total_warnings += len(warnings)
+                        total_errors += len(errors)
+
+                        schema_validation.append(
+                            {
+                                "cassette": str(cassette_path.name),
+                                "valid": is_valid,
+                                "errors": errors,
+                                "warnings": warnings,
+                            }
+                        )
+                    else:
+                        if endpoint.no_content_response:
+                            cassettes_valid += 1
+                            schema_validation.append(
+                                {
+                                    "cassette": str(cassette_path.name),
+                                    "valid": True,
+                                    "errors": [],
+                                    "warnings": [],
+                                }
+                            )
+                        else:
+                            total_errors += 1
+                            schema_validation.append(
+                                {
+                                    "cassette": str(cassette_path.name),
+                                    "valid": None,
+                                    "errors": ["No response schema defined in connector.yaml"],
+                                    "warnings": [],
+                                }
+                            )
+
+                except Exception as e:
+                    cassettes_invalid += 1
+                    total_errors += 1
+                    schema_validation.append(
+                        {
+                            "cassette": str(cassette_path.name),
+                            "valid": False,
+                            "errors": [f"Failed to load/validate cassette: {str(e)}"],
+                            "warnings": [],
+                        }
+                    )
+
+            validation_results.append(
+                {
+                    "entity": entity.name,
+                    "action": action.value,
+                    "cassettes_found": len(cassette_paths),
+                    "cassette_paths": [str(p.name) for p in cassette_paths],
+                    "schema_defined": schema_defined,
+                    "is_download": is_download,
+                    "schema_validation": schema_validation,
+                }
+            )
+
+    # Validate x-airbyte-runtime-mode (structural + semantic)
+    capability_errors, capability_warnings, is_direct_only, has_explicit_mode = _check_runtime_mode(raw_spec)
+    total_errors += len(capability_errors)
+    total_warnings += len(capability_warnings)
+
+    # Validate replication compatibility with Airbyte
+    # Direct-only connectors intentionally have no Airbyte replication counterpart,
+    # so skip replication validation entirely for them.
+    if is_direct_only:
+        replication_result: Dict[str, Any] = {"errors": [], "warnings": [], "registry_found": True}
+        replication_errors: list[str] = []
+        replication_warnings: list[str] = []
+    else:
+        replication_result = validate_replication_compatibility(
+            connector_yaml_path=config_file,
+            connector_def=raw_spec,
+        )
+
+        # Merge replication errors/warnings into totals
+        replication_errors = replication_result.get("errors", [])
+        replication_warnings = replication_result.get("warnings", [])
+
+        # All agent connectors must have a replication counterpart in the Airbyte registry
+        if not replication_result.get("registry_found", False):
+            replication_errors.append(
+                "No replication connector found in Airbyte registry. " "All agent connectors must have a corresponding replication connector."
+            )
+
+    total_errors += len(replication_errors)
+    total_warnings += len(replication_warnings)
+
+    # Check for replication version drift (annotated version vs current registry latest)
+    registry_version = replication_result.get("replication_version")
+    annotated_version = raw_spec.get("info", {}).get("x-airbyte-replication-version")
+    if annotated_version and registry_version and annotated_version != registry_version:
+        drift_warning = (
+            f"Replication version drift: connector annotated with v{annotated_version}, "
+            f"but registry latest is v{registry_version}. "
+            f"Run 'python -m airbyte_agent_sdk.cli annotate replication-version' to update."
+        )
+        replication_warnings.append(drift_warning)
+        total_warnings += 1
+
+    # Check x-airbyte-context-store presence (must have context-store or explicit skip reason).
+    # Explicit runtime modes already validate CS presence/entities in _check_runtime_mode,
+    # so this generic check only runs for legacy connectors (no explicit mode declared).
+    info_section = raw_spec.get("info", {})
+    cache_config = info_section.get("x-airbyte-context-store")
+    skip_context_store = info_section.get("x-airbyte-skip-context-store")
+    cache_presence_errors: list[str] = []
+    if not has_explicit_mode:
+        if cache_config is None and not skip_context_store:
+            cache_presence_errors.append(
+                "Connector is missing x-airbyte-context-store. "
+                "Either add x-airbyte-context-store with entity definitions to enable api_search, "
+                "or add x-airbyte-skip-context-store with a justification to opt out."
+            )
+        elif cache_config is not None and not cache_config.get("entities"):
+            cache_presence_errors.append(
+                "x-airbyte-context-store.entities is empty. "
+                "Either declare at least one entity with searchable fields, "
+                "or remove x-airbyte-context-store and add x-airbyte-skip-context-store with a justification to opt out."
+            )
+    total_errors += len(cache_presence_errors)
+
+    # Require x-airbyte-name on every context-store entity.
+    # Entities annotated with x-airbyte-skip-searchable-fields have no
+    # replication stream, so x-airbyte-name must be explicitly set to null.
+    cache_name_errors: list[str] = []
+    if cache_config is not None:
+        for entity_def in cache_config.get("entities") or []:
+            entity_name = entity_def.get("entity", "")
+            if not entity_name:
+                continue
+            has_skip = "x-airbyte-skip-searchable-fields" in entity_def
+            has_name_key = "x-airbyte-name" in entity_def
+            name_value = entity_def.get("x-airbyte-name")
+            if not has_name_key:
+                cache_name_errors.append(
+                    f"Entity '{entity_name}' in x-airbyte-context-store is missing x-airbyte-name. "
+                    f"Add x-airbyte-name with the replication connector's stream name, "
+                    f"or set it to null if the entity is annotated with x-airbyte-skip-searchable-fields."
+                )
+            elif has_skip and name_value is not None:
+                cache_name_errors.append(
+                    f"Entity '{entity_name}' has x-airbyte-skip-searchable-fields but x-airbyte-name "
+                    f"is not null. Set x-airbyte-name to null for entities without a replication stream."
+                )
+            elif not has_skip and name_value is None:
+                cache_name_errors.append(
+                    f"Entity '{entity_name}' has x-airbyte-name set to null but is not annotated with "
+                    f"x-airbyte-skip-searchable-fields. Provide a valid stream name or add the skip annotation."
+                )
+    total_errors += len(cache_name_errors)
+
+    # Validate x-airbyte-context-store entities against manifest (skip if opted out or direct-only)
+    if not skip_context_store and not is_direct_only:
+        cache_result = validate_cache_against_manifest(
+            connector_yaml_path=config_file,
+            connector_def=raw_spec,
+        )
+    else:
+        cache_result = {"errors": [], "warnings": []}
+    cache_errors = cache_result.get("errors", [])
+    cache_warnings = cache_result.get("warnings", [])
+    total_errors += len(cache_errors)
+    total_warnings += len(cache_warnings)
+
+    # Merge auth scheme validation errors/warnings into totals
+    total_errors += len(auth_errors)
+    total_warnings += len(auth_warnings)
+
+    # Check for missing entity relationship / scoping declarations (before success gate)
+    relationship_coverage_errors, relationship_coverage_warnings = _check_entity_relationships_coverage(config)
+    total_errors += len(relationship_coverage_errors)
+    total_warnings += len(relationship_coverage_warnings)
+
+    # Check required header params have a resolution source (default or config key)
+    header_param_errors, header_param_warnings = _check_required_header_params(config)
+    total_errors += len(header_param_errors)
+    total_warnings += len(header_param_warnings)
+
+    # Validate scoping config_key references resolve to known config keys
+    scoping_key_warnings = _check_scoping_config_keys(config)
+    total_warnings += len(scoping_key_warnings)
+
+    # Check list operations declare pagination metadata (meta-extractor with next-page/cursor field)
+    # or explicitly opt out via x-airbyte-no-pagination with a justification.
+    list_pagination_errors, list_pagination_warnings = _check_list_pagination_coverage(config)
+    total_errors += len(list_pagination_errors)
+    total_warnings += len(list_pagination_warnings)
+
+    # Check that every cache entity declares at least one searchable field
+    # or opts out via x-airbyte-skip-searchable-fields with a justification.
+    cache_field_errors, cache_field_warnings = _check_cache_entity_fields(raw_spec)
+    total_errors += len(cache_field_errors)
+    total_warnings += len(cache_field_warnings)
+
+    # Update success criteria to include replication, cache, auth scheme, capability, and coverage validation
+    success = (
+        operations_missing_cassettes == 0
+        and cassettes_invalid == 0
+        and total_operations > 0
+        and len(replication_errors) == 0
+        and len(cache_presence_errors) == 0
+        and len(cache_name_errors) == 0
+        and len(cache_errors) == 0
+        and len(cache_field_errors) == 0
+        and len(capability_errors) == 0
+        and auth_valid
+        and len(relationship_coverage_errors) == 0
+        and len(list_pagination_errors) == 0
+    )
+
+    # Check for preferred_for_check on at least one list operation
+    has_preferred_check = False
+    for entity in config.entities:
+        for action_val in entity.actions:
+            endpoint = entity.endpoints.get(action_val)
+            if endpoint and getattr(endpoint, "preferred_for_check", False):
+                has_preferred_check = True
+                break
+        if has_preferred_check:
+            break
+
+    readiness_warnings = []
+    if not has_preferred_check:
+        readiness_warnings.append(
+            "No operation has x-airbyte-preferred-for-check: true. "
+            "Add this extension to a lightweight operation (e.g., users.list or accounts.get) "
+            "to enable reliable health checks."
+        )
+
+    # Add capability and cache presence errors to readiness_errors
+    readiness_errors = list(capability_errors)
+    readiness_errors.extend(relationship_coverage_errors)
+    readiness_errors.extend(cache_presence_errors)
+    readiness_errors.extend(cache_name_errors)
+    readiness_errors.extend(list_pagination_errors)
+    readiness_errors.extend(cache_field_errors)
+
+    # Add coverage warnings to readiness_warnings (errors already counted above)
+    readiness_warnings.extend(capability_warnings)
+    readiness_warnings.extend(relationship_coverage_warnings)
+    readiness_warnings.extend(header_param_warnings)
+    readiness_warnings.extend(scoping_key_warnings)
+    readiness_warnings.extend(list_pagination_warnings)
+    readiness_warnings.extend(cache_field_warnings)
+
+    # Check entity relationship target_entity references
+    relationship_warnings = _check_entity_relationships(config)
+    readiness_warnings.extend(relationship_warnings)
+    total_warnings += len(relationship_warnings)
+
+    # Validate entity relationship structural integrity
+    relationship_validation_warnings = _validate_entity_relationships(config, raw_spec)
+    readiness_warnings.extend(relationship_validation_warnings)
+    total_warnings += len(relationship_validation_warnings)
+
+    # Check for missing x-airbyte-ai-hints on entities
+    entities_missing_hints = [entity.name for entity in config.entities if not _entity_has_ai_hints(entity)]
+    if entities_missing_hints:
+        readiness_warnings.append(
+            f"Entities missing x-airbyte-ai-hints: {', '.join(entities_missing_hints)}. "
+            "Add AI hints (summary, when_to_use, trigger_phrases, freshness) to an entity schema "
+            "or its operations to improve LLM tool selection. See get_connector_yaml_schema_docs('extensions') for details."
+        )
+        total_warnings += 1
+
+    if total_cassettes > 0:
+        readiness_warnings.append(
+            "IMPORTANT: Review cassette files for PII (names, emails, phone numbers, addresses) "
+            "before committing. Cassette response bodies are not automatically sanitized and may "
+            "contain personally identifiable information from real API responses. Replace any PII "
+            "with anonymized/fake values before pushing to the repository."
+        )
+
+    # Build auth scheme validation result
+    options = config.auth.options or []
+    tested_schemes = [opt.scheme_name for opt in options if not opt.untested]
+    untested_schemes_list = [opt.scheme_name for opt in options if opt.untested]
+    missing_tested = [s for s in tested_schemes if s not in auth_covered_schemes]
+
+    return {
+        "success": success,
+        "connector_name": config.name,
+        "connector_path": str(connector_path),
+        "validation_results": validation_results,
+        "replication_validation": replication_result,
+        "cache_validation": cache_result,
+        "auth_scheme_validation": {
+            "valid": auth_valid,
+            "errors": auth_errors,
+            "warnings": auth_warnings,
+            "covered_schemes": auth_covered_schemes,
+            "missing_schemes": missing_tested,
+            "untested_schemes": untested_schemes_list,
+        },
+        "readiness_errors": readiness_errors,
+        "readiness_warnings": readiness_warnings,
+        "summary": {
+            "total_operations": total_operations,
+            "operations_with_cassettes": operations_with_cassettes,
+            "operations_missing_cassettes": operations_missing_cassettes,
+            "total_cassettes": total_cassettes,
+            "cassettes_valid": cassettes_valid,
+            "cassettes_invalid": cassettes_invalid,
+            "total_warnings": total_warnings,
+            "total_errors": total_errors,
+        },
+    }

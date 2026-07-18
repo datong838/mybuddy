@@ -1,0 +1,4259 @@
+"""
+Connector model for gong.
+
+This file is auto-generated from the connector definition at build time.
+DO NOT EDIT MANUALLY - changes will be overwritten on next generation.
+"""
+
+from __future__ import annotations
+
+from airbyte_agent_sdk.types import (
+    Action,
+    AuthConfig,
+    AuthOption,
+    AuthType,
+    ConnectorModel,
+    EndpointDefinition,
+    EntityDefinition,
+)
+from airbyte_agent_sdk.schema.security import (
+    AuthConfigFieldSpec,
+    AuthConfigSpec,
+)
+from airbyte_agent_sdk.schema.extensions import (
+    CacheConfig,
+    CacheEntityConfig,
+    CacheFieldConfig,
+    CacheFieldProperty,
+    EnrichmentConfig,
+    EnrichmentMatch,
+    EnrichmentProjection,
+    EntityRelationshipConfig,
+    SemanticEmbedding,
+    SemanticMetadataField,
+    SemanticSample,
+    SemanticSampling,
+    SemanticSearchConfig,
+    SemanticWindowing,
+)
+from airbyte_agent_sdk.schema.base import (
+    ExampleQuestions,
+)
+from airbyte_agent_sdk.schema.components import (
+    PathOverrideConfig,
+)
+from uuid import (
+    UUID,
+)
+
+GongConnectorModel: ConnectorModel = ConnectorModel(
+    id=UUID('32382e40-3b49-4b99-9c5c-4076501914e7'),
+    name='gong',
+    version='0.1.24',
+    base_url='https://api.gong.io',
+    auth=AuthConfig(
+        options=[
+            AuthOption(
+                scheme_name='oauth2',
+                type=AuthType.OAUTH2,
+                config={
+                    'header': 'Authorization',
+                    'prefix': 'Bearer',
+                    'refresh_url': 'https://app.gong.io/oauth2/generate-customer-token',
+                    'auth_style': 'basic',
+                    'body_format': 'form',
+                },
+                user_config_spec=AuthConfigSpec(
+                    title='OAuth 2.0 Authentication',
+                    type='object',
+                    required=['refresh_token', 'access_token'],
+                    properties={
+                        'access_token': AuthConfigFieldSpec(
+                            title='Access Token',
+                            description='Your Gong OAuth2 Access Token.',
+                        ),
+                        'refresh_token': AuthConfigFieldSpec(
+                            title='Refresh Token',
+                            description='Your Gong OAuth2 Refresh Token. Note: Gong uses single-use refresh tokens.',
+                        ),
+                        'client_id': AuthConfigFieldSpec(
+                            title='Client ID',
+                            description='Your Gong OAuth App Client ID.',
+                        ),
+                        'client_secret': AuthConfigFieldSpec(
+                            title='Client Secret',
+                            description='Your Gong OAuth App Client Secret.',
+                        ),
+                    },
+                    auth_mapping={
+                        'access_token': '${access_token}',
+                        'refresh_token': '${refresh_token}',
+                        'client_id': '${client_id}',
+                        'client_secret': '${client_secret}',
+                    },
+                    replication_auth_key_mapping={
+                        'credentials.client_id': 'client_id',
+                        'credentials.client_secret': 'client_secret',
+                        'credentials.refresh_token': 'refresh_token',
+                        'credentials.access_token': 'access_token',
+                    },
+                    replication_auth_key_constants={'credentials.auth_type': 'OAuth2.0'},
+                ),
+                untested=True,
+            ),
+            AuthOption(
+                scheme_name='basicAuth',
+                type=AuthType.BASIC,
+                user_config_spec=AuthConfigSpec(
+                    title='Access Key Authentication',
+                    type='object',
+                    required=['access_key', 'access_key_secret'],
+                    properties={
+                        'access_key': AuthConfigFieldSpec(
+                            title='Access Key',
+                            description='Your Gong API Access Key',
+                        ),
+                        'access_key_secret': AuthConfigFieldSpec(
+                            title='Access Key Secret',
+                            description='Your Gong API Access Key Secret',
+                        ),
+                    },
+                    auth_mapping={'username': '${access_key}', 'password': '${access_key_secret}'},
+                    replication_auth_key_mapping={'credentials.access_key': 'access_key', 'credentials.access_key_secret': 'access_key_secret'},
+                    replication_auth_key_constants={'credentials.auth_type': 'APIKey'},
+                ),
+            ),
+        ],
+    ),
+    entities=[
+        EntityDefinition(
+            name='users',
+            stream_name='users',
+            actions=[Action.LIST, Action.GET],
+            endpoints={
+                Action.LIST: EndpointDefinition(
+                    method='GET',
+                    path='/v2/users',
+                    action=Action.LIST,
+                    description='Returns a list of all users in the Gong account',
+                    query_params=['cursor'],
+                    query_params_schema={
+                        'cursor': {'type': 'string', 'required': False},
+                    },
+                    response_schema={
+                        'type': 'object',
+                        'description': 'Response containing list of users',
+                        'properties': {
+                            'users': {
+                                'type': 'array',
+                                'items': {
+                                    'type': 'object',
+                                    'description': 'User object',
+                                    'properties': {
+                                        'id': {'type': 'string', 'description': 'Unique user identifier'},
+                                        'emailAddress': {'type': 'string', 'description': 'User email address'},
+                                        'created': {'type': 'string', 'description': 'User creation timestamp'},
+                                        'active': {'type': 'boolean', 'description': 'Whether user is active'},
+                                        'emailAliases': {
+                                            'type': 'array',
+                                            'items': {'type': 'string'},
+                                            'description': 'Email aliases for the user',
+                                        },
+                                        'trustedEmailAddress': {
+                                            'type': ['string', 'null'],
+                                            'description': 'Trusted email address',
+                                        },
+                                        'firstName': {'type': 'string', 'description': 'User first name'},
+                                        'lastName': {'type': 'string', 'description': 'User last name'},
+                                        'title': {
+                                            'type': ['string', 'null'],
+                                            'description': 'Job title',
+                                        },
+                                        'phoneNumber': {
+                                            'type': ['string', 'null'],
+                                            'description': 'Phone number',
+                                        },
+                                        'extension': {
+                                            'type': ['string', 'null'],
+                                            'description': 'Phone extension',
+                                        },
+                                        'personalMeetingUrls': {
+                                            'type': 'array',
+                                            'items': {'type': 'string'},
+                                            'description': 'Personal meeting URLs',
+                                        },
+                                        'settings': {
+                                            'type': 'object',
+                                            'description': 'User settings',
+                                            'properties': {
+                                                'webConferencesRecorded': {'type': 'boolean'},
+                                                'preventWebConferenceRecording': {'type': 'boolean'},
+                                                'telephonyCallsImported': {'type': 'boolean'},
+                                                'emailsImported': {'type': 'boolean'},
+                                                'preventEmailImport': {'type': 'boolean'},
+                                                'nonRecordedMeetingsImported': {'type': 'boolean'},
+                                                'gongConnectEnabled': {'type': 'boolean'},
+                                            },
+                                        },
+                                        'managerId': {
+                                            'type': ['string', 'null'],
+                                            'description': 'Manager user ID',
+                                        },
+                                        'meetingConsentPageUrl': {
+                                            'type': ['string', 'null'],
+                                            'description': 'Meeting consent page URL',
+                                        },
+                                        'spokenLanguages': {
+                                            'type': 'array',
+                                            'items': {
+                                                'type': 'object',
+                                                'properties': {
+                                                    'language': {'type': 'string'},
+                                                    'primary': {'type': 'boolean'},
+                                                },
+                                            },
+                                            'description': 'Spoken languages',
+                                        },
+                                    },
+                                    'x-airbyte-entity-name': 'users',
+                                    'x-airbyte-stream-name': 'users',
+                                    'x-airbyte-ai-hints': {
+                                        'summary': 'Gong users (reps, managers) with roles and team membership',
+                                        'when_to_use': 'Looking up sales team members or user details',
+                                        'trigger_phrases': ['gong user', 'sales rep', 'team member'],
+                                        'freshness': 'live',
+                                        'example_questions': ['Who are the Gong users?', 'Find a sales rep'],
+                                        'search_strategy': 'Search by name or email',
+                                    },
+                                },
+                            },
+                            'records': {
+                                'type': 'object',
+                                'description': 'Pagination metadata',
+                                'properties': {
+                                    'totalRecords': {'type': 'integer', 'description': 'Total number of records'},
+                                    'currentPageSize': {'type': 'integer', 'description': 'Number of records in current page'},
+                                    'currentPageNumber': {'type': 'integer', 'description': 'Current page number'},
+                                    'cursor': {
+                                        'type': ['string', 'null'],
+                                        'description': 'Opaque cursor to fetch the next page; absent when there are no more pages',
+                                    },
+                                },
+                            },
+                            'requestId': {'type': 'string', 'description': 'Request identifier'},
+                        },
+                    },
+                    record_extractor='$.users',
+                    meta_extractor={
+                        'cursor': '$.records.cursor',
+                        'total_records': '$.records.totalRecords',
+                        'current_page_number': '$.records.currentPageNumber',
+                    },
+                    preferred_for_check=True,
+                ),
+                Action.GET: EndpointDefinition(
+                    method='GET',
+                    path='/v2/users/{id}',
+                    action=Action.GET,
+                    description='Get a single user by ID',
+                    path_params=['id'],
+                    path_params_schema={
+                        'id': {'type': 'string', 'required': True},
+                    },
+                    response_schema={
+                        'type': 'object',
+                        'description': 'Response containing single user',
+                        'properties': {
+                            'user': {
+                                'type': 'object',
+                                'description': 'User object',
+                                'properties': {
+                                    'id': {'type': 'string', 'description': 'Unique user identifier'},
+                                    'emailAddress': {'type': 'string', 'description': 'User email address'},
+                                    'created': {'type': 'string', 'description': 'User creation timestamp'},
+                                    'active': {'type': 'boolean', 'description': 'Whether user is active'},
+                                    'emailAliases': {
+                                        'type': 'array',
+                                        'items': {'type': 'string'},
+                                        'description': 'Email aliases for the user',
+                                    },
+                                    'trustedEmailAddress': {
+                                        'type': ['string', 'null'],
+                                        'description': 'Trusted email address',
+                                    },
+                                    'firstName': {'type': 'string', 'description': 'User first name'},
+                                    'lastName': {'type': 'string', 'description': 'User last name'},
+                                    'title': {
+                                        'type': ['string', 'null'],
+                                        'description': 'Job title',
+                                    },
+                                    'phoneNumber': {
+                                        'type': ['string', 'null'],
+                                        'description': 'Phone number',
+                                    },
+                                    'extension': {
+                                        'type': ['string', 'null'],
+                                        'description': 'Phone extension',
+                                    },
+                                    'personalMeetingUrls': {
+                                        'type': 'array',
+                                        'items': {'type': 'string'},
+                                        'description': 'Personal meeting URLs',
+                                    },
+                                    'settings': {
+                                        'type': 'object',
+                                        'description': 'User settings',
+                                        'properties': {
+                                            'webConferencesRecorded': {'type': 'boolean'},
+                                            'preventWebConferenceRecording': {'type': 'boolean'},
+                                            'telephonyCallsImported': {'type': 'boolean'},
+                                            'emailsImported': {'type': 'boolean'},
+                                            'preventEmailImport': {'type': 'boolean'},
+                                            'nonRecordedMeetingsImported': {'type': 'boolean'},
+                                            'gongConnectEnabled': {'type': 'boolean'},
+                                        },
+                                    },
+                                    'managerId': {
+                                        'type': ['string', 'null'],
+                                        'description': 'Manager user ID',
+                                    },
+                                    'meetingConsentPageUrl': {
+                                        'type': ['string', 'null'],
+                                        'description': 'Meeting consent page URL',
+                                    },
+                                    'spokenLanguages': {
+                                        'type': 'array',
+                                        'items': {
+                                            'type': 'object',
+                                            'properties': {
+                                                'language': {'type': 'string'},
+                                                'primary': {'type': 'boolean'},
+                                            },
+                                        },
+                                        'description': 'Spoken languages',
+                                    },
+                                },
+                                'x-airbyte-entity-name': 'users',
+                                'x-airbyte-stream-name': 'users',
+                                'x-airbyte-ai-hints': {
+                                    'summary': 'Gong users (reps, managers) with roles and team membership',
+                                    'when_to_use': 'Looking up sales team members or user details',
+                                    'trigger_phrases': ['gong user', 'sales rep', 'team member'],
+                                    'freshness': 'live',
+                                    'example_questions': ['Who are the Gong users?', 'Find a sales rep'],
+                                    'search_strategy': 'Search by name or email',
+                                },
+                            },
+                            'requestId': {'type': 'string', 'description': 'Request identifier'},
+                        },
+                    },
+                    record_extractor='$.user',
+                ),
+            },
+            entity_schema={
+                'type': 'object',
+                'description': 'User object',
+                'properties': {
+                    'id': {'type': 'string', 'description': 'Unique user identifier'},
+                    'emailAddress': {'type': 'string', 'description': 'User email address'},
+                    'created': {'type': 'string', 'description': 'User creation timestamp'},
+                    'active': {'type': 'boolean', 'description': 'Whether user is active'},
+                    'emailAliases': {
+                        'type': 'array',
+                        'items': {'type': 'string'},
+                        'description': 'Email aliases for the user',
+                    },
+                    'trustedEmailAddress': {
+                        'type': ['string', 'null'],
+                        'description': 'Trusted email address',
+                    },
+                    'firstName': {'type': 'string', 'description': 'User first name'},
+                    'lastName': {'type': 'string', 'description': 'User last name'},
+                    'title': {
+                        'type': ['string', 'null'],
+                        'description': 'Job title',
+                    },
+                    'phoneNumber': {
+                        'type': ['string', 'null'],
+                        'description': 'Phone number',
+                    },
+                    'extension': {
+                        'type': ['string', 'null'],
+                        'description': 'Phone extension',
+                    },
+                    'personalMeetingUrls': {
+                        'type': 'array',
+                        'items': {'type': 'string'},
+                        'description': 'Personal meeting URLs',
+                    },
+                    'settings': {
+                        'type': 'object',
+                        'description': 'User settings',
+                        'properties': {
+                            'webConferencesRecorded': {'type': 'boolean'},
+                            'preventWebConferenceRecording': {'type': 'boolean'},
+                            'telephonyCallsImported': {'type': 'boolean'},
+                            'emailsImported': {'type': 'boolean'},
+                            'preventEmailImport': {'type': 'boolean'},
+                            'nonRecordedMeetingsImported': {'type': 'boolean'},
+                            'gongConnectEnabled': {'type': 'boolean'},
+                        },
+                    },
+                    'managerId': {
+                        'type': ['string', 'null'],
+                        'description': 'Manager user ID',
+                    },
+                    'meetingConsentPageUrl': {
+                        'type': ['string', 'null'],
+                        'description': 'Meeting consent page URL',
+                    },
+                    'spokenLanguages': {
+                        'type': 'array',
+                        'items': {
+                            'type': 'object',
+                            'properties': {
+                                'language': {'type': 'string'},
+                                'primary': {'type': 'boolean'},
+                            },
+                        },
+                        'description': 'Spoken languages',
+                    },
+                },
+                'x-airbyte-entity-name': 'users',
+                'x-airbyte-stream-name': 'users',
+                'x-airbyte-ai-hints': {
+                    'summary': 'Gong users (reps, managers) with roles and team membership',
+                    'when_to_use': 'Looking up sales team members or user details',
+                    'trigger_phrases': ['gong user', 'sales rep', 'team member'],
+                    'freshness': 'live',
+                    'example_questions': ['Who are the Gong users?', 'Find a sales rep'],
+                    'search_strategy': 'Search by name or email',
+                },
+            },
+            ai_hints={
+                'summary': 'Gong users (reps, managers) with roles and team membership',
+                'when_to_use': 'Looking up sales team members or user details',
+                'trigger_phrases': ['gong user', 'sales rep', 'team member'],
+                'freshness': 'live',
+                'example_questions': ['Who are the Gong users?', 'Find a sales rep'],
+                'search_strategy': 'Search by name or email',
+            },
+        ),
+        EntityDefinition(
+            name='calls',
+            stream_name='calls',
+            actions=[Action.LIST, Action.GET],
+            endpoints={
+                Action.LIST: EndpointDefinition(
+                    method='GET',
+                    path='/v2/calls',
+                    action=Action.LIST,
+                    description='Retrieve calls data by date range',
+                    query_params=['fromDateTime', 'toDateTime', 'cursor'],
+                    query_params_schema={
+                        'fromDateTime': {
+                            'type': 'string',
+                            'required': False,
+                            'format': 'date-time',
+                        },
+                        'toDateTime': {
+                            'type': 'string',
+                            'required': False,
+                            'format': 'date-time',
+                        },
+                        'cursor': {'type': 'string', 'required': False},
+                    },
+                    response_schema={
+                        'type': 'object',
+                        'description': 'Response containing list of calls',
+                        'properties': {
+                            'calls': {
+                                'type': 'array',
+                                'items': {
+                                    'type': 'object',
+                                    'description': 'Call object',
+                                    'properties': {
+                                        'id': {'type': 'string', 'description': 'Unique call identifier'},
+                                        'url': {'type': 'string', 'description': 'URL to call in Gong'},
+                                        'title': {'type': 'string', 'description': 'Call title'},
+                                        'scheduled': {
+                                            'type': 'string',
+                                            'format': 'date-time',
+                                            'description': 'Scheduled time',
+                                        },
+                                        'started': {
+                                            'type': 'string',
+                                            'format': 'date-time',
+                                            'description': 'Call start time',
+                                        },
+                                        'duration': {'type': 'integer', 'description': 'Call duration in seconds'},
+                                        'primaryUserId': {'type': 'string', 'description': 'Primary user ID'},
+                                        'direction': {'type': 'string', 'description': 'Call direction (inbound/outbound)'},
+                                        'system': {'type': 'string', 'description': 'System type'},
+                                        'scope': {'type': 'string', 'description': 'Call scope'},
+                                        'media': {'type': 'string', 'description': 'Media type (Audio/Video)'},
+                                        'language': {'type': 'string', 'description': 'Call language'},
+                                        'workspaceId': {'type': 'string', 'description': 'Workspace ID'},
+                                        'sdrDisposition': {
+                                            'type': ['string', 'null'],
+                                            'description': 'SDR disposition',
+                                        },
+                                        'clientUniqueId': {
+                                            'type': ['string', 'null'],
+                                            'description': 'Client unique identifier',
+                                        },
+                                        'customData': {
+                                            'type': ['string', 'null'],
+                                            'description': 'Custom data',
+                                        },
+                                        'purpose': {
+                                            'type': ['string', 'null'],
+                                            'description': 'Call purpose',
+                                        },
+                                        'meetingUrl': {'type': 'string', 'description': 'Meeting URL'},
+                                        'isPrivate': {'type': 'boolean', 'description': 'Whether call is private'},
+                                        'calendarEventId': {
+                                            'type': ['string', 'null'],
+                                            'description': 'Calendar event ID',
+                                        },
+                                    },
+                                    'x-airbyte-entity-name': 'calls',
+                                    'x-airbyte-stream-name': 'calls',
+                                    'x-airbyte-ai-hints': {
+                                        'summary': 'Recorded sales calls with duration, participants, and transcript data',
+                                        'when_to_use': 'Questions about sales calls, call recordings, or conversation data',
+                                        'trigger_phrases': [
+                                            'gong call',
+                                            'sales call',
+                                            'call recording',
+                                            'conversation',
+                                        ],
+                                        'freshness': 'live',
+                                        'example_questions': ['Show recent Gong calls', 'Find calls with a specific customer'],
+                                        'search_strategy': 'Search by title or filter by date, participant, or owner',
+                                    },
+                                },
+                            },
+                            'records': {
+                                'type': 'object',
+                                'description': 'Pagination metadata',
+                                'properties': {
+                                    'totalRecords': {'type': 'integer', 'description': 'Total number of records'},
+                                    'currentPageSize': {'type': 'integer', 'description': 'Number of records in current page'},
+                                    'currentPageNumber': {'type': 'integer', 'description': 'Current page number'},
+                                    'cursor': {
+                                        'type': ['string', 'null'],
+                                        'description': 'Opaque cursor to fetch the next page; absent when there are no more pages',
+                                    },
+                                },
+                            },
+                            'requestId': {'type': 'string', 'description': 'Request identifier'},
+                        },
+                    },
+                    record_extractor='$.calls',
+                    record_filter='{{ not record.isPrivate }}',
+                    meta_extractor={
+                        'cursor': '$.records.cursor',
+                        'total_records': '$.records.totalRecords',
+                        'current_page_number': '$.records.currentPageNumber',
+                    },
+                ),
+                Action.GET: EndpointDefinition(
+                    method='GET',
+                    path='/v2/calls/{id}',
+                    action=Action.GET,
+                    description='Get specific call data by ID',
+                    path_params=['id'],
+                    path_params_schema={
+                        'id': {'type': 'string', 'required': True},
+                    },
+                    response_schema={
+                        'type': 'object',
+                        'description': 'Response containing single call',
+                        'properties': {
+                            'call': {
+                                'type': 'object',
+                                'description': 'Call object',
+                                'properties': {
+                                    'id': {'type': 'string', 'description': 'Unique call identifier'},
+                                    'url': {'type': 'string', 'description': 'URL to call in Gong'},
+                                    'title': {'type': 'string', 'description': 'Call title'},
+                                    'scheduled': {
+                                        'type': 'string',
+                                        'format': 'date-time',
+                                        'description': 'Scheduled time',
+                                    },
+                                    'started': {
+                                        'type': 'string',
+                                        'format': 'date-time',
+                                        'description': 'Call start time',
+                                    },
+                                    'duration': {'type': 'integer', 'description': 'Call duration in seconds'},
+                                    'primaryUserId': {'type': 'string', 'description': 'Primary user ID'},
+                                    'direction': {'type': 'string', 'description': 'Call direction (inbound/outbound)'},
+                                    'system': {'type': 'string', 'description': 'System type'},
+                                    'scope': {'type': 'string', 'description': 'Call scope'},
+                                    'media': {'type': 'string', 'description': 'Media type (Audio/Video)'},
+                                    'language': {'type': 'string', 'description': 'Call language'},
+                                    'workspaceId': {'type': 'string', 'description': 'Workspace ID'},
+                                    'sdrDisposition': {
+                                        'type': ['string', 'null'],
+                                        'description': 'SDR disposition',
+                                    },
+                                    'clientUniqueId': {
+                                        'type': ['string', 'null'],
+                                        'description': 'Client unique identifier',
+                                    },
+                                    'customData': {
+                                        'type': ['string', 'null'],
+                                        'description': 'Custom data',
+                                    },
+                                    'purpose': {
+                                        'type': ['string', 'null'],
+                                        'description': 'Call purpose',
+                                    },
+                                    'meetingUrl': {'type': 'string', 'description': 'Meeting URL'},
+                                    'isPrivate': {'type': 'boolean', 'description': 'Whether call is private'},
+                                    'calendarEventId': {
+                                        'type': ['string', 'null'],
+                                        'description': 'Calendar event ID',
+                                    },
+                                },
+                                'x-airbyte-entity-name': 'calls',
+                                'x-airbyte-stream-name': 'calls',
+                                'x-airbyte-ai-hints': {
+                                    'summary': 'Recorded sales calls with duration, participants, and transcript data',
+                                    'when_to_use': 'Questions about sales calls, call recordings, or conversation data',
+                                    'trigger_phrases': [
+                                        'gong call',
+                                        'sales call',
+                                        'call recording',
+                                        'conversation',
+                                    ],
+                                    'freshness': 'live',
+                                    'example_questions': ['Show recent Gong calls', 'Find calls with a specific customer'],
+                                    'search_strategy': 'Search by title or filter by date, participant, or owner',
+                                },
+                            },
+                            'requestId': {'type': 'string', 'description': 'Request identifier'},
+                        },
+                    },
+                    record_extractor='$.call',
+                ),
+            },
+            entity_schema={
+                'type': 'object',
+                'description': 'Call object',
+                'properties': {
+                    'id': {'type': 'string', 'description': 'Unique call identifier'},
+                    'url': {'type': 'string', 'description': 'URL to call in Gong'},
+                    'title': {'type': 'string', 'description': 'Call title'},
+                    'scheduled': {
+                        'type': 'string',
+                        'format': 'date-time',
+                        'description': 'Scheduled time',
+                    },
+                    'started': {
+                        'type': 'string',
+                        'format': 'date-time',
+                        'description': 'Call start time',
+                    },
+                    'duration': {'type': 'integer', 'description': 'Call duration in seconds'},
+                    'primaryUserId': {'type': 'string', 'description': 'Primary user ID'},
+                    'direction': {'type': 'string', 'description': 'Call direction (inbound/outbound)'},
+                    'system': {'type': 'string', 'description': 'System type'},
+                    'scope': {'type': 'string', 'description': 'Call scope'},
+                    'media': {'type': 'string', 'description': 'Media type (Audio/Video)'},
+                    'language': {'type': 'string', 'description': 'Call language'},
+                    'workspaceId': {'type': 'string', 'description': 'Workspace ID'},
+                    'sdrDisposition': {
+                        'type': ['string', 'null'],
+                        'description': 'SDR disposition',
+                    },
+                    'clientUniqueId': {
+                        'type': ['string', 'null'],
+                        'description': 'Client unique identifier',
+                    },
+                    'customData': {
+                        'type': ['string', 'null'],
+                        'description': 'Custom data',
+                    },
+                    'purpose': {
+                        'type': ['string', 'null'],
+                        'description': 'Call purpose',
+                    },
+                    'meetingUrl': {'type': 'string', 'description': 'Meeting URL'},
+                    'isPrivate': {'type': 'boolean', 'description': 'Whether call is private'},
+                    'calendarEventId': {
+                        'type': ['string', 'null'],
+                        'description': 'Calendar event ID',
+                    },
+                },
+                'x-airbyte-entity-name': 'calls',
+                'x-airbyte-stream-name': 'calls',
+                'x-airbyte-ai-hints': {
+                    'summary': 'Recorded sales calls with duration, participants, and transcript data',
+                    'when_to_use': 'Questions about sales calls, call recordings, or conversation data',
+                    'trigger_phrases': [
+                        'gong call',
+                        'sales call',
+                        'call recording',
+                        'conversation',
+                    ],
+                    'freshness': 'live',
+                    'example_questions': ['Show recent Gong calls', 'Find calls with a specific customer'],
+                    'search_strategy': 'Search by title or filter by date, participant, or owner',
+                },
+            },
+            ai_hints={
+                'summary': 'Recorded sales calls with duration, participants, and transcript data',
+                'when_to_use': 'Questions about sales calls, call recordings, or conversation data',
+                'trigger_phrases': [
+                    'gong call',
+                    'sales call',
+                    'call recording',
+                    'conversation',
+                ],
+                'freshness': 'live',
+                'example_questions': ['Show recent Gong calls', 'Find calls with a specific customer'],
+                'search_strategy': 'Search by title or filter by date, participant, or owner',
+            },
+        ),
+        EntityDefinition(
+            name='calls_extensive',
+            stream_name='extensiveCalls',
+            actions=[Action.LIST],
+            endpoints={
+                Action.LIST: EndpointDefinition(
+                    method='POST',
+                    path='/v2/calls/extensive',
+                    action=Action.LIST,
+                    description='Retrieve detailed call data including participants, interaction stats, and content',
+                    body_fields=['filter', 'contentSelector', 'cursor'],
+                    request_body_defaults={},
+                    request_schema={
+                        'type': 'object',
+                        'required': ['filter'],
+                        'properties': {
+                            'filter': {
+                                'type': 'object',
+                                'properties': {
+                                    'fromDateTime': {
+                                        'type': 'string',
+                                        'format': 'date-time',
+                                        'description': 'Start date in ISO 8601 format. Recommended for scoping results to a manageable date range.',
+                                    },
+                                    'toDateTime': {
+                                        'type': 'string',
+                                        'format': 'date-time',
+                                        'description': 'End date in ISO 8601 format. Recommended for scoping results to a manageable date range.',
+                                    },
+                                    'callIds': {
+                                        'type': 'array',
+                                        'items': {'type': 'string'},
+                                        'description': 'List of specific call IDs to retrieve. Alternative to date range filtering.',
+                                    },
+                                    'workspaceId': {'type': 'string', 'description': 'Filter by workspace ID'},
+                                },
+                            },
+                            'contentSelector': {
+                                'type': 'object',
+                                'description': 'Select which content to include in the response',
+                                'properties': {
+                                    'context': {
+                                        'type': 'string',
+                                        'description': 'Context level for the data',
+                                        'enum': ['Extended'],
+                                    },
+                                    'contextTiming': {
+                                        'type': 'array',
+                                        'description': 'Context timing options',
+                                        'items': {
+                                            'type': 'string',
+                                            'enum': ['Now', 'TimeOfCall'],
+                                        },
+                                    },
+                                    'exposedFields': {
+                                        'type': 'object',
+                                        'description': 'Specify which fields to include in the response',
+                                        'properties': {
+                                            'collaboration': {
+                                                'type': 'object',
+                                                'properties': {
+                                                    'publicComments': {'type': 'boolean', 'description': 'Include public comments'},
+                                                },
+                                            },
+                                            'content': {
+                                                'type': 'object',
+                                                'properties': {
+                                                    'pointsOfInterest': {'type': 'boolean', 'description': 'Include points of interest (deprecated, use highlights)'},
+                                                    'structure': {'type': 'boolean', 'description': 'Include call structure'},
+                                                    'topics': {'type': 'boolean', 'description': 'Include topics discussed'},
+                                                    'trackers': {'type': 'boolean', 'description': 'Include trackers'},
+                                                    'trackerOccurrences': {'type': 'boolean', 'description': 'Include tracker occurrences'},
+                                                    'brief': {'type': 'boolean', 'description': 'Include call brief'},
+                                                    'outline': {'type': 'boolean', 'description': 'Include call outline'},
+                                                    'highlights': {'type': 'boolean', 'description': 'Include call highlights'},
+                                                    'callOutcome': {'type': 'boolean', 'description': 'Include call outcome'},
+                                                    'keyPoints': {'type': 'boolean', 'description': 'Include key points'},
+                                                },
+                                            },
+                                            'interaction': {
+                                                'type': 'object',
+                                                'properties': {
+                                                    'personInteractionStats': {'type': 'boolean', 'description': 'Include person interaction statistics'},
+                                                    'questions': {'type': 'boolean', 'description': 'Include questions asked'},
+                                                    'speakers': {'type': 'boolean', 'description': 'Include speaker information'},
+                                                    'video': {'type': 'boolean', 'description': 'Include video interaction data'},
+                                                },
+                                            },
+                                            'media': {'type': 'boolean', 'description': 'Include media URLs (audio/video)'},
+                                            'parties': {'type': 'boolean', 'description': 'Include participant information'},
+                                        },
+                                    },
+                                },
+                            },
+                            'cursor': {'type': 'string', 'description': 'Cursor for pagination'},
+                        },
+                    },
+                    response_schema={
+                        'type': 'object',
+                        'description': 'Response containing detailed call data',
+                        'properties': {
+                            'calls': {
+                                'type': 'array',
+                                'items': {
+                                    'type': 'object',
+                                    'description': 'Detailed call object with extended information',
+                                    'properties': {
+                                        'metaData': {
+                                            'type': 'object',
+                                            'description': 'Call metadata',
+                                            'properties': {
+                                                'id': {'type': 'string', 'description': 'Unique call identifier'},
+                                                'url': {'type': 'string', 'description': 'URL to call in Gong'},
+                                                'title': {'type': 'string', 'description': 'Call title'},
+                                                'scheduled': {
+                                                    'type': 'string',
+                                                    'format': 'date-time',
+                                                    'description': 'Scheduled time',
+                                                },
+                                                'started': {
+                                                    'type': 'string',
+                                                    'format': 'date-time',
+                                                    'description': 'Call start time',
+                                                },
+                                                'duration': {'type': 'integer', 'description': 'Call duration in seconds'},
+                                                'primaryUserId': {'type': 'string', 'description': 'Primary user ID'},
+                                                'direction': {'type': 'string', 'description': 'Call direction'},
+                                                'system': {'type': 'string', 'description': 'System type'},
+                                                'scope': {'type': 'string', 'description': 'Call scope'},
+                                                'media': {'type': 'string', 'description': 'Media type (Audio/Video)'},
+                                                'language': {'type': 'string', 'description': 'Call language'},
+                                                'workspaceId': {'type': 'string', 'description': 'Workspace ID'},
+                                                'sdrDisposition': {
+                                                    'type': ['string', 'null'],
+                                                    'description': 'SDR disposition',
+                                                },
+                                                'clientUniqueId': {
+                                                    'type': ['string', 'null'],
+                                                    'description': 'Client unique identifier',
+                                                },
+                                                'customData': {
+                                                    'type': ['string', 'null'],
+                                                    'description': 'Custom data',
+                                                },
+                                                'purpose': {
+                                                    'type': ['string', 'null'],
+                                                    'description': 'Call purpose',
+                                                },
+                                                'isPrivate': {'type': 'boolean', 'description': 'Whether call is private'},
+                                                'meetingUrl': {'type': 'string', 'description': 'Meeting URL'},
+                                                'calendarEventId': {
+                                                    'type': ['string', 'null'],
+                                                    'description': 'Calendar event ID',
+                                                },
+                                            },
+                                        },
+                                        'parties': {
+                                            'type': 'array',
+                                            'description': 'Call participants',
+                                            'items': {
+                                                'type': 'object',
+                                                'properties': {
+                                                    'id': {'type': 'string', 'description': 'Party ID'},
+                                                    'emailAddress': {'type': 'string', 'description': 'Email address'},
+                                                    'name': {'type': 'string', 'description': 'Full name'},
+                                                    'title': {'type': 'string', 'description': 'Job title'},
+                                                    'userId': {'type': 'string', 'description': 'Gong user ID if internal'},
+                                                    'speakerId': {
+                                                        'type': ['string', 'null'],
+                                                        'description': 'Speaker ID for transcript matching',
+                                                    },
+                                                    'affiliation': {'type': 'string', 'description': 'Internal or External'},
+                                                    'methods': {
+                                                        'type': 'array',
+                                                        'items': {'type': 'string'},
+                                                        'description': 'Contact methods',
+                                                    },
+                                                    'phoneNumber': {'type': 'string', 'description': 'Phone number'},
+                                                    'context': {
+                                                        'type': 'array',
+                                                        'description': 'CRM context data linked to this participant',
+                                                        'items': {
+                                                            'type': 'object',
+                                                            'properties': {
+                                                                'system': {'type': 'string', 'description': 'CRM system name (e.g., Salesforce, HubSpot)'},
+                                                                'objects': {
+                                                                    'type': 'array',
+                                                                    'description': 'CRM objects linked to this participant',
+                                                                    'items': {
+                                                                        'type': 'object',
+                                                                        'properties': {
+                                                                            'objectType': {'type': 'string', 'description': 'CRM object type (Account, Contact, Opportunity, Lead)'},
+                                                                            'objectId': {'type': 'string', 'description': 'CRM record ID'},
+                                                                            'fields': {
+                                                                                'type': 'array',
+                                                                                'description': 'CRM field values',
+                                                                                'items': {
+                                                                                    'type': 'object',
+                                                                                    'properties': {
+                                                                                        'name': {'type': 'string', 'description': 'Field name'},
+                                                                                        'value': {
+                                                                                            'type': ['string', 'number', 'null'],
+                                                                                            'description': 'Field value',
+                                                                                        },
+                                                                                    },
+                                                                                },
+                                                                            },
+                                                                        },
+                                                                    },
+                                                                },
+                                                            },
+                                                        },
+                                                    },
+                                                },
+                                            },
+                                        },
+                                        'interaction': {
+                                            'type': 'object',
+                                            'description': 'Interaction statistics',
+                                            'properties': {
+                                                'interactionStats': {
+                                                    'type': 'array',
+                                                    'items': {
+                                                        'type': 'object',
+                                                        'properties': {
+                                                            'name': {'type': 'string', 'description': 'Stat name'},
+                                                            'value': {'type': 'number', 'description': 'Stat value'},
+                                                        },
+                                                    },
+                                                },
+                                                'questions': {
+                                                    'type': 'object',
+                                                    'properties': {
+                                                        'companyCount': {'type': 'integer'},
+                                                        'nonCompanyCount': {'type': 'integer'},
+                                                    },
+                                                },
+                                            },
+                                        },
+                                        'collaboration': {
+                                            'type': 'object',
+                                            'description': 'Collaboration data',
+                                            'properties': {
+                                                'publicComments': {
+                                                    'type': 'array',
+                                                    'items': {'type': 'object'},
+                                                },
+                                            },
+                                        },
+                                        'content': {
+                                            'type': 'object',
+                                            'description': 'Content data including topics and trackers',
+                                            'properties': {
+                                                'topics': {
+                                                    'type': 'array',
+                                                    'items': {
+                                                        'type': 'object',
+                                                        'properties': {
+                                                            'name': {'type': 'string'},
+                                                            'duration': {'type': 'number'},
+                                                        },
+                                                    },
+                                                },
+                                                'trackers': {
+                                                    'type': 'array',
+                                                    'items': {
+                                                        'type': 'object',
+                                                        'properties': {
+                                                            'id': {'type': 'string'},
+                                                            'name': {'type': 'string'},
+                                                            'count': {'type': 'integer'},
+                                                            'type': {'type': 'string'},
+                                                            'occurrences': {
+                                                                'type': 'array',
+                                                                'items': {'type': 'object'},
+                                                            },
+                                                        },
+                                                    },
+                                                },
+                                                'pointsOfInterest': {'type': 'object'},
+                                            },
+                                        },
+                                        'media': {
+                                            'type': 'object',
+                                            'description': 'Media URLs',
+                                            'properties': {
+                                                'audioUrl': {'type': 'string'},
+                                                'videoUrl': {'type': 'string'},
+                                            },
+                                        },
+                                    },
+                                    'x-airbyte-entity-name': 'calls_extensive',
+                                    'x-airbyte-stream-name': 'extensiveCalls',
+                                    'x-airbyte-ai-hints': {
+                                        'summary': 'Detailed call data including participants, interaction stats, collaboration, and content analysis',
+                                        'when_to_use': 'Questions about call details, talk ratios, participant info, or content analysis',
+                                        'trigger_phrases': [
+                                            'call details',
+                                            'talk ratio',
+                                            'interaction stats',
+                                            'call participants',
+                                        ],
+                                        'freshness': 'live',
+                                    },
+                                },
+                            },
+                            'records': {
+                                'type': 'object',
+                                'description': 'Pagination metadata',
+                                'properties': {
+                                    'totalRecords': {'type': 'integer', 'description': 'Total number of records'},
+                                    'currentPageSize': {'type': 'integer', 'description': 'Number of records in current page'},
+                                    'currentPageNumber': {'type': 'integer', 'description': 'Current page number'},
+                                    'cursor': {
+                                        'type': ['string', 'null'],
+                                        'description': 'Opaque cursor to fetch the next page; absent when there are no more pages',
+                                    },
+                                },
+                            },
+                            'requestId': {'type': 'string', 'description': 'Request identifier'},
+                        },
+                    },
+                    record_extractor='$.calls',
+                    record_filter='{{ not record.metaData.isPrivate }}',
+                    meta_extractor={
+                        'cursor': '$.records.cursor',
+                        'total_records': '$.records.totalRecords',
+                        'current_page_number': '$.records.currentPageNumber',
+                    },
+                ),
+            },
+            entity_schema={
+                'type': 'object',
+                'description': 'Detailed call object with extended information',
+                'properties': {
+                    'metaData': {
+                        'type': 'object',
+                        'description': 'Call metadata',
+                        'properties': {
+                            'id': {'type': 'string', 'description': 'Unique call identifier'},
+                            'url': {'type': 'string', 'description': 'URL to call in Gong'},
+                            'title': {'type': 'string', 'description': 'Call title'},
+                            'scheduled': {
+                                'type': 'string',
+                                'format': 'date-time',
+                                'description': 'Scheduled time',
+                            },
+                            'started': {
+                                'type': 'string',
+                                'format': 'date-time',
+                                'description': 'Call start time',
+                            },
+                            'duration': {'type': 'integer', 'description': 'Call duration in seconds'},
+                            'primaryUserId': {'type': 'string', 'description': 'Primary user ID'},
+                            'direction': {'type': 'string', 'description': 'Call direction'},
+                            'system': {'type': 'string', 'description': 'System type'},
+                            'scope': {'type': 'string', 'description': 'Call scope'},
+                            'media': {'type': 'string', 'description': 'Media type (Audio/Video)'},
+                            'language': {'type': 'string', 'description': 'Call language'},
+                            'workspaceId': {'type': 'string', 'description': 'Workspace ID'},
+                            'sdrDisposition': {
+                                'type': ['string', 'null'],
+                                'description': 'SDR disposition',
+                            },
+                            'clientUniqueId': {
+                                'type': ['string', 'null'],
+                                'description': 'Client unique identifier',
+                            },
+                            'customData': {
+                                'type': ['string', 'null'],
+                                'description': 'Custom data',
+                            },
+                            'purpose': {
+                                'type': ['string', 'null'],
+                                'description': 'Call purpose',
+                            },
+                            'isPrivate': {'type': 'boolean', 'description': 'Whether call is private'},
+                            'meetingUrl': {'type': 'string', 'description': 'Meeting URL'},
+                            'calendarEventId': {
+                                'type': ['string', 'null'],
+                                'description': 'Calendar event ID',
+                            },
+                        },
+                    },
+                    'parties': {
+                        'type': 'array',
+                        'description': 'Call participants',
+                        'items': {
+                            'type': 'object',
+                            'properties': {
+                                'id': {'type': 'string', 'description': 'Party ID'},
+                                'emailAddress': {'type': 'string', 'description': 'Email address'},
+                                'name': {'type': 'string', 'description': 'Full name'},
+                                'title': {'type': 'string', 'description': 'Job title'},
+                                'userId': {'type': 'string', 'description': 'Gong user ID if internal'},
+                                'speakerId': {
+                                    'type': ['string', 'null'],
+                                    'description': 'Speaker ID for transcript matching',
+                                },
+                                'affiliation': {'type': 'string', 'description': 'Internal or External'},
+                                'methods': {
+                                    'type': 'array',
+                                    'items': {'type': 'string'},
+                                    'description': 'Contact methods',
+                                },
+                                'phoneNumber': {'type': 'string', 'description': 'Phone number'},
+                                'context': {
+                                    'type': 'array',
+                                    'description': 'CRM context data linked to this participant',
+                                    'items': {
+                                        'type': 'object',
+                                        'properties': {
+                                            'system': {'type': 'string', 'description': 'CRM system name (e.g., Salesforce, HubSpot)'},
+                                            'objects': {
+                                                'type': 'array',
+                                                'description': 'CRM objects linked to this participant',
+                                                'items': {
+                                                    'type': 'object',
+                                                    'properties': {
+                                                        'objectType': {'type': 'string', 'description': 'CRM object type (Account, Contact, Opportunity, Lead)'},
+                                                        'objectId': {'type': 'string', 'description': 'CRM record ID'},
+                                                        'fields': {
+                                                            'type': 'array',
+                                                            'description': 'CRM field values',
+                                                            'items': {
+                                                                'type': 'object',
+                                                                'properties': {
+                                                                    'name': {'type': 'string', 'description': 'Field name'},
+                                                                    'value': {
+                                                                        'type': ['string', 'number', 'null'],
+                                                                        'description': 'Field value',
+                                                                    },
+                                                                },
+                                                            },
+                                                        },
+                                                    },
+                                                },
+                                            },
+                                        },
+                                    },
+                                },
+                            },
+                        },
+                    },
+                    'interaction': {
+                        'type': 'object',
+                        'description': 'Interaction statistics',
+                        'properties': {
+                            'interactionStats': {
+                                'type': 'array',
+                                'items': {
+                                    'type': 'object',
+                                    'properties': {
+                                        'name': {'type': 'string', 'description': 'Stat name'},
+                                        'value': {'type': 'number', 'description': 'Stat value'},
+                                    },
+                                },
+                            },
+                            'questions': {
+                                'type': 'object',
+                                'properties': {
+                                    'companyCount': {'type': 'integer'},
+                                    'nonCompanyCount': {'type': 'integer'},
+                                },
+                            },
+                        },
+                    },
+                    'collaboration': {
+                        'type': 'object',
+                        'description': 'Collaboration data',
+                        'properties': {
+                            'publicComments': {
+                                'type': 'array',
+                                'items': {'type': 'object'},
+                            },
+                        },
+                    },
+                    'content': {
+                        'type': 'object',
+                        'description': 'Content data including topics and trackers',
+                        'properties': {
+                            'topics': {
+                                'type': 'array',
+                                'items': {
+                                    'type': 'object',
+                                    'properties': {
+                                        'name': {'type': 'string'},
+                                        'duration': {'type': 'number'},
+                                    },
+                                },
+                            },
+                            'trackers': {
+                                'type': 'array',
+                                'items': {
+                                    'type': 'object',
+                                    'properties': {
+                                        'id': {'type': 'string'},
+                                        'name': {'type': 'string'},
+                                        'count': {'type': 'integer'},
+                                        'type': {'type': 'string'},
+                                        'occurrences': {
+                                            'type': 'array',
+                                            'items': {'type': 'object'},
+                                        },
+                                    },
+                                },
+                            },
+                            'pointsOfInterest': {'type': 'object'},
+                        },
+                    },
+                    'media': {
+                        'type': 'object',
+                        'description': 'Media URLs',
+                        'properties': {
+                            'audioUrl': {'type': 'string'},
+                            'videoUrl': {'type': 'string'},
+                        },
+                    },
+                },
+                'x-airbyte-entity-name': 'calls_extensive',
+                'x-airbyte-stream-name': 'extensiveCalls',
+                'x-airbyte-ai-hints': {
+                    'summary': 'Detailed call data including participants, interaction stats, collaboration, and content analysis',
+                    'when_to_use': 'Questions about call details, talk ratios, participant info, or content analysis',
+                    'trigger_phrases': [
+                        'call details',
+                        'talk ratio',
+                        'interaction stats',
+                        'call participants',
+                    ],
+                    'freshness': 'live',
+                },
+            },
+            ai_hints={
+                'summary': 'Detailed call data including participants, interaction stats, collaboration, and content analysis',
+                'when_to_use': 'Questions about call details, talk ratios, participant info, or content analysis',
+                'trigger_phrases': [
+                    'call details',
+                    'talk ratio',
+                    'interaction stats',
+                    'call participants',
+                ],
+                'freshness': 'live',
+            },
+        ),
+        EntityDefinition(
+            name='call_audio',
+            actions=[Action.DOWNLOAD],
+            endpoints={
+                Action.DOWNLOAD: EndpointDefinition(
+                    method='POST',
+                    path='/v2/calls:audio/download',
+                    path_override=PathOverrideConfig(
+                        path='/v2/calls/extensive',
+                    ),
+                    action=Action.DOWNLOAD,
+                    description='ALWAYS configure the request with the exposedFields: {"media": true}. If you don\'t the call won\'t work.\nDownloads the audio media file for a call. Temporarily, the request body must be configured with:\n{"filter": {"callIds": [CALL_ID]}, "contentSelector": {"exposedFields": {"media": true}}}\n',
+                    body_fields=['filter', 'contentSelector'],
+                    request_schema={
+                        'type': 'object',
+                        'properties': {
+                            'filter': {
+                                'type': 'object',
+                                'properties': {
+                                    'callIds': {
+                                        'type': 'array',
+                                        'items': {'type': 'string'},
+                                        'description': 'List containing the single call ID',
+                                    },
+                                },
+                            },
+                            'contentSelector': {
+                                'type': 'object',
+                                'properties': {
+                                    'exposedFields': {
+                                        'type': 'object',
+                                        'properties': {
+                                            'media': {
+                                                'type': 'boolean',
+                                                'description': 'Must be true to get media URLs',
+                                                'default': True,
+                                            },
+                                        },
+                                    },
+                                },
+                            },
+                        },
+                    },
+                    response_schema={
+                        'type': 'object',
+                        'description': 'Response containing detailed call data',
+                        'properties': {
+                            'calls': {
+                                'type': 'array',
+                                'items': {
+                                    'type': 'object',
+                                    'description': 'Detailed call object with extended information',
+                                    'properties': {
+                                        'metaData': {
+                                            'type': 'object',
+                                            'description': 'Call metadata',
+                                            'properties': {
+                                                'id': {'type': 'string', 'description': 'Unique call identifier'},
+                                                'url': {'type': 'string', 'description': 'URL to call in Gong'},
+                                                'title': {'type': 'string', 'description': 'Call title'},
+                                                'scheduled': {
+                                                    'type': 'string',
+                                                    'format': 'date-time',
+                                                    'description': 'Scheduled time',
+                                                },
+                                                'started': {
+                                                    'type': 'string',
+                                                    'format': 'date-time',
+                                                    'description': 'Call start time',
+                                                },
+                                                'duration': {'type': 'integer', 'description': 'Call duration in seconds'},
+                                                'primaryUserId': {'type': 'string', 'description': 'Primary user ID'},
+                                                'direction': {'type': 'string', 'description': 'Call direction'},
+                                                'system': {'type': 'string', 'description': 'System type'},
+                                                'scope': {'type': 'string', 'description': 'Call scope'},
+                                                'media': {'type': 'string', 'description': 'Media type (Audio/Video)'},
+                                                'language': {'type': 'string', 'description': 'Call language'},
+                                                'workspaceId': {'type': 'string', 'description': 'Workspace ID'},
+                                                'sdrDisposition': {
+                                                    'type': ['string', 'null'],
+                                                    'description': 'SDR disposition',
+                                                },
+                                                'clientUniqueId': {
+                                                    'type': ['string', 'null'],
+                                                    'description': 'Client unique identifier',
+                                                },
+                                                'customData': {
+                                                    'type': ['string', 'null'],
+                                                    'description': 'Custom data',
+                                                },
+                                                'purpose': {
+                                                    'type': ['string', 'null'],
+                                                    'description': 'Call purpose',
+                                                },
+                                                'isPrivate': {'type': 'boolean', 'description': 'Whether call is private'},
+                                                'meetingUrl': {'type': 'string', 'description': 'Meeting URL'},
+                                                'calendarEventId': {
+                                                    'type': ['string', 'null'],
+                                                    'description': 'Calendar event ID',
+                                                },
+                                            },
+                                        },
+                                        'parties': {
+                                            'type': 'array',
+                                            'description': 'Call participants',
+                                            'items': {
+                                                'type': 'object',
+                                                'properties': {
+                                                    'id': {'type': 'string', 'description': 'Party ID'},
+                                                    'emailAddress': {'type': 'string', 'description': 'Email address'},
+                                                    'name': {'type': 'string', 'description': 'Full name'},
+                                                    'title': {'type': 'string', 'description': 'Job title'},
+                                                    'userId': {'type': 'string', 'description': 'Gong user ID if internal'},
+                                                    'speakerId': {
+                                                        'type': ['string', 'null'],
+                                                        'description': 'Speaker ID for transcript matching',
+                                                    },
+                                                    'affiliation': {'type': 'string', 'description': 'Internal or External'},
+                                                    'methods': {
+                                                        'type': 'array',
+                                                        'items': {'type': 'string'},
+                                                        'description': 'Contact methods',
+                                                    },
+                                                    'phoneNumber': {'type': 'string', 'description': 'Phone number'},
+                                                    'context': {
+                                                        'type': 'array',
+                                                        'description': 'CRM context data linked to this participant',
+                                                        'items': {
+                                                            'type': 'object',
+                                                            'properties': {
+                                                                'system': {'type': 'string', 'description': 'CRM system name (e.g., Salesforce, HubSpot)'},
+                                                                'objects': {
+                                                                    'type': 'array',
+                                                                    'description': 'CRM objects linked to this participant',
+                                                                    'items': {
+                                                                        'type': 'object',
+                                                                        'properties': {
+                                                                            'objectType': {'type': 'string', 'description': 'CRM object type (Account, Contact, Opportunity, Lead)'},
+                                                                            'objectId': {'type': 'string', 'description': 'CRM record ID'},
+                                                                            'fields': {
+                                                                                'type': 'array',
+                                                                                'description': 'CRM field values',
+                                                                                'items': {
+                                                                                    'type': 'object',
+                                                                                    'properties': {
+                                                                                        'name': {'type': 'string', 'description': 'Field name'},
+                                                                                        'value': {
+                                                                                            'type': ['string', 'number', 'null'],
+                                                                                            'description': 'Field value',
+                                                                                        },
+                                                                                    },
+                                                                                },
+                                                                            },
+                                                                        },
+                                                                    },
+                                                                },
+                                                            },
+                                                        },
+                                                    },
+                                                },
+                                            },
+                                        },
+                                        'interaction': {
+                                            'type': 'object',
+                                            'description': 'Interaction statistics',
+                                            'properties': {
+                                                'interactionStats': {
+                                                    'type': 'array',
+                                                    'items': {
+                                                        'type': 'object',
+                                                        'properties': {
+                                                            'name': {'type': 'string', 'description': 'Stat name'},
+                                                            'value': {'type': 'number', 'description': 'Stat value'},
+                                                        },
+                                                    },
+                                                },
+                                                'questions': {
+                                                    'type': 'object',
+                                                    'properties': {
+                                                        'companyCount': {'type': 'integer'},
+                                                        'nonCompanyCount': {'type': 'integer'},
+                                                    },
+                                                },
+                                            },
+                                        },
+                                        'collaboration': {
+                                            'type': 'object',
+                                            'description': 'Collaboration data',
+                                            'properties': {
+                                                'publicComments': {
+                                                    'type': 'array',
+                                                    'items': {'type': 'object'},
+                                                },
+                                            },
+                                        },
+                                        'content': {
+                                            'type': 'object',
+                                            'description': 'Content data including topics and trackers',
+                                            'properties': {
+                                                'topics': {
+                                                    'type': 'array',
+                                                    'items': {
+                                                        'type': 'object',
+                                                        'properties': {
+                                                            'name': {'type': 'string'},
+                                                            'duration': {'type': 'number'},
+                                                        },
+                                                    },
+                                                },
+                                                'trackers': {
+                                                    'type': 'array',
+                                                    'items': {
+                                                        'type': 'object',
+                                                        'properties': {
+                                                            'id': {'type': 'string'},
+                                                            'name': {'type': 'string'},
+                                                            'count': {'type': 'integer'},
+                                                            'type': {'type': 'string'},
+                                                            'occurrences': {
+                                                                'type': 'array',
+                                                                'items': {'type': 'object'},
+                                                            },
+                                                        },
+                                                    },
+                                                },
+                                                'pointsOfInterest': {'type': 'object'},
+                                            },
+                                        },
+                                        'media': {
+                                            'type': 'object',
+                                            'description': 'Media URLs',
+                                            'properties': {
+                                                'audioUrl': {'type': 'string'},
+                                                'videoUrl': {'type': 'string'},
+                                            },
+                                        },
+                                    },
+                                    'x-airbyte-entity-name': 'calls_extensive',
+                                    'x-airbyte-stream-name': 'extensiveCalls',
+                                    'x-airbyte-ai-hints': {
+                                        'summary': 'Detailed call data including participants, interaction stats, collaboration, and content analysis',
+                                        'when_to_use': 'Questions about call details, talk ratios, participant info, or content analysis',
+                                        'trigger_phrases': [
+                                            'call details',
+                                            'talk ratio',
+                                            'interaction stats',
+                                            'call participants',
+                                        ],
+                                        'freshness': 'live',
+                                    },
+                                },
+                            },
+                            'records': {
+                                'type': 'object',
+                                'description': 'Pagination metadata',
+                                'properties': {
+                                    'totalRecords': {'type': 'integer', 'description': 'Total number of records'},
+                                    'currentPageSize': {'type': 'integer', 'description': 'Number of records in current page'},
+                                    'currentPageNumber': {'type': 'integer', 'description': 'Current page number'},
+                                    'cursor': {
+                                        'type': ['string', 'null'],
+                                        'description': 'Opaque cursor to fetch the next page; absent when there are no more pages',
+                                    },
+                                },
+                            },
+                            'requestId': {'type': 'string', 'description': 'Request identifier'},
+                        },
+                    },
+                    file_field='calls[0].media.audioUrl',
+                ),
+            },
+        ),
+        EntityDefinition(
+            name='call_video',
+            actions=[Action.DOWNLOAD],
+            endpoints={
+                Action.DOWNLOAD: EndpointDefinition(
+                    method='POST',
+                    path='/v2/calls:video/download',
+                    path_override=PathOverrideConfig(
+                        path='/v2/calls/extensive',
+                    ),
+                    action=Action.DOWNLOAD,
+                    description='ALWAYS configure the request with the exposedFields: {"media": true}. If you don\'t the call won\'t work.\nDownloads the video media file for a call. Temporarily, the request body must be configured with:\n{"filter": {"callIds": [CALL_ID]}, "contentSelector": {"exposedFields": {"media": true}}}\n',
+                    body_fields=['filter', 'contentSelector'],
+                    request_schema={
+                        'type': 'object',
+                        'properties': {
+                            'filter': {
+                                'type': 'object',
+                                'properties': {
+                                    'callIds': {
+                                        'type': 'array',
+                                        'items': {'type': 'string'},
+                                        'description': 'List containing the single call ID',
+                                    },
+                                },
+                            },
+                            'contentSelector': {
+                                'type': 'object',
+                                'properties': {
+                                    'exposedFields': {
+                                        'type': 'object',
+                                        'properties': {
+                                            'media': {
+                                                'type': 'boolean',
+                                                'description': 'Must be true to get media URLs',
+                                                'default': True,
+                                            },
+                                        },
+                                    },
+                                },
+                            },
+                        },
+                    },
+                    response_schema={
+                        'type': 'object',
+                        'description': 'Response containing detailed call data',
+                        'properties': {
+                            'calls': {
+                                'type': 'array',
+                                'items': {
+                                    'type': 'object',
+                                    'description': 'Detailed call object with extended information',
+                                    'properties': {
+                                        'metaData': {
+                                            'type': 'object',
+                                            'description': 'Call metadata',
+                                            'properties': {
+                                                'id': {'type': 'string', 'description': 'Unique call identifier'},
+                                                'url': {'type': 'string', 'description': 'URL to call in Gong'},
+                                                'title': {'type': 'string', 'description': 'Call title'},
+                                                'scheduled': {
+                                                    'type': 'string',
+                                                    'format': 'date-time',
+                                                    'description': 'Scheduled time',
+                                                },
+                                                'started': {
+                                                    'type': 'string',
+                                                    'format': 'date-time',
+                                                    'description': 'Call start time',
+                                                },
+                                                'duration': {'type': 'integer', 'description': 'Call duration in seconds'},
+                                                'primaryUserId': {'type': 'string', 'description': 'Primary user ID'},
+                                                'direction': {'type': 'string', 'description': 'Call direction'},
+                                                'system': {'type': 'string', 'description': 'System type'},
+                                                'scope': {'type': 'string', 'description': 'Call scope'},
+                                                'media': {'type': 'string', 'description': 'Media type (Audio/Video)'},
+                                                'language': {'type': 'string', 'description': 'Call language'},
+                                                'workspaceId': {'type': 'string', 'description': 'Workspace ID'},
+                                                'sdrDisposition': {
+                                                    'type': ['string', 'null'],
+                                                    'description': 'SDR disposition',
+                                                },
+                                                'clientUniqueId': {
+                                                    'type': ['string', 'null'],
+                                                    'description': 'Client unique identifier',
+                                                },
+                                                'customData': {
+                                                    'type': ['string', 'null'],
+                                                    'description': 'Custom data',
+                                                },
+                                                'purpose': {
+                                                    'type': ['string', 'null'],
+                                                    'description': 'Call purpose',
+                                                },
+                                                'isPrivate': {'type': 'boolean', 'description': 'Whether call is private'},
+                                                'meetingUrl': {'type': 'string', 'description': 'Meeting URL'},
+                                                'calendarEventId': {
+                                                    'type': ['string', 'null'],
+                                                    'description': 'Calendar event ID',
+                                                },
+                                            },
+                                        },
+                                        'parties': {
+                                            'type': 'array',
+                                            'description': 'Call participants',
+                                            'items': {
+                                                'type': 'object',
+                                                'properties': {
+                                                    'id': {'type': 'string', 'description': 'Party ID'},
+                                                    'emailAddress': {'type': 'string', 'description': 'Email address'},
+                                                    'name': {'type': 'string', 'description': 'Full name'},
+                                                    'title': {'type': 'string', 'description': 'Job title'},
+                                                    'userId': {'type': 'string', 'description': 'Gong user ID if internal'},
+                                                    'speakerId': {
+                                                        'type': ['string', 'null'],
+                                                        'description': 'Speaker ID for transcript matching',
+                                                    },
+                                                    'affiliation': {'type': 'string', 'description': 'Internal or External'},
+                                                    'methods': {
+                                                        'type': 'array',
+                                                        'items': {'type': 'string'},
+                                                        'description': 'Contact methods',
+                                                    },
+                                                    'phoneNumber': {'type': 'string', 'description': 'Phone number'},
+                                                    'context': {
+                                                        'type': 'array',
+                                                        'description': 'CRM context data linked to this participant',
+                                                        'items': {
+                                                            'type': 'object',
+                                                            'properties': {
+                                                                'system': {'type': 'string', 'description': 'CRM system name (e.g., Salesforce, HubSpot)'},
+                                                                'objects': {
+                                                                    'type': 'array',
+                                                                    'description': 'CRM objects linked to this participant',
+                                                                    'items': {
+                                                                        'type': 'object',
+                                                                        'properties': {
+                                                                            'objectType': {'type': 'string', 'description': 'CRM object type (Account, Contact, Opportunity, Lead)'},
+                                                                            'objectId': {'type': 'string', 'description': 'CRM record ID'},
+                                                                            'fields': {
+                                                                                'type': 'array',
+                                                                                'description': 'CRM field values',
+                                                                                'items': {
+                                                                                    'type': 'object',
+                                                                                    'properties': {
+                                                                                        'name': {'type': 'string', 'description': 'Field name'},
+                                                                                        'value': {
+                                                                                            'type': ['string', 'number', 'null'],
+                                                                                            'description': 'Field value',
+                                                                                        },
+                                                                                    },
+                                                                                },
+                                                                            },
+                                                                        },
+                                                                    },
+                                                                },
+                                                            },
+                                                        },
+                                                    },
+                                                },
+                                            },
+                                        },
+                                        'interaction': {
+                                            'type': 'object',
+                                            'description': 'Interaction statistics',
+                                            'properties': {
+                                                'interactionStats': {
+                                                    'type': 'array',
+                                                    'items': {
+                                                        'type': 'object',
+                                                        'properties': {
+                                                            'name': {'type': 'string', 'description': 'Stat name'},
+                                                            'value': {'type': 'number', 'description': 'Stat value'},
+                                                        },
+                                                    },
+                                                },
+                                                'questions': {
+                                                    'type': 'object',
+                                                    'properties': {
+                                                        'companyCount': {'type': 'integer'},
+                                                        'nonCompanyCount': {'type': 'integer'},
+                                                    },
+                                                },
+                                            },
+                                        },
+                                        'collaboration': {
+                                            'type': 'object',
+                                            'description': 'Collaboration data',
+                                            'properties': {
+                                                'publicComments': {
+                                                    'type': 'array',
+                                                    'items': {'type': 'object'},
+                                                },
+                                            },
+                                        },
+                                        'content': {
+                                            'type': 'object',
+                                            'description': 'Content data including topics and trackers',
+                                            'properties': {
+                                                'topics': {
+                                                    'type': 'array',
+                                                    'items': {
+                                                        'type': 'object',
+                                                        'properties': {
+                                                            'name': {'type': 'string'},
+                                                            'duration': {'type': 'number'},
+                                                        },
+                                                    },
+                                                },
+                                                'trackers': {
+                                                    'type': 'array',
+                                                    'items': {
+                                                        'type': 'object',
+                                                        'properties': {
+                                                            'id': {'type': 'string'},
+                                                            'name': {'type': 'string'},
+                                                            'count': {'type': 'integer'},
+                                                            'type': {'type': 'string'},
+                                                            'occurrences': {
+                                                                'type': 'array',
+                                                                'items': {'type': 'object'},
+                                                            },
+                                                        },
+                                                    },
+                                                },
+                                                'pointsOfInterest': {'type': 'object'},
+                                            },
+                                        },
+                                        'media': {
+                                            'type': 'object',
+                                            'description': 'Media URLs',
+                                            'properties': {
+                                                'audioUrl': {'type': 'string'},
+                                                'videoUrl': {'type': 'string'},
+                                            },
+                                        },
+                                    },
+                                    'x-airbyte-entity-name': 'calls_extensive',
+                                    'x-airbyte-stream-name': 'extensiveCalls',
+                                    'x-airbyte-ai-hints': {
+                                        'summary': 'Detailed call data including participants, interaction stats, collaboration, and content analysis',
+                                        'when_to_use': 'Questions about call details, talk ratios, participant info, or content analysis',
+                                        'trigger_phrases': [
+                                            'call details',
+                                            'talk ratio',
+                                            'interaction stats',
+                                            'call participants',
+                                        ],
+                                        'freshness': 'live',
+                                    },
+                                },
+                            },
+                            'records': {
+                                'type': 'object',
+                                'description': 'Pagination metadata',
+                                'properties': {
+                                    'totalRecords': {'type': 'integer', 'description': 'Total number of records'},
+                                    'currentPageSize': {'type': 'integer', 'description': 'Number of records in current page'},
+                                    'currentPageNumber': {'type': 'integer', 'description': 'Current page number'},
+                                    'cursor': {
+                                        'type': ['string', 'null'],
+                                        'description': 'Opaque cursor to fetch the next page; absent when there are no more pages',
+                                    },
+                                },
+                            },
+                            'requestId': {'type': 'string', 'description': 'Request identifier'},
+                        },
+                    },
+                    file_field='calls[0].media.videoUrl',
+                ),
+            },
+        ),
+        EntityDefinition(
+            name='workspaces',
+            actions=[Action.LIST],
+            endpoints={
+                Action.LIST: EndpointDefinition(
+                    method='GET',
+                    path='/v2/workspaces',
+                    action=Action.LIST,
+                    description='List all company workspaces',
+                    response_schema={
+                        'type': 'object',
+                        'description': 'Response containing list of workspaces',
+                        'properties': {
+                            'workspaces': {
+                                'type': 'array',
+                                'items': {
+                                    'type': 'object',
+                                    'description': 'Workspace object',
+                                    'properties': {
+                                        'id': {'type': 'string', 'description': 'Unique workspace identifier'},
+                                        'workspaceId': {'type': 'string', 'description': 'Unique workspace identifier (legacy)'},
+                                        'name': {'type': 'string', 'description': 'Workspace name'},
+                                        'description': {'type': 'string', 'description': 'Workspace description'},
+                                    },
+                                    'x-airbyte-entity-name': 'workspaces',
+                                    'x-airbyte-ai-hints': {
+                                        'summary': 'Gong workspaces for organizational separation',
+                                        'when_to_use': 'Questions about available workspaces or organizational boundaries',
+                                        'trigger_phrases': ['gong workspace'],
+                                        'freshness': 'static',
+                                        'example_questions': ['What Gong workspaces are available?'],
+                                        'search_strategy': 'List all workspaces',
+                                    },
+                                },
+                            },
+                            'requestId': {'type': 'string', 'description': 'Request identifier'},
+                        },
+                    },
+                    record_extractor='$.workspaces',
+                    no_pagination='Gong /v2/workspaces endpoint returns the full collection of company workspaces in a single response; the API does not expose pagination on this endpoint.',
+                ),
+            },
+            entity_schema={
+                'type': 'object',
+                'description': 'Workspace object',
+                'properties': {
+                    'id': {'type': 'string', 'description': 'Unique workspace identifier'},
+                    'workspaceId': {'type': 'string', 'description': 'Unique workspace identifier (legacy)'},
+                    'name': {'type': 'string', 'description': 'Workspace name'},
+                    'description': {'type': 'string', 'description': 'Workspace description'},
+                },
+                'x-airbyte-entity-name': 'workspaces',
+                'x-airbyte-ai-hints': {
+                    'summary': 'Gong workspaces for organizational separation',
+                    'when_to_use': 'Questions about available workspaces or organizational boundaries',
+                    'trigger_phrases': ['gong workspace'],
+                    'freshness': 'static',
+                    'example_questions': ['What Gong workspaces are available?'],
+                    'search_strategy': 'List all workspaces',
+                },
+            },
+            ai_hints={
+                'summary': 'Gong workspaces for organizational separation',
+                'when_to_use': 'Questions about available workspaces or organizational boundaries',
+                'trigger_phrases': ['gong workspace'],
+                'freshness': 'static',
+                'example_questions': ['What Gong workspaces are available?'],
+                'search_strategy': 'List all workspaces',
+            },
+        ),
+        EntityDefinition(
+            name='call_transcripts',
+            stream_name='callTranscripts',
+            actions=[Action.LIST],
+            endpoints={
+                Action.LIST: EndpointDefinition(
+                    method='POST',
+                    path='/v2/calls/transcript',
+                    action=Action.LIST,
+                    description='Returns transcripts for calls in a specified date range or specific call IDs',
+                    body_fields=['filter', 'cursor'],
+                    request_body_defaults={},
+                    request_schema={
+                        'type': 'object',
+                        'required': ['filter'],
+                        'properties': {
+                            'filter': {
+                                'type': 'object',
+                                'properties': {
+                                    'fromDateTime': {
+                                        'type': 'string',
+                                        'format': 'date-time',
+                                        'description': 'Start date in ISO 8601 format. Recommended for scoping results to a manageable date range.',
+                                    },
+                                    'toDateTime': {
+                                        'type': 'string',
+                                        'format': 'date-time',
+                                        'description': 'End date in ISO 8601 format. Recommended for scoping results to a manageable date range.',
+                                    },
+                                    'callIds': {
+                                        'type': 'array',
+                                        'items': {'type': 'string'},
+                                        'description': 'List of specific call IDs to retrieve transcripts for. Alternative to date range filtering.',
+                                    },
+                                },
+                            },
+                            'cursor': {'type': 'string', 'description': 'Cursor for pagination'},
+                        },
+                    },
+                    response_schema={
+                        'type': 'object',
+                        'description': 'Response containing call transcripts',
+                        'properties': {
+                            'callTranscripts': {
+                                'type': 'array',
+                                'items': {
+                                    'type': 'object',
+                                    'description': 'Call transcript object',
+                                    'properties': {
+                                        'callId': {'type': 'string', 'description': 'Call identifier'},
+                                        'transcript': {
+                                            'type': 'array',
+                                            'items': {
+                                                'type': 'object',
+                                                'properties': {
+                                                    'speakerId': {'type': 'string', 'description': 'Speaker identifier'},
+                                                    'topic': {
+                                                        'type': ['string', 'null'],
+                                                        'description': 'Topic',
+                                                    },
+                                                    'sentences': {
+                                                        'type': 'array',
+                                                        'items': {
+                                                            'type': 'object',
+                                                            'properties': {
+                                                                'start': {'type': 'integer', 'description': 'Start time in seconds'},
+                                                                'end': {'type': 'integer', 'description': 'End time in seconds'},
+                                                                'text': {'type': 'string', 'description': 'Sentence text'},
+                                                            },
+                                                        },
+                                                    },
+                                                },
+                                            },
+                                        },
+                                    },
+                                    'x-airbyte-entity-name': 'call_transcripts',
+                                    'x-airbyte-stream-name': 'callTranscripts',
+                                    'x-airbyte-ai-hints': {
+                                        'summary': 'Speaker-attributed call transcripts with timestamps',
+                                        'when_to_use': 'Questions about what was said on calls, conversation content, or speaker dialogue',
+                                        'trigger_phrases': [
+                                            'transcript',
+                                            'what was said',
+                                            'call recording text',
+                                            'conversation',
+                                        ],
+                                        'freshness': 'live',
+                                    },
+                                },
+                            },
+                            'records': {
+                                'type': 'object',
+                                'description': 'Pagination metadata',
+                                'properties': {
+                                    'totalRecords': {'type': 'integer', 'description': 'Total number of records'},
+                                    'currentPageSize': {'type': 'integer', 'description': 'Number of records in current page'},
+                                    'currentPageNumber': {'type': 'integer', 'description': 'Current page number'},
+                                    'cursor': {
+                                        'type': ['string', 'null'],
+                                        'description': 'Opaque cursor to fetch the next page; absent when there are no more pages',
+                                    },
+                                },
+                            },
+                            'requestId': {'type': 'string', 'description': 'Request identifier'},
+                        },
+                    },
+                    record_extractor='$.callTranscripts',
+                    meta_extractor={
+                        'cursor': '$.records.cursor',
+                        'total_records': '$.records.totalRecords',
+                        'current_page_number': '$.records.currentPageNumber',
+                    },
+                ),
+            },
+            entity_schema={
+                'type': 'object',
+                'description': 'Call transcript object',
+                'properties': {
+                    'callId': {'type': 'string', 'description': 'Call identifier'},
+                    'transcript': {
+                        'type': 'array',
+                        'items': {
+                            'type': 'object',
+                            'properties': {
+                                'speakerId': {'type': 'string', 'description': 'Speaker identifier'},
+                                'topic': {
+                                    'type': ['string', 'null'],
+                                    'description': 'Topic',
+                                },
+                                'sentences': {
+                                    'type': 'array',
+                                    'items': {
+                                        'type': 'object',
+                                        'properties': {
+                                            'start': {'type': 'integer', 'description': 'Start time in seconds'},
+                                            'end': {'type': 'integer', 'description': 'End time in seconds'},
+                                            'text': {'type': 'string', 'description': 'Sentence text'},
+                                        },
+                                    },
+                                },
+                            },
+                        },
+                    },
+                },
+                'x-airbyte-entity-name': 'call_transcripts',
+                'x-airbyte-stream-name': 'callTranscripts',
+                'x-airbyte-ai-hints': {
+                    'summary': 'Speaker-attributed call transcripts with timestamps',
+                    'when_to_use': 'Questions about what was said on calls, conversation content, or speaker dialogue',
+                    'trigger_phrases': [
+                        'transcript',
+                        'what was said',
+                        'call recording text',
+                        'conversation',
+                    ],
+                    'freshness': 'live',
+                },
+            },
+            ai_hints={
+                'summary': 'Speaker-attributed call transcripts with timestamps',
+                'when_to_use': 'Questions about what was said on calls, conversation content, or speaker dialogue',
+                'trigger_phrases': [
+                    'transcript',
+                    'what was said',
+                    'call recording text',
+                    'conversation',
+                ],
+                'freshness': 'live',
+            },
+        ),
+        EntityDefinition(
+            name='stats_activity_aggregate',
+            actions=[Action.LIST],
+            endpoints={
+                Action.LIST: EndpointDefinition(
+                    method='POST',
+                    path='/v2/stats/activity/aggregate',
+                    action=Action.LIST,
+                    description='Provides aggregated user activity metrics across a specified period',
+                    body_fields=['filter'],
+                    request_body_defaults={
+                        'filter': {'fromDate': '2024-01-01', 'toDate': '2025-01-01'},
+                    },
+                    request_schema={
+                        'type': 'object',
+                        'required': ['filter'],
+                        'properties': {
+                            'filter': {
+                                'type': 'object',
+                                'default': {'fromDate': '2024-01-01', 'toDate': '2025-01-01'},
+                                'required': ['fromDate', 'toDate'],
+                                'properties': {
+                                    'fromDate': {
+                                        'type': 'string',
+                                        'format': 'date',
+                                        'description': 'Start date (YYYY-MM-DD). Required by the Gong API for activity stats.',
+                                    },
+                                    'toDate': {
+                                        'type': 'string',
+                                        'format': 'date',
+                                        'description': 'End date (YYYY-MM-DD). Required by the Gong API for activity stats.',
+                                    },
+                                    'userIds': {
+                                        'type': 'array',
+                                        'items': {'type': 'string'},
+                                        'description': 'List of user IDs to retrieve stats for',
+                                    },
+                                },
+                            },
+                        },
+                    },
+                    response_schema={
+                        'type': 'object',
+                        'description': 'Response containing aggregated activity statistics',
+                        'properties': {
+                            'requestId': {'type': 'string'},
+                            'records': {
+                                'type': 'object',
+                                'description': 'Pagination metadata',
+                                'properties': {
+                                    'totalRecords': {'type': 'integer', 'description': 'Total number of records'},
+                                    'currentPageSize': {'type': 'integer', 'description': 'Number of records in current page'},
+                                    'currentPageNumber': {'type': 'integer', 'description': 'Current page number'},
+                                    'cursor': {
+                                        'type': ['string', 'null'],
+                                        'description': 'Opaque cursor to fetch the next page; absent when there are no more pages',
+                                    },
+                                },
+                            },
+                            'usersAggregateActivityStats': {
+                                'type': 'array',
+                                'items': {
+                                    'type': 'object',
+                                    'description': 'User with aggregated activity statistics',
+                                    'properties': {
+                                        'userId': {'type': 'string'},
+                                        'userEmailAddress': {'type': 'string'},
+                                        'userAggregateActivityStats': {
+                                            'type': 'object',
+                                            'description': 'Aggregated activity statistics for a user',
+                                            'properties': {
+                                                'callsAsHost': {'type': 'integer'},
+                                                'callsGaveFeedback': {'type': 'integer'},
+                                                'callsRequestedFeedback': {'type': 'integer'},
+                                                'callsReceivedFeedback': {'type': 'integer'},
+                                                'ownCallsListenedTo': {'type': 'integer'},
+                                                'othersCallsListenedTo': {'type': 'integer'},
+                                                'callsSharedInternally': {'type': 'integer'},
+                                                'callsSharedExternally': {'type': 'integer'},
+                                                'callsScorecardsFilled': {'type': 'integer'},
+                                                'callsScorecardsReceived': {'type': 'integer'},
+                                                'callsAttended': {'type': 'integer'},
+                                                'callsCommentsGiven': {'type': 'integer'},
+                                                'callsCommentsReceived': {'type': 'integer'},
+                                                'callsMarkedAsFeedbackGiven': {'type': 'integer'},
+                                                'callsMarkedAsFeedbackReceived': {'type': 'integer'},
+                                            },
+                                        },
+                                    },
+                                    'x-airbyte-entity-name': 'stats_activity_aggregate',
+                                    'x-airbyte-ai-hints': {
+                                        'summary': 'Aggregated user activity metrics (calls made, emails sent, etc.) over a date range',
+                                        'when_to_use': 'Questions about overall team or rep activity levels and productivity',
+                                        'trigger_phrases': [
+                                            'activity stats',
+                                            'rep productivity',
+                                            'how many calls',
+                                            'team activity',
+                                        ],
+                                        'freshness': 'live',
+                                    },
+                                },
+                            },
+                            'fromDateTime': {'type': 'string'},
+                            'toDateTime': {'type': 'string'},
+                            'timeZone': {'type': 'string'},
+                        },
+                    },
+                    record_extractor='$.usersAggregateActivityStats',
+                    meta_extractor={
+                        'cursor': '$.records.cursor',
+                        'total_records': '$.records.totalRecords',
+                        'current_page_number': '$.records.currentPageNumber',
+                    },
+                ),
+            },
+            entity_schema={
+                'type': 'object',
+                'description': 'User with aggregated activity statistics',
+                'properties': {
+                    'userId': {'type': 'string'},
+                    'userEmailAddress': {'type': 'string'},
+                    'userAggregateActivityStats': {'$ref': '#/components/schemas/UserAggregateActivityStats'},
+                },
+                'x-airbyte-entity-name': 'stats_activity_aggregate',
+                'x-airbyte-ai-hints': {
+                    'summary': 'Aggregated user activity metrics (calls made, emails sent, etc.) over a date range',
+                    'when_to_use': 'Questions about overall team or rep activity levels and productivity',
+                    'trigger_phrases': [
+                        'activity stats',
+                        'rep productivity',
+                        'how many calls',
+                        'team activity',
+                    ],
+                    'freshness': 'live',
+                },
+            },
+            ai_hints={
+                'summary': 'Aggregated user activity metrics (calls made, emails sent, etc.) over a date range',
+                'when_to_use': 'Questions about overall team or rep activity levels and productivity',
+                'trigger_phrases': [
+                    'activity stats',
+                    'rep productivity',
+                    'how many calls',
+                    'team activity',
+                ],
+                'freshness': 'live',
+            },
+        ),
+        EntityDefinition(
+            name='stats_activity_day_by_day',
+            actions=[Action.LIST],
+            endpoints={
+                Action.LIST: EndpointDefinition(
+                    method='POST',
+                    path='/v2/stats/activity/day-by-day',
+                    action=Action.LIST,
+                    description='Delivers daily user activity metrics across a specified date range',
+                    body_fields=['filter'],
+                    request_body_defaults={
+                        'filter': {'fromDate': '2024-01-01', 'toDate': '2025-01-01'},
+                    },
+                    request_schema={
+                        'type': 'object',
+                        'required': ['filter'],
+                        'properties': {
+                            'filter': {
+                                'type': 'object',
+                                'default': {'fromDate': '2024-01-01', 'toDate': '2025-01-01'},
+                                'required': ['fromDate', 'toDate'],
+                                'properties': {
+                                    'fromDate': {
+                                        'type': 'string',
+                                        'format': 'date',
+                                        'description': 'Start date (YYYY-MM-DD). Required by the Gong API for activity stats.',
+                                    },
+                                    'toDate': {
+                                        'type': 'string',
+                                        'format': 'date',
+                                        'description': 'End date (YYYY-MM-DD). Required by the Gong API for activity stats.',
+                                    },
+                                    'userIds': {
+                                        'type': 'array',
+                                        'items': {'type': 'string'},
+                                        'description': 'List of user IDs to retrieve stats for',
+                                    },
+                                },
+                            },
+                        },
+                    },
+                    response_schema={
+                        'type': 'object',
+                        'description': 'Response containing daily activity statistics',
+                        'properties': {
+                            'requestId': {'type': 'string'},
+                            'records': {
+                                'type': 'object',
+                                'description': 'Pagination metadata',
+                                'properties': {
+                                    'totalRecords': {'type': 'integer', 'description': 'Total number of records'},
+                                    'currentPageSize': {'type': 'integer', 'description': 'Number of records in current page'},
+                                    'currentPageNumber': {'type': 'integer', 'description': 'Current page number'},
+                                    'cursor': {
+                                        'type': ['string', 'null'],
+                                        'description': 'Opaque cursor to fetch the next page; absent when there are no more pages',
+                                    },
+                                },
+                            },
+                            'usersDetailedActivities': {
+                                'type': 'array',
+                                'items': {
+                                    'type': 'object',
+                                    'description': 'User with detailed daily activity statistics',
+                                    'properties': {
+                                        'userId': {'type': 'string'},
+                                        'userEmailAddress': {'type': 'string'},
+                                        'userDailyActivityStats': {
+                                            'type': 'array',
+                                            'items': {
+                                                'type': 'object',
+                                                'description': 'Daily activity statistics with call IDs',
+                                                'properties': {
+                                                    'callsAsHost': {
+                                                        'type': 'array',
+                                                        'items': {'type': 'string'},
+                                                    },
+                                                    'callsGaveFeedback': {
+                                                        'type': 'array',
+                                                        'items': {'type': 'string'},
+                                                    },
+                                                    'callsRequestedFeedback': {
+                                                        'type': 'array',
+                                                        'items': {'type': 'string'},
+                                                    },
+                                                    'callsReceivedFeedback': {
+                                                        'type': 'array',
+                                                        'items': {'type': 'string'},
+                                                    },
+                                                    'ownCallsListenedTo': {
+                                                        'type': 'array',
+                                                        'items': {'type': 'string'},
+                                                    },
+                                                    'othersCallsListenedTo': {
+                                                        'type': 'array',
+                                                        'items': {'type': 'string'},
+                                                    },
+                                                    'callsSharedInternally': {
+                                                        'type': 'array',
+                                                        'items': {'type': 'string'},
+                                                    },
+                                                    'callsSharedExternally': {
+                                                        'type': 'array',
+                                                        'items': {'type': 'string'},
+                                                    },
+                                                    'callsAttended': {
+                                                        'type': 'array',
+                                                        'items': {'type': 'string'},
+                                                    },
+                                                    'callsCommentsGiven': {
+                                                        'type': 'array',
+                                                        'items': {'type': 'string'},
+                                                    },
+                                                    'callsCommentsReceived': {
+                                                        'type': 'array',
+                                                        'items': {'type': 'string'},
+                                                    },
+                                                    'callsMarkedAsFeedbackGiven': {
+                                                        'type': 'array',
+                                                        'items': {'type': 'string'},
+                                                    },
+                                                    'callsMarkedAsFeedbackReceived': {
+                                                        'type': 'array',
+                                                        'items': {'type': 'string'},
+                                                    },
+                                                    'callsScorecardsFilled': {
+                                                        'type': 'array',
+                                                        'items': {'type': 'string'},
+                                                    },
+                                                    'callsScorecardsReceived': {
+                                                        'type': 'array',
+                                                        'items': {'type': 'string'},
+                                                    },
+                                                    'fromDate': {'type': 'string'},
+                                                    'toDate': {'type': 'string'},
+                                                },
+                                            },
+                                        },
+                                    },
+                                    'x-airbyte-entity-name': 'stats_activity_day_by_day',
+                                    'x-airbyte-ai-hints': {
+                                        'summary': 'Daily breakdown of user activity metrics over a date range',
+                                        'when_to_use': 'Questions about daily activity trends, day-over-day performance',
+                                        'trigger_phrases': [
+                                            'daily activity',
+                                            'day by day stats',
+                                            'activity trend',
+                                            'daily calls',
+                                        ],
+                                        'freshness': 'live',
+                                    },
+                                },
+                            },
+                        },
+                    },
+                    record_extractor='$.usersDetailedActivities',
+                    meta_extractor={
+                        'cursor': '$.records.cursor',
+                        'total_records': '$.records.totalRecords',
+                        'current_page_number': '$.records.currentPageNumber',
+                    },
+                ),
+            },
+            entity_schema={
+                'type': 'object',
+                'description': 'User with detailed daily activity statistics',
+                'properties': {
+                    'userId': {'type': 'string'},
+                    'userEmailAddress': {'type': 'string'},
+                    'userDailyActivityStats': {
+                        'type': 'array',
+                        'items': {'$ref': '#/components/schemas/DailyActivityStats'},
+                    },
+                },
+                'x-airbyte-entity-name': 'stats_activity_day_by_day',
+                'x-airbyte-ai-hints': {
+                    'summary': 'Daily breakdown of user activity metrics over a date range',
+                    'when_to_use': 'Questions about daily activity trends, day-over-day performance',
+                    'trigger_phrases': [
+                        'daily activity',
+                        'day by day stats',
+                        'activity trend',
+                        'daily calls',
+                    ],
+                    'freshness': 'live',
+                },
+            },
+            ai_hints={
+                'summary': 'Daily breakdown of user activity metrics over a date range',
+                'when_to_use': 'Questions about daily activity trends, day-over-day performance',
+                'trigger_phrases': [
+                    'daily activity',
+                    'day by day stats',
+                    'activity trend',
+                    'daily calls',
+                ],
+                'freshness': 'live',
+            },
+        ),
+        EntityDefinition(
+            name='stats_interaction',
+            actions=[Action.LIST],
+            endpoints={
+                Action.LIST: EndpointDefinition(
+                    method='POST',
+                    path='/v2/stats/interaction',
+                    action=Action.LIST,
+                    description='Returns interaction stats for users based on calls that have Whisper turned on',
+                    body_fields=['filter'],
+                    request_body_defaults={
+                        'filter': {'fromDate': '2024-01-01', 'toDate': '2025-01-01'},
+                    },
+                    request_schema={
+                        'type': 'object',
+                        'required': ['filter'],
+                        'properties': {
+                            'filter': {
+                                'type': 'object',
+                                'default': {'fromDate': '2024-01-01', 'toDate': '2025-01-01'},
+                                'required': ['fromDate', 'toDate'],
+                                'properties': {
+                                    'fromDate': {
+                                        'type': 'string',
+                                        'format': 'date',
+                                        'description': 'Start date (YYYY-MM-DD). Required by the Gong API for interaction stats.',
+                                    },
+                                    'toDate': {
+                                        'type': 'string',
+                                        'format': 'date',
+                                        'description': 'End date (YYYY-MM-DD). Required by the Gong API for interaction stats.',
+                                    },
+                                    'userIds': {
+                                        'type': 'array',
+                                        'items': {'type': 'string'},
+                                        'description': 'List of user IDs to retrieve stats for',
+                                    },
+                                },
+                            },
+                        },
+                    },
+                    response_schema={
+                        'type': 'object',
+                        'description': 'Response containing interaction statistics',
+                        'properties': {
+                            'requestId': {'type': 'string'},
+                            'records': {
+                                'type': 'object',
+                                'description': 'Pagination metadata',
+                                'properties': {
+                                    'totalRecords': {'type': 'integer', 'description': 'Total number of records'},
+                                    'currentPageSize': {'type': 'integer', 'description': 'Number of records in current page'},
+                                    'currentPageNumber': {'type': 'integer', 'description': 'Current page number'},
+                                    'cursor': {
+                                        'type': ['string', 'null'],
+                                        'description': 'Opaque cursor to fetch the next page; absent when there are no more pages',
+                                    },
+                                },
+                            },
+                            'peopleInteractionStats': {
+                                'type': 'array',
+                                'items': {
+                                    'type': 'object',
+                                    'description': 'User with interaction statistics',
+                                    'properties': {
+                                        'userId': {'type': 'string'},
+                                        'userEmailAddress': {'type': 'string'},
+                                        'personInteractionStats': {
+                                            'type': 'array',
+                                            'items': {
+                                                'type': 'object',
+                                                'description': 'Individual interaction statistic',
+                                                'properties': {
+                                                    'name': {'type': 'string'},
+                                                    'value': {'type': 'number'},
+                                                },
+                                            },
+                                        },
+                                    },
+                                    'x-airbyte-entity-name': 'stats_interaction',
+                                    'x-airbyte-ai-hints': {
+                                        'summary': 'Interaction statistics for users on Whisper-enabled calls',
+                                        'when_to_use': 'Questions about interaction patterns, engagement metrics on calls',
+                                        'trigger_phrases': ['interaction stats', 'engagement metrics', 'whisper stats'],
+                                        'freshness': 'live',
+                                    },
+                                },
+                            },
+                            'fromDateTime': {'type': 'string'},
+                            'toDateTime': {'type': 'string'},
+                            'timeZone': {'type': 'string'},
+                        },
+                    },
+                    record_extractor='$.peopleInteractionStats',
+                    meta_extractor={
+                        'cursor': '$.records.cursor',
+                        'total_records': '$.records.totalRecords',
+                        'current_page_number': '$.records.currentPageNumber',
+                    },
+                ),
+            },
+            entity_schema={
+                'type': 'object',
+                'description': 'User with interaction statistics',
+                'properties': {
+                    'userId': {'type': 'string'},
+                    'userEmailAddress': {'type': 'string'},
+                    'personInteractionStats': {
+                        'type': 'array',
+                        'items': {'$ref': '#/components/schemas/PersonInteractionStat'},
+                    },
+                },
+                'x-airbyte-entity-name': 'stats_interaction',
+                'x-airbyte-ai-hints': {
+                    'summary': 'Interaction statistics for users on Whisper-enabled calls',
+                    'when_to_use': 'Questions about interaction patterns, engagement metrics on calls',
+                    'trigger_phrases': ['interaction stats', 'engagement metrics', 'whisper stats'],
+                    'freshness': 'live',
+                },
+            },
+            ai_hints={
+                'summary': 'Interaction statistics for users on Whisper-enabled calls',
+                'when_to_use': 'Questions about interaction patterns, engagement metrics on calls',
+                'trigger_phrases': ['interaction stats', 'engagement metrics', 'whisper stats'],
+                'freshness': 'live',
+            },
+        ),
+        EntityDefinition(
+            name='settings_scorecards',
+            stream_name='scorecards',
+            actions=[Action.LIST],
+            endpoints={
+                Action.LIST: EndpointDefinition(
+                    method='GET',
+                    path='/v2/settings/scorecards',
+                    action=Action.LIST,
+                    description='Retrieve all scorecard configurations in the company',
+                    query_params=['workspaceId'],
+                    query_params_schema={
+                        'workspaceId': {'type': 'string', 'required': False},
+                    },
+                    response_schema={
+                        'type': 'object',
+                        'description': 'Response containing list of scorecards',
+                        'properties': {
+                            'requestId': {'type': 'string', 'description': 'Request identifier'},
+                            'scorecards': {
+                                'type': 'array',
+                                'items': {
+                                    'type': 'object',
+                                    'description': 'Scorecard configuration',
+                                    'properties': {
+                                        'scorecardId': {'type': 'string', 'description': 'Unique scorecard identifier'},
+                                        'scorecardName': {'type': 'string', 'description': 'Name of the scorecard'},
+                                        'workspaceId': {
+                                            'type': ['string', 'null'],
+                                            'description': 'Workspace ID (null if company-wide)',
+                                        },
+                                        'enabled': {'type': 'boolean', 'description': 'Whether the scorecard is enabled'},
+                                        'updaterUserId': {'type': 'string', 'description': 'User ID of last updater'},
+                                        'created': {
+                                            'type': 'string',
+                                            'format': 'date-time',
+                                            'description': 'Creation timestamp',
+                                        },
+                                        'updated': {
+                                            'type': 'string',
+                                            'format': 'date-time',
+                                            'description': 'Last update timestamp',
+                                        },
+                                        'reviewMethod': {'type': 'string', 'description': 'Review method (e.g., MANUAL, AUTOMATIC)'},
+                                        'questions': {
+                                            'type': 'array',
+                                            'items': {
+                                                'type': 'object',
+                                                'description': 'A question within a scorecard',
+                                                'properties': {
+                                                    'questionId': {'type': 'string', 'description': 'Unique question identifier'},
+                                                    'questionRevisionId': {'type': 'string', 'description': 'Question revision identifier'},
+                                                    'questionText': {'type': 'string', 'description': 'The question text'},
+                                                    'questionType': {'type': 'string', 'description': 'Type of question (e.g., rating, yes/no)'},
+                                                    'isRequired': {'type': 'boolean', 'description': 'Whether the question is required'},
+                                                    'isOverall': {'type': 'boolean', 'description': 'Whether this is an overall rating question'},
+                                                    'updaterUserId': {'type': 'string', 'description': 'User ID of last updater'},
+                                                    'answerGuide': {
+                                                        'type': ['string', 'null'],
+                                                        'description': 'Guide text for answering the question',
+                                                    },
+                                                    'minRange': {
+                                                        'type': ['string', 'null'],
+                                                        'description': 'Minimum range value for range-type questions',
+                                                    },
+                                                    'maxRange': {
+                                                        'type': ['string', 'null'],
+                                                        'description': 'Maximum range value for range-type questions',
+                                                    },
+                                                    'created': {
+                                                        'type': 'string',
+                                                        'format': 'date-time',
+                                                        'description': 'Creation timestamp',
+                                                    },
+                                                    'updated': {
+                                                        'type': 'string',
+                                                        'format': 'date-time',
+                                                        'description': 'Last update timestamp',
+                                                    },
+                                                    'answerOptions': {
+                                                        'type': 'array',
+                                                        'description': 'Available answer options',
+                                                        'items': {
+                                                            'type': 'object',
+                                                            'properties': {
+                                                                'optionId': {'type': 'string'},
+                                                                'optionText': {'type': 'string'},
+                                                                'score': {'type': 'number'},
+                                                            },
+                                                        },
+                                                    },
+                                                },
+                                            },
+                                        },
+                                    },
+                                    'x-airbyte-entity-name': 'settings_scorecards',
+                                    'x-airbyte-stream-name': 'scorecards',
+                                    'x-airbyte-ai-hints': {
+                                        'summary': 'Scorecard templates for evaluating sales call quality',
+                                        'when_to_use': 'Questions about call evaluation criteria or scorecard definitions',
+                                        'trigger_phrases': ['scorecard', 'call evaluation', 'quality scorecard'],
+                                        'freshness': 'static',
+                                        'example_questions': ['What scorecards are defined in Gong?'],
+                                        'search_strategy': 'List all scorecard definitions',
+                                    },
+                                },
+                            },
+                        },
+                    },
+                    record_extractor='$.scorecards',
+                    no_pagination='Gong /v2/settings/scorecards endpoint returns all scorecard configurations for the workspace in a single response; the API does not expose pagination on this endpoint.',
+                ),
+            },
+            entity_schema={
+                'type': 'object',
+                'description': 'Scorecard configuration',
+                'properties': {
+                    'scorecardId': {'type': 'string', 'description': 'Unique scorecard identifier'},
+                    'scorecardName': {'type': 'string', 'description': 'Name of the scorecard'},
+                    'workspaceId': {
+                        'type': ['string', 'null'],
+                        'description': 'Workspace ID (null if company-wide)',
+                    },
+                    'enabled': {'type': 'boolean', 'description': 'Whether the scorecard is enabled'},
+                    'updaterUserId': {'type': 'string', 'description': 'User ID of last updater'},
+                    'created': {
+                        'type': 'string',
+                        'format': 'date-time',
+                        'description': 'Creation timestamp',
+                    },
+                    'updated': {
+                        'type': 'string',
+                        'format': 'date-time',
+                        'description': 'Last update timestamp',
+                    },
+                    'reviewMethod': {'type': 'string', 'description': 'Review method (e.g., MANUAL, AUTOMATIC)'},
+                    'questions': {
+                        'type': 'array',
+                        'items': {'$ref': '#/components/schemas/ScorecardQuestion'},
+                    },
+                },
+                'x-airbyte-entity-name': 'settings_scorecards',
+                'x-airbyte-stream-name': 'scorecards',
+                'x-airbyte-ai-hints': {
+                    'summary': 'Scorecard templates for evaluating sales call quality',
+                    'when_to_use': 'Questions about call evaluation criteria or scorecard definitions',
+                    'trigger_phrases': ['scorecard', 'call evaluation', 'quality scorecard'],
+                    'freshness': 'static',
+                    'example_questions': ['What scorecards are defined in Gong?'],
+                    'search_strategy': 'List all scorecard definitions',
+                },
+            },
+            ai_hints={
+                'summary': 'Scorecard templates for evaluating sales call quality',
+                'when_to_use': 'Questions about call evaluation criteria or scorecard definitions',
+                'trigger_phrases': ['scorecard', 'call evaluation', 'quality scorecard'],
+                'freshness': 'static',
+                'example_questions': ['What scorecards are defined in Gong?'],
+                'search_strategy': 'List all scorecard definitions',
+            },
+        ),
+        EntityDefinition(
+            name='settings_trackers',
+            actions=[Action.LIST],
+            endpoints={
+                Action.LIST: EndpointDefinition(
+                    method='GET',
+                    path='/v2/settings/trackers',
+                    action=Action.LIST,
+                    description='Retrieve all keyword tracker configurations in the company',
+                    query_params=['workspaceId'],
+                    query_params_schema={
+                        'workspaceId': {'type': 'string', 'required': False},
+                    },
+                    response_schema={
+                        'type': 'object',
+                        'description': 'Response containing list of trackers',
+                        'properties': {
+                            'requestId': {'type': 'string', 'description': 'Request identifier'},
+                            'keywordTrackers': {
+                                'type': 'array',
+                                'items': {
+                                    'type': 'object',
+                                    'description': 'Keyword tracker configuration',
+                                    'properties': {
+                                        'trackerId': {'type': 'string', 'description': 'Unique tracker identifier'},
+                                        'trackerName': {'type': 'string', 'description': 'Name of the tracker'},
+                                        'workspaceId': {
+                                            'type': ['string', 'null'],
+                                            'description': 'Workspace ID (null if company-wide)',
+                                        },
+                                        'languageKeywords': {
+                                            'type': 'array',
+                                            'description': 'Keywords by language',
+                                            'items': {
+                                                'type': 'object',
+                                                'properties': {
+                                                    'language': {'type': 'string', 'description': 'Language code'},
+                                                    'keywords': {
+                                                        'type': 'array',
+                                                        'description': 'List of keywords for this language',
+                                                        'items': {'type': 'string'},
+                                                    },
+                                                    'includeRelatedForms': {'type': 'boolean', 'description': 'Whether to include related word forms'},
+                                                },
+                                            },
+                                        },
+                                        'affiliation': {'type': 'string', 'description': 'Who the tracker applies to (internal, external, both)'},
+                                        'partOfQuestion': {'type': 'boolean', 'description': 'Whether this is part of a question'},
+                                        'saidAt': {'type': 'string', 'description': 'When the keyword should be said (Anytime, etc.)'},
+                                        'saidAtInterval': {
+                                            'type': ['string', 'null'],
+                                            'description': 'Interval for when keyword should be said',
+                                        },
+                                        'saidAtUnit': {
+                                            'type': ['string', 'null'],
+                                            'description': 'Unit for said at interval',
+                                        },
+                                        'saidInTopics': {
+                                            'type': 'array',
+                                            'description': 'Topics where the keyword should be mentioned',
+                                            'items': {'type': 'string'},
+                                        },
+                                        'filterQuery': {'type': 'string', 'description': 'Filter query JSON string'},
+                                        'created': {
+                                            'type': 'string',
+                                            'format': 'date-time',
+                                            'description': 'Creation timestamp',
+                                        },
+                                        'creatorUserId': {
+                                            'type': ['string', 'null'],
+                                            'description': 'User ID of creator',
+                                        },
+                                        'updated': {
+                                            'type': 'string',
+                                            'format': 'date-time',
+                                            'description': 'Last update timestamp',
+                                        },
+                                        'updaterUserId': {
+                                            'type': ['string', 'null'],
+                                            'description': 'User ID of last updater',
+                                        },
+                                    },
+                                    'x-airbyte-entity-name': 'settings_trackers',
+                                    'x-airbyte-ai-hints': {
+                                        'summary': 'Keyword trackers monitoring topics and phrases in calls',
+                                        'when_to_use': 'Questions about tracked keywords, topics, or talk patterns',
+                                        'trigger_phrases': ['tracker', 'keyword tracker', 'topic tracking'],
+                                        'freshness': 'static',
+                                        'example_questions': ['What trackers are set up in Gong?'],
+                                        'search_strategy': 'Search by tracker name',
+                                    },
+                                },
+                            },
+                        },
+                    },
+                    record_extractor='$.keywordTrackers',
+                    no_pagination='Gong /v2/settings/trackers endpoint returns all keyword tracker configurations for the workspace in a single response; the API does not expose pagination on this endpoint.',
+                ),
+            },
+            entity_schema={
+                'type': 'object',
+                'description': 'Keyword tracker configuration',
+                'properties': {
+                    'trackerId': {'type': 'string', 'description': 'Unique tracker identifier'},
+                    'trackerName': {'type': 'string', 'description': 'Name of the tracker'},
+                    'workspaceId': {
+                        'type': ['string', 'null'],
+                        'description': 'Workspace ID (null if company-wide)',
+                    },
+                    'languageKeywords': {
+                        'type': 'array',
+                        'description': 'Keywords by language',
+                        'items': {
+                            'type': 'object',
+                            'properties': {
+                                'language': {'type': 'string', 'description': 'Language code'},
+                                'keywords': {
+                                    'type': 'array',
+                                    'description': 'List of keywords for this language',
+                                    'items': {'type': 'string'},
+                                },
+                                'includeRelatedForms': {'type': 'boolean', 'description': 'Whether to include related word forms'},
+                            },
+                        },
+                    },
+                    'affiliation': {'type': 'string', 'description': 'Who the tracker applies to (internal, external, both)'},
+                    'partOfQuestion': {'type': 'boolean', 'description': 'Whether this is part of a question'},
+                    'saidAt': {'type': 'string', 'description': 'When the keyword should be said (Anytime, etc.)'},
+                    'saidAtInterval': {
+                        'type': ['string', 'null'],
+                        'description': 'Interval for when keyword should be said',
+                    },
+                    'saidAtUnit': {
+                        'type': ['string', 'null'],
+                        'description': 'Unit for said at interval',
+                    },
+                    'saidInTopics': {
+                        'type': 'array',
+                        'description': 'Topics where the keyword should be mentioned',
+                        'items': {'type': 'string'},
+                    },
+                    'filterQuery': {'type': 'string', 'description': 'Filter query JSON string'},
+                    'created': {
+                        'type': 'string',
+                        'format': 'date-time',
+                        'description': 'Creation timestamp',
+                    },
+                    'creatorUserId': {
+                        'type': ['string', 'null'],
+                        'description': 'User ID of creator',
+                    },
+                    'updated': {
+                        'type': 'string',
+                        'format': 'date-time',
+                        'description': 'Last update timestamp',
+                    },
+                    'updaterUserId': {
+                        'type': ['string', 'null'],
+                        'description': 'User ID of last updater',
+                    },
+                },
+                'x-airbyte-entity-name': 'settings_trackers',
+                'x-airbyte-ai-hints': {
+                    'summary': 'Keyword trackers monitoring topics and phrases in calls',
+                    'when_to_use': 'Questions about tracked keywords, topics, or talk patterns',
+                    'trigger_phrases': ['tracker', 'keyword tracker', 'topic tracking'],
+                    'freshness': 'static',
+                    'example_questions': ['What trackers are set up in Gong?'],
+                    'search_strategy': 'Search by tracker name',
+                },
+            },
+            ai_hints={
+                'summary': 'Keyword trackers monitoring topics and phrases in calls',
+                'when_to_use': 'Questions about tracked keywords, topics, or talk patterns',
+                'trigger_phrases': ['tracker', 'keyword tracker', 'topic tracking'],
+                'freshness': 'static',
+                'example_questions': ['What trackers are set up in Gong?'],
+                'search_strategy': 'Search by tracker name',
+            },
+        ),
+        EntityDefinition(
+            name='library_folders',
+            actions=[Action.LIST],
+            endpoints={
+                Action.LIST: EndpointDefinition(
+                    method='GET',
+                    path='/v2/library/folders',
+                    action=Action.LIST,
+                    description='Retrieve the folder structure of the call library',
+                    query_params=['workspaceId'],
+                    query_params_schema={
+                        'workspaceId': {'type': 'string', 'required': True},
+                    },
+                    response_schema={
+                        'type': 'object',
+                        'description': 'Response containing library folder structure',
+                        'properties': {
+                            'requestId': {'type': 'string', 'description': 'Request identifier'},
+                            'folders': {
+                                'type': 'array',
+                                'items': {
+                                    'type': 'object',
+                                    'description': 'Library folder structure',
+                                    'properties': {
+                                        'id': {'type': 'string', 'description': 'Unique folder identifier'},
+                                        'name': {'type': 'string', 'description': 'Folder name'},
+                                        'parentFolderId': {
+                                            'type': ['string', 'null'],
+                                            'description': 'Parent folder ID (null for root folders)',
+                                        },
+                                        'createdBy': {
+                                            'type': ['string', 'null'],
+                                            'description': 'User ID of folder creator',
+                                        },
+                                        'updated': {
+                                            'type': 'string',
+                                            'format': 'date-time',
+                                            'description': 'Last update timestamp',
+                                        },
+                                    },
+                                    'x-airbyte-entity-name': 'library_folders',
+                                    'x-airbyte-ai-hints': {
+                                        'summary': 'Library folders containing curated call collections within a workspace',
+                                        'when_to_use': 'Questions about call library organization, folder structure, or curated call collections',
+                                        'trigger_phrases': ['library folders', 'call collections', 'call library'],
+                                        'freshness': 'live',
+                                    },
+                                },
+                            },
+                        },
+                    },
+                    record_extractor='$.folders',
+                    no_pagination='Gong /v2/library/folders endpoint returns the full folder tree for the workspace in a single response; the API does not expose pagination on this endpoint.',
+                ),
+            },
+            entity_schema={
+                'type': 'object',
+                'description': 'Library folder structure',
+                'properties': {
+                    'id': {'type': 'string', 'description': 'Unique folder identifier'},
+                    'name': {'type': 'string', 'description': 'Folder name'},
+                    'parentFolderId': {
+                        'type': ['string', 'null'],
+                        'description': 'Parent folder ID (null for root folders)',
+                    },
+                    'createdBy': {
+                        'type': ['string', 'null'],
+                        'description': 'User ID of folder creator',
+                    },
+                    'updated': {
+                        'type': 'string',
+                        'format': 'date-time',
+                        'description': 'Last update timestamp',
+                    },
+                },
+                'x-airbyte-entity-name': 'library_folders',
+                'x-airbyte-ai-hints': {
+                    'summary': 'Library folders containing curated call collections within a workspace',
+                    'when_to_use': 'Questions about call library organization, folder structure, or curated call collections',
+                    'trigger_phrases': ['library folders', 'call collections', 'call library'],
+                    'freshness': 'live',
+                },
+            },
+            ai_hints={
+                'summary': 'Library folders containing curated call collections within a workspace',
+                'when_to_use': 'Questions about call library organization, folder structure, or curated call collections',
+                'trigger_phrases': ['library folders', 'call collections', 'call library'],
+                'freshness': 'live',
+            },
+            relationships=[
+                EntityRelationshipConfig(
+                    source_entity='library_folders',
+                    target_entity='workspaces',
+                    foreign_key='workspaceId',
+                    cardinality='many_to_one',
+                    description='Library folders belong to a workspace',
+                ),
+            ],
+        ),
+        EntityDefinition(
+            name='library_folder_content',
+            actions=[Action.LIST],
+            endpoints={
+                Action.LIST: EndpointDefinition(
+                    method='GET',
+                    path='/v2/library/folder-content',
+                    action=Action.LIST,
+                    description='Retrieve calls in a specific library folder',
+                    query_params=['folderId', 'cursor'],
+                    query_params_schema={
+                        'folderId': {'type': 'string', 'required': True},
+                        'cursor': {'type': 'string', 'required': False},
+                    },
+                    response_schema={
+                        'type': 'object',
+                        'description': 'Response containing calls in a folder',
+                        'properties': {
+                            'requestId': {'type': 'string', 'description': 'Request identifier'},
+                            'id': {'type': 'string', 'description': 'Folder ID'},
+                            'name': {'type': 'string', 'description': 'Folder name'},
+                            'createdBy': {
+                                'type': ['string', 'null'],
+                                'description': 'User ID of folder creator',
+                            },
+                            'updated': {
+                                'type': 'string',
+                                'format': 'date-time',
+                                'description': 'Last update timestamp',
+                            },
+                            'calls': {
+                                'type': 'array',
+                                'items': {
+                                    'type': 'object',
+                                    'description': 'Call within a library folder',
+                                    'properties': {
+                                        'callId': {'type': 'string', 'description': 'Unique call identifier'},
+                                        'title': {'type': 'string', 'description': 'Call title'},
+                                        'started': {
+                                            'type': 'string',
+                                            'format': 'date-time',
+                                            'description': 'Call start time',
+                                        },
+                                        'duration': {'type': 'integer', 'description': 'Call duration in seconds'},
+                                        'primaryUserId': {'type': 'string', 'description': 'Primary user ID'},
+                                        'url': {'type': 'string', 'description': 'URL to call in Gong'},
+                                    },
+                                    'x-airbyte-entity-name': 'library_folder_content',
+                                    'x-airbyte-ai-hints': {
+                                        'summary': 'Calls saved within a specific library folder',
+                                        'when_to_use': 'Questions about which calls are in a library folder',
+                                        'trigger_phrases': ['folder calls', 'library content', 'saved calls'],
+                                        'freshness': 'live',
+                                    },
+                                },
+                            },
+                            'records': {
+                                'type': 'object',
+                                'description': 'Pagination metadata',
+                                'properties': {
+                                    'totalRecords': {'type': 'integer', 'description': 'Total number of records'},
+                                    'currentPageSize': {'type': 'integer', 'description': 'Number of records in current page'},
+                                    'currentPageNumber': {'type': 'integer', 'description': 'Current page number'},
+                                    'cursor': {
+                                        'type': ['string', 'null'],
+                                        'description': 'Opaque cursor to fetch the next page; absent when there are no more pages',
+                                    },
+                                },
+                            },
+                        },
+                    },
+                    record_extractor='$.calls',
+                    record_filter='{{ not record.isPrivate }}',
+                    meta_extractor={
+                        'cursor': '$.records.cursor',
+                        'total_records': '$.records.totalRecords',
+                        'current_page_number': '$.records.currentPageNumber',
+                    },
+                ),
+            },
+            entity_schema={
+                'type': 'object',
+                'description': 'Call within a library folder',
+                'properties': {
+                    'callId': {'type': 'string', 'description': 'Unique call identifier'},
+                    'title': {'type': 'string', 'description': 'Call title'},
+                    'started': {
+                        'type': 'string',
+                        'format': 'date-time',
+                        'description': 'Call start time',
+                    },
+                    'duration': {'type': 'integer', 'description': 'Call duration in seconds'},
+                    'primaryUserId': {'type': 'string', 'description': 'Primary user ID'},
+                    'url': {'type': 'string', 'description': 'URL to call in Gong'},
+                },
+                'x-airbyte-entity-name': 'library_folder_content',
+                'x-airbyte-ai-hints': {
+                    'summary': 'Calls saved within a specific library folder',
+                    'when_to_use': 'Questions about which calls are in a library folder',
+                    'trigger_phrases': ['folder calls', 'library content', 'saved calls'],
+                    'freshness': 'live',
+                },
+            },
+            ai_hints={
+                'summary': 'Calls saved within a specific library folder',
+                'when_to_use': 'Questions about which calls are in a library folder',
+                'trigger_phrases': ['folder calls', 'library content', 'saved calls'],
+                'freshness': 'live',
+            },
+            relationships=[
+                EntityRelationshipConfig(
+                    source_entity='library_folder_content',
+                    target_entity='library_folders',
+                    foreign_key='folderId',
+                    cardinality='many_to_one',
+                    description='Folder content belongs to a library folder',
+                ),
+            ],
+        ),
+        EntityDefinition(
+            name='coaching',
+            actions=[Action.LIST],
+            endpoints={
+                Action.LIST: EndpointDefinition(
+                    method='GET',
+                    path='/v2/coaching',
+                    action=Action.LIST,
+                    description='Retrieve coaching metrics for a manager and their direct reports',
+                    query_params=[
+                        'workspace-id',
+                        'manager-id',
+                        'from',
+                        'to',
+                    ],
+                    query_params_schema={
+                        'workspace-id': {'type': 'string', 'required': True},
+                        'manager-id': {'type': 'string', 'required': True},
+                        'from': {
+                            'type': 'string',
+                            'required': True,
+                            'default': '2024-01-01T00:00:00Z',
+                            'format': 'date-time',
+                        },
+                        'to': {
+                            'type': 'string',
+                            'required': True,
+                            'default': '2025-01-01T00:00:00Z',
+                            'format': 'date-time',
+                        },
+                    },
+                    response_schema={
+                        'type': 'object',
+                        'description': 'Response containing coaching metrics',
+                        'properties': {
+                            'requestId': {'type': 'string', 'description': 'Request identifier'},
+                            'coachingData': {
+                                'type': 'array',
+                                'items': {
+                                    'type': 'object',
+                                    'description': 'Coaching data for a user',
+                                    'properties': {
+                                        'userId': {'type': 'string', 'description': 'User identifier'},
+                                        'userEmailAddress': {'type': 'string', 'description': 'User email address'},
+                                        'userName': {'type': 'string', 'description': 'User name'},
+                                        'isManager': {'type': 'boolean', 'description': 'Whether the user is a manager'},
+                                        'coachingMetrics': {
+                                            'type': 'object',
+                                            'description': 'Coaching metrics for a user',
+                                            'properties': {
+                                                'callsListened': {'type': 'integer', 'description': 'Number of team calls listened to'},
+                                                'callsAttended': {'type': 'integer', 'description': 'Number of team calls participated in'},
+                                                'callsWithFeedback': {'type': 'integer', 'description': 'Number of calls with feedback given'},
+                                                'callsWithComments': {'type': 'integer', 'description': 'Number of calls with comments'},
+                                                'scorecardsFilled': {'type': 'integer', 'description': 'Number of scorecards filled'},
+                                            },
+                                        },
+                                    },
+                                    'x-airbyte-entity-name': 'coaching',
+                                    'x-airbyte-ai-hints': {
+                                        'summary': 'Coaching metrics for a manager and their direct reports within a workspace',
+                                        'when_to_use': 'Questions about manager coaching activity, scorecard completion, feedback given',
+                                        'trigger_phrases': [
+                                            'coaching metrics',
+                                            'manager coaching',
+                                            'coaching activity',
+                                            'feedback stats',
+                                        ],
+                                        'freshness': 'live',
+                                    },
+                                },
+                            },
+                            'fromDateTime': {'type': 'string'},
+                            'toDateTime': {'type': 'string'},
+                        },
+                    },
+                    record_extractor='$.coachingData',
+                    no_pagination='Gong /v2/coaching endpoint returns an aggregated coaching-metrics payload for a manager and their direct reports over a date range; response is a bounded aggregate and the API does not expose pagination on this endpoint.',
+                ),
+            },
+            entity_schema={
+                'type': 'object',
+                'description': 'Coaching data for a user',
+                'properties': {
+                    'userId': {'type': 'string', 'description': 'User identifier'},
+                    'userEmailAddress': {'type': 'string', 'description': 'User email address'},
+                    'userName': {'type': 'string', 'description': 'User name'},
+                    'isManager': {'type': 'boolean', 'description': 'Whether the user is a manager'},
+                    'coachingMetrics': {'$ref': '#/components/schemas/CoachingMetrics'},
+                },
+                'x-airbyte-entity-name': 'coaching',
+                'x-airbyte-ai-hints': {
+                    'summary': 'Coaching metrics for a manager and their direct reports within a workspace',
+                    'when_to_use': 'Questions about manager coaching activity, scorecard completion, feedback given',
+                    'trigger_phrases': [
+                        'coaching metrics',
+                        'manager coaching',
+                        'coaching activity',
+                        'feedback stats',
+                    ],
+                    'freshness': 'live',
+                },
+            },
+            ai_hints={
+                'summary': 'Coaching metrics for a manager and their direct reports within a workspace',
+                'when_to_use': 'Questions about manager coaching activity, scorecard completion, feedback given',
+                'trigger_phrases': [
+                    'coaching metrics',
+                    'manager coaching',
+                    'coaching activity',
+                    'feedback stats',
+                ],
+                'freshness': 'live',
+            },
+            relationships=[
+                EntityRelationshipConfig(
+                    source_entity='coaching',
+                    target_entity='workspaces',
+                    foreign_key='workspace-id',
+                    cardinality='many_to_one',
+                    description='Coaching metrics are scoped to a workspace',
+                ),
+                EntityRelationshipConfig(
+                    source_entity='coaching',
+                    target_entity='users',
+                    foreign_key='manager-id',
+                    cardinality='many_to_one',
+                    description='Coaching metrics are retrieved for a specific manager',
+                ),
+            ],
+        ),
+        EntityDefinition(
+            name='stats_activity_scorecards',
+            stream_name='answeredScorecards',
+            actions=[Action.LIST],
+            endpoints={
+                Action.LIST: EndpointDefinition(
+                    method='POST',
+                    path='/v2/stats/activity/scorecards',
+                    action=Action.LIST,
+                    description='Retrieve answered scorecards for applicable reviewed users or scorecards for a date range',
+                    body_fields=['filter', 'cursor'],
+                    request_body_defaults={
+                        'filter': {'fromDateTime': '2024-01-01T00:00:00Z', 'toDateTime': '2025-01-01T00:00:00Z'},
+                    },
+                    request_schema={
+                        'type': 'object',
+                        'required': ['filter'],
+                        'properties': {
+                            'filter': {
+                                'type': 'object',
+                                'default': {'fromDateTime': '2024-01-01T00:00:00Z', 'toDateTime': '2025-01-01T00:00:00Z'},
+                                'required': ['fromDateTime', 'toDateTime'],
+                                'properties': {
+                                    'fromDateTime': {
+                                        'type': 'string',
+                                        'format': 'date-time',
+                                        'description': 'Start date in ISO 8601 format. Required by the Gong API for scorecard stats.',
+                                    },
+                                    'toDateTime': {
+                                        'type': 'string',
+                                        'format': 'date-time',
+                                        'description': 'End date in ISO 8601 format. Required by the Gong API for scorecard stats.',
+                                    },
+                                    'scorecardIds': {
+                                        'type': 'array',
+                                        'items': {'type': 'string'},
+                                        'description': 'List of scorecard IDs to filter by',
+                                    },
+                                    'reviewedUserIds': {
+                                        'type': 'array',
+                                        'items': {'type': 'string'},
+                                        'description': 'List of reviewed user IDs to filter by',
+                                    },
+                                    'reviewerUserIds': {
+                                        'type': 'array',
+                                        'items': {'type': 'string'},
+                                        'description': 'List of reviewer user IDs to filter by',
+                                    },
+                                    'callIds': {
+                                        'type': 'array',
+                                        'items': {'type': 'string'},
+                                        'description': 'List of call IDs to filter by',
+                                    },
+                                },
+                            },
+                            'cursor': {'type': 'string', 'description': 'Cursor for pagination'},
+                        },
+                    },
+                    response_schema={
+                        'type': 'object',
+                        'description': 'Response containing answered scorecards',
+                        'properties': {
+                            'requestId': {'type': 'string', 'description': 'Request identifier'},
+                            'answeredScorecards': {
+                                'type': 'array',
+                                'items': {
+                                    'type': 'object',
+                                    'description': 'A completed scorecard',
+                                    'properties': {
+                                        'answeredScorecardId': {'type': 'string', 'description': 'Unique answered scorecard identifier'},
+                                        'scorecardId': {'type': 'string', 'description': 'Scorecard identifier'},
+                                        'scorecardName': {'type': 'string', 'description': 'Scorecard name'},
+                                        'callId': {'type': 'string', 'description': 'Call identifier'},
+                                        'callStartTime': {
+                                            'type': 'string',
+                                            'format': 'date-time',
+                                            'description': 'When the call started',
+                                        },
+                                        'reviewedUserId': {'type': 'string', 'description': 'User being reviewed'},
+                                        'reviewerUserId': {'type': 'string', 'description': 'User who completed the review'},
+                                        'reviewMethod': {'type': 'string', 'description': 'Review method (MANUAL, AUTOMATIC)'},
+                                        'editorUserId': {
+                                            'type': ['string', 'null'],
+                                            'description': 'User who edited the scorecard',
+                                        },
+                                        'answeredDateTime': {
+                                            'type': 'string',
+                                            'format': 'date-time',
+                                            'description': 'When the scorecard was completed',
+                                        },
+                                        'reviewTime': {
+                                            'type': 'string',
+                                            'format': 'date-time',
+                                            'description': 'When the review was completed',
+                                        },
+                                        'visibilityType': {'type': 'string', 'description': 'Visibility type (PUBLIC, PRIVATE)'},
+                                        'answers': {
+                                            'type': 'array',
+                                            'items': {
+                                                'type': 'object',
+                                                'description': 'An answer to a scorecard question',
+                                                'properties': {
+                                                    'questionId': {'type': 'string', 'description': 'Question identifier'},
+                                                    'questionRevisionId': {'type': 'string', 'description': 'Question revision identifier'},
+                                                    'isOverall': {'type': 'boolean', 'description': 'Whether this is an overall rating question'},
+                                                    'answer': {'type': 'string', 'description': 'The answer value'},
+                                                    'answerText': {
+                                                        'type': ['string', 'null'],
+                                                        'description': 'Answer text (for text answers)',
+                                                    },
+                                                    'score': {'type': 'number', 'description': 'Score for the answer'},
+                                                    'notApplicable': {'type': 'boolean', 'description': 'Whether marked as N/A'},
+                                                    'selectedOptions': {
+                                                        'type': ['array', 'null'],
+                                                        'description': 'Selected option IDs for multi-choice questions',
+                                                        'items': {'type': 'string'},
+                                                    },
+                                                },
+                                            },
+                                        },
+                                        'overallScore': {'type': 'number', 'description': 'Overall scorecard score'},
+                                        'visibility': {'type': 'string', 'description': 'Visibility setting (public, private)'},
+                                    },
+                                    'x-airbyte-entity-name': 'stats_activity_scorecards',
+                                    'x-airbyte-stream-name': 'answeredScorecards',
+                                    'x-airbyte-ai-hints': {
+                                        'summary': 'Completed scorecards with scores and reviewer details',
+                                        'when_to_use': 'Questions about scorecard results, call evaluations, or quality scores',
+                                        'trigger_phrases': [
+                                            'scorecard results',
+                                            'call scores',
+                                            'evaluations',
+                                            'quality scores',
+                                        ],
+                                        'freshness': 'live',
+                                    },
+                                },
+                            },
+                            'records': {
+                                'type': 'object',
+                                'description': 'Pagination metadata',
+                                'properties': {
+                                    'totalRecords': {'type': 'integer', 'description': 'Total number of records'},
+                                    'currentPageSize': {'type': 'integer', 'description': 'Number of records in current page'},
+                                    'currentPageNumber': {'type': 'integer', 'description': 'Current page number'},
+                                    'cursor': {
+                                        'type': ['string', 'null'],
+                                        'description': 'Opaque cursor to fetch the next page; absent when there are no more pages',
+                                    },
+                                },
+                            },
+                        },
+                    },
+                    record_extractor='$.answeredScorecards',
+                    meta_extractor={
+                        'cursor': '$.records.cursor',
+                        'total_records': '$.records.totalRecords',
+                        'current_page_number': '$.records.currentPageNumber',
+                    },
+                ),
+            },
+            entity_schema={
+                'type': 'object',
+                'description': 'A completed scorecard',
+                'properties': {
+                    'answeredScorecardId': {'type': 'string', 'description': 'Unique answered scorecard identifier'},
+                    'scorecardId': {'type': 'string', 'description': 'Scorecard identifier'},
+                    'scorecardName': {'type': 'string', 'description': 'Scorecard name'},
+                    'callId': {'type': 'string', 'description': 'Call identifier'},
+                    'callStartTime': {
+                        'type': 'string',
+                        'format': 'date-time',
+                        'description': 'When the call started',
+                    },
+                    'reviewedUserId': {'type': 'string', 'description': 'User being reviewed'},
+                    'reviewerUserId': {'type': 'string', 'description': 'User who completed the review'},
+                    'reviewMethod': {'type': 'string', 'description': 'Review method (MANUAL, AUTOMATIC)'},
+                    'editorUserId': {
+                        'type': ['string', 'null'],
+                        'description': 'User who edited the scorecard',
+                    },
+                    'answeredDateTime': {
+                        'type': 'string',
+                        'format': 'date-time',
+                        'description': 'When the scorecard was completed',
+                    },
+                    'reviewTime': {
+                        'type': 'string',
+                        'format': 'date-time',
+                        'description': 'When the review was completed',
+                    },
+                    'visibilityType': {'type': 'string', 'description': 'Visibility type (PUBLIC, PRIVATE)'},
+                    'answers': {
+                        'type': 'array',
+                        'items': {'$ref': '#/components/schemas/AnsweredScorecardAnswer'},
+                    },
+                    'overallScore': {'type': 'number', 'description': 'Overall scorecard score'},
+                    'visibility': {'type': 'string', 'description': 'Visibility setting (public, private)'},
+                },
+                'x-airbyte-entity-name': 'stats_activity_scorecards',
+                'x-airbyte-stream-name': 'answeredScorecards',
+                'x-airbyte-ai-hints': {
+                    'summary': 'Completed scorecards with scores and reviewer details',
+                    'when_to_use': 'Questions about scorecard results, call evaluations, or quality scores',
+                    'trigger_phrases': [
+                        'scorecard results',
+                        'call scores',
+                        'evaluations',
+                        'quality scores',
+                    ],
+                    'freshness': 'live',
+                },
+            },
+            ai_hints={
+                'summary': 'Completed scorecards with scores and reviewer details',
+                'when_to_use': 'Questions about scorecard results, call evaluations, or quality scores',
+                'trigger_phrases': [
+                    'scorecard results',
+                    'call scores',
+                    'evaluations',
+                    'quality scores',
+                ],
+                'freshness': 'live',
+            },
+        ),
+    ],
+    context_store=CacheConfig(
+        entities=[
+            CacheEntityConfig(
+                entity='users',
+                suggested=True,
+                x_airbyte_name='users',
+                fields=[
+                    CacheFieldConfig(
+                        name='active',
+                        type=['null', 'boolean'],
+                        description='Indicates if the user is currently active or not',
+                    ),
+                    CacheFieldConfig(
+                        name='created',
+                        type=['null', 'string'],
+                        description='The timestamp denoting when the user account was created',
+                    ),
+                    CacheFieldConfig(
+                        name='emailAddress',
+                        type=['null', 'string'],
+                        description='The primary email address associated with the user',
+                    ),
+                    CacheFieldConfig(
+                        name='emailAliases',
+                        type=['null', 'array'],
+                        description='Additional email addresses that can be used to reach the user',
+                    ),
+                    CacheFieldConfig(
+                        name='extension',
+                        type=['null', 'string'],
+                        description='The phone extension number for the user',
+                    ),
+                    CacheFieldConfig(
+                        name='firstName',
+                        type=['null', 'string'],
+                        description='The first name of the user',
+                    ),
+                    CacheFieldConfig(
+                        name='id',
+                        type=['null', 'string'],
+                        description='Unique identifier for the user',
+                    ),
+                    CacheFieldConfig(
+                        name='lastName',
+                        type=['null', 'string'],
+                        description='The last name of the user',
+                    ),
+                    CacheFieldConfig(
+                        name='managerId',
+                        type=['null', 'string'],
+                        description="The ID of the user's manager",
+                    ),
+                    CacheFieldConfig(
+                        name='meetingConsentPageUrl',
+                        type=['null', 'string'],
+                        description='URL for the consent page related to meetings',
+                    ),
+                    CacheFieldConfig(
+                        name='personalMeetingUrls',
+                        type=['null', 'array'],
+                        description='URLs for personal meeting rooms assigned to the user',
+                    ),
+                    CacheFieldConfig(
+                        name='phoneNumber',
+                        type=['null', 'string'],
+                        description='The phone number associated with the user',
+                    ),
+                    CacheFieldConfig(
+                        name='settings',
+                        type=['null', 'object'],
+                        description='User-specific settings and configurations',
+                    ),
+                    CacheFieldConfig(
+                        name='spokenLanguages',
+                        type=['null', 'array'],
+                        description='Languages spoken by the user',
+                    ),
+                    CacheFieldConfig(
+                        name='title',
+                        type=['null', 'string'],
+                        description='The job title or position of the user',
+                    ),
+                    CacheFieldConfig(
+                        name='trustedEmailAddress',
+                        type=['null', 'string'],
+                        description='An email address that is considered trusted for the user',
+                    ),
+                ],
+            ),
+            CacheEntityConfig(
+                entity='calls',
+                suggested=True,
+                x_airbyte_name='calls',
+                fields=[
+                    CacheFieldConfig(
+                        name='calendarEventId',
+                        type=['null', 'string'],
+                        description='Unique identifier for the calendar event associated with the call.',
+                    ),
+                    CacheFieldConfig(
+                        name='clientUniqueId',
+                        type=['null', 'string'],
+                        description='Unique identifier for the client related to the call.',
+                    ),
+                    CacheFieldConfig(
+                        name='customData',
+                        type=['null', 'string'],
+                        description='Custom data associated with the call.',
+                    ),
+                    CacheFieldConfig(
+                        name='direction',
+                        type=['null', 'string'],
+                        description='Direction of the call (inbound/outbound).',
+                    ),
+                    CacheFieldConfig(
+                        name='duration',
+                        type=['null', 'integer'],
+                        description='Duration of the call in seconds.',
+                    ),
+                    CacheFieldConfig(
+                        name='id',
+                        type=['null', 'string'],
+                        description='Unique identifier for the call.',
+                    ),
+                    CacheFieldConfig(
+                        name='isPrivate',
+                        type=['null', 'boolean'],
+                        description='Indicates if the call is private or not.',
+                    ),
+                    CacheFieldConfig(
+                        name='language',
+                        type=['null', 'string'],
+                        description='Language used in the call.',
+                    ),
+                    CacheFieldConfig(
+                        name='media',
+                        type=['null', 'string'],
+                        description='Media type used for communication (voice, video, etc.).',
+                    ),
+                    CacheFieldConfig(
+                        name='meetingUrl',
+                        type=['null', 'string'],
+                        description='URL for accessing the meeting associated with the call.',
+                    ),
+                    CacheFieldConfig(
+                        name='primaryUserId',
+                        type=['null', 'string'],
+                        description='Unique identifier for the primary user involved in the call.',
+                    ),
+                    CacheFieldConfig(
+                        name='purpose',
+                        type=['null', 'string'],
+                        description='Purpose or topic of the call.',
+                    ),
+                    CacheFieldConfig(
+                        name='scheduled',
+                        type=['null', 'string'],
+                        description='Scheduled date and time of the call.',
+                    ),
+                    CacheFieldConfig(
+                        name='scope',
+                        type=['null', 'string'],
+                        description='Scope or extent of the call.',
+                    ),
+                    CacheFieldConfig(
+                        name='sdrDisposition',
+                        type=['null', 'string'],
+                        description='Disposition set by the sales development representative.',
+                    ),
+                    CacheFieldConfig(
+                        name='started',
+                        type=['null', 'string'],
+                        description='Start date and time of the call.',
+                    ),
+                    CacheFieldConfig(
+                        name='system',
+                        type=['null', 'string'],
+                        description='System information related to the call.',
+                    ),
+                    CacheFieldConfig(
+                        name='title',
+                        type=['null', 'string'],
+                        description='Title or headline of the call.',
+                    ),
+                    CacheFieldConfig(
+                        name='url',
+                        type=['null', 'string'],
+                        description='URL associated with the call.',
+                    ),
+                    CacheFieldConfig(
+                        name='workspaceId',
+                        type=['null', 'string'],
+                        description='Identifier for the workspace to which the call belongs.',
+                    ),
+                ],
+            ),
+            CacheEntityConfig(
+                entity='calls_extensive',
+                suggested=True,
+                x_airbyte_name='extensiveCalls',
+                fields=[
+                    CacheFieldConfig(
+                        name='id',
+                        type=['null', 'integer'],
+                        description='Unique identifier for the call (from metaData.id).',
+                    ),
+                    CacheFieldConfig(
+                        name='startdatetime',
+                        type=['null', 'string'],
+                        description='Datetime for extensive calls.',
+                    ),
+                    CacheFieldConfig(
+                        name='collaboration',
+                        type=['null', 'object'],
+                        description='Collaboration information added to the call',
+                        properties={
+                            'brief': CacheFieldProperty(
+                                type=['null', 'string'],
+                            ),
+                        },
+                    ),
+                    CacheFieldConfig(
+                        name='content',
+                        type=['null', 'object'],
+                        description='Analysis of the interaction content.',
+                        properties={
+                            'brief': CacheFieldProperty(
+                                type=['null', 'string'],
+                            ),
+                            'highlights': CacheFieldProperty(
+                                type=['null', 'array'],
+                            ),
+                            'keyPoints': CacheFieldProperty(
+                                type=['null', 'array'],
+                            ),
+                            'outline': CacheFieldProperty(
+                                type=['null', 'array'],
+                            ),
+                            'pointsOfInterest': CacheFieldProperty(
+                                type=['null', 'object'],
+                                properties={
+                                    'actionItems': CacheFieldProperty(
+                                        type=['null', 'array'],
+                                    ),
+                                },
+                            ),
+                            'topics': CacheFieldProperty(
+                                type=['null', 'array'],
+                            ),
+                            'trackers': CacheFieldProperty(
+                                type=['null', 'array'],
+                            ),
+                        },
+                    ),
+                    CacheFieldConfig(
+                        name='context',
+                        type=['null', 'object'],
+                        description='A list of the agenda of each part of the call.',
+                        properties={
+                            'objects': CacheFieldProperty(
+                                type=['null', 'array'],
+                            ),
+                            'system': CacheFieldProperty(
+                                type=['null', 'string'],
+                            ),
+                        },
+                    ),
+                    CacheFieldConfig(
+                        name='interaction',
+                        type=['null', 'object'],
+                        description='Metrics collected around the interaction during the call.',
+                        properties={
+                            'interactionStats': CacheFieldProperty(
+                                type=['null', 'array'],
+                            ),
+                            'questions': CacheFieldProperty(
+                                type=['null', 'object'],
+                                properties={
+                                    'companyCount': CacheFieldProperty(
+                                        type=['null', 'number'],
+                                    ),
+                                    'nonCompanyCount': CacheFieldProperty(
+                                        type=['null', 'number'],
+                                    ),
+                                },
+                            ),
+                            'speakers': CacheFieldProperty(
+                                type=['null', 'array'],
+                            ),
+                            'video': CacheFieldProperty(
+                                type=['null', 'array'],
+                            ),
+                        },
+                    ),
+                    CacheFieldConfig(
+                        name='media',
+                        type=['null', 'object'],
+                        description='The media urls of the call.',
+                        properties={
+                            'audioUrl': CacheFieldProperty(
+                                type=['null', 'string'],
+                            ),
+                            'videoUrl': CacheFieldProperty(
+                                type=['null', 'string'],
+                            ),
+                        },
+                    ),
+                    CacheFieldConfig(
+                        name='metaData',
+                        type=['null', 'object'],
+                        description="call's metadata.",
+                        properties={
+                            'calendarEventId': CacheFieldProperty(
+                                type=['null', 'string'],
+                            ),
+                            'clientUniqueId': CacheFieldProperty(
+                                type=['null', 'string'],
+                            ),
+                            'customData': CacheFieldProperty(
+                                type=['null', 'string'],
+                            ),
+                            'direction': CacheFieldProperty(
+                                type=['null', 'string'],
+                            ),
+                            'duration': CacheFieldProperty(
+                                type=['null', 'integer'],
+                            ),
+                            'id': CacheFieldProperty(
+                                type=['null', 'string'],
+                            ),
+                            'isPrivate': CacheFieldProperty(
+                                type=['null', 'boolean'],
+                            ),
+                            'language': CacheFieldProperty(
+                                type=['null', 'string'],
+                            ),
+                            'media': CacheFieldProperty(
+                                type=['null', 'string'],
+                            ),
+                            'meetingUrl': CacheFieldProperty(
+                                type=['null', 'string'],
+                            ),
+                            'primaryUserId': CacheFieldProperty(
+                                type=['null', 'string'],
+                            ),
+                            'purpose': CacheFieldProperty(
+                                type=['null', 'string'],
+                            ),
+                            'scheduled': CacheFieldProperty(
+                                type=['null', 'string'],
+                            ),
+                            'scope': CacheFieldProperty(
+                                type=['null', 'string'],
+                            ),
+                            'sdrDisposition': CacheFieldProperty(
+                                type=['null', 'string'],
+                            ),
+                            'started': CacheFieldProperty(
+                                type=['null', 'string'],
+                            ),
+                            'system': CacheFieldProperty(
+                                type=['null', 'string'],
+                            ),
+                            'title': CacheFieldProperty(
+                                type=['null', 'string'],
+                            ),
+                            'url': CacheFieldProperty(
+                                type=['null', 'string'],
+                            ),
+                            'workspaceId': CacheFieldProperty(
+                                type=['null', 'string'],
+                            ),
+                        },
+                    ),
+                    CacheFieldConfig(
+                        name='parties',
+                        type=['null', 'array'],
+                        description="A list of the call's participants",
+                    ),
+                ],
+            ),
+            CacheEntityConfig(
+                entity='settings_scorecards',
+                x_airbyte_name='scorecards',
+                fields=[
+                    CacheFieldConfig(
+                        name='created',
+                        type=['null', 'string'],
+                        description='The timestamp when the scorecard was created',
+                    ),
+                    CacheFieldConfig(
+                        name='enabled',
+                        type=['null', 'boolean'],
+                        description='Indicates if the scorecard is enabled or disabled',
+                    ),
+                    CacheFieldConfig(
+                        name='questions',
+                        type=['null', 'array'],
+                        description='An array of questions related to the scorecard',
+                    ),
+                    CacheFieldConfig(
+                        name='scorecardId',
+                        type=['null', 'string'],
+                        description='The unique identifier of the scorecard',
+                    ),
+                    CacheFieldConfig(
+                        name='scorecardName',
+                        type=['null', 'string'],
+                        description='The name of the scorecard',
+                    ),
+                    CacheFieldConfig(
+                        name='updated',
+                        type=['null', 'string'],
+                        description='The timestamp when the scorecard was last updated',
+                    ),
+                    CacheFieldConfig(
+                        name='updaterUserId',
+                        type=['null', 'string'],
+                        description='The user ID of the person who last updated the scorecard',
+                    ),
+                    CacheFieldConfig(
+                        name='workspaceId',
+                        type=['null', 'string'],
+                        description='The unique identifier of the workspace associated with the scorecard',
+                    ),
+                ],
+            ),
+            CacheEntityConfig(
+                entity='stats_activity_scorecards',
+                x_airbyte_name='answeredScorecards',
+                fields=[
+                    CacheFieldConfig(
+                        name='answeredScorecardId',
+                        type=['null', 'string'],
+                        description='Unique identifier for the answered scorecard instance.',
+                    ),
+                    CacheFieldConfig(
+                        name='answers',
+                        type=['null', 'array'],
+                        description='Contains the answered questions in the scorecards',
+                    ),
+                    CacheFieldConfig(
+                        name='callId',
+                        type=['null', 'string'],
+                        description='Unique identifier for the call associated with the answered scorecard.',
+                    ),
+                    CacheFieldConfig(
+                        name='callStartTime',
+                        type=['null', 'string'],
+                        description='Timestamp indicating the start time of the call.',
+                    ),
+                    CacheFieldConfig(
+                        name='reviewTime',
+                        type=['null', 'string'],
+                        description='Timestamp indicating when the review of the answered scorecard was completed.',
+                    ),
+                    CacheFieldConfig(
+                        name='reviewedUserId',
+                        type=['null', 'string'],
+                        description='Unique identifier for the user whose performance was reviewed.',
+                    ),
+                    CacheFieldConfig(
+                        name='reviewerUserId',
+                        type=['null', 'string'],
+                        description='Unique identifier for the user who performed the review.',
+                    ),
+                    CacheFieldConfig(
+                        name='scorecardId',
+                        type=['null', 'string'],
+                        description='Unique identifier for the scorecard template used.',
+                    ),
+                    CacheFieldConfig(
+                        name='scorecardName',
+                        type=['null', 'string'],
+                        description='Name or title of the scorecard template used.',
+                    ),
+                    CacheFieldConfig(
+                        name='visibilityType',
+                        type=['null', 'string'],
+                        description='Type indicating the visibility permissions for the answered scorecard.',
+                    ),
+                ],
+            ),
+            CacheEntityConfig(
+                entity='call_transcripts',
+                suggested=True,
+                x_airbyte_name='callTranscripts',
+                fields=[
+                    CacheFieldConfig(
+                        name='callId',
+                        type=['null', 'string'],
+                        description='Unique identifier for the call.',
+                    ),
+                    CacheFieldConfig(
+                        name='started',
+                        type=['null', 'string'],
+                        description='Timestamp the call started. Filterable for narrowing transcript search by call time.',
+                    ),
+                    CacheFieldConfig(
+                        name='transcript',
+                        type=['null', 'array'],
+                        description='Gong transcript speaker turns.',
+                        x_airbyte_semantic_search=SemanticSearchConfig(
+                            content_type='json',
+                            samples=[
+                                SemanticSample(
+                                    name='speaker_turn',
+                                    windowed=True,
+                                    sampling=SemanticSampling(
+                                        sample_type='element',
+                                        unit_label='speaker_turn',
+                                        sample_path='[]',
+                                        text_path='sentences[].text',
+                                    ),
+                                ),
+                            ],
+                            windowing=SemanticWindowing(
+                                context_max_chars=2048,
+                            ),
+                            embedding=SemanticEmbedding(
+                                model='text-embedding-3-small',
+                            ),
+                            metadata=[
+                                SemanticMetadataField(
+                                    name='speakerId',
+                                    path='speakerId',
+                                ),
+                                SemanticMetadataField(
+                                    name='topic',
+                                    path='topic',
+                                ),
+                                SemanticMetadataField(
+                                    name='callId',
+                                    path='/callId',
+                                ),
+                                SemanticMetadataField(
+                                    name='started',
+                                    path='/started',
+                                ),
+                            ],
+                        ),
+                    ),
+                ],
+                x_airbyte_enrichment=[
+                    EnrichmentConfig(
+                        target='calls_extensive',
+                        match=[
+                            EnrichmentMatch(
+                                local='/callId',
+                                foreign='id',
+                            ),
+                            EnrichmentMatch(
+                                local='speakerId',
+                                foreign='parties[].speakerId',
+                            ),
+                        ],
+                        project=[
+                            EnrichmentProjection(
+                                name='speakerName',
+                                from_='parties[].name',
+                            ),
+                            EnrichmentProjection(
+                                name='speakerTitle',
+                                from_='parties[].title',
+                            ),
+                            EnrichmentProjection(
+                                name='speakerAffiliation',
+                                from_='parties[].affiliation',
+                            ),
+                        ],
+                    ),
+                ],
+            ),
+        ],
+        disable_compaction=True,
+    ),
+    search_field_paths={
+        'users': [
+            'active',
+            'created',
+            'emailAddress',
+            'emailAliases',
+            'emailAliases[]',
+            'extension',
+            'firstName',
+            'id',
+            'lastName',
+            'managerId',
+            'meetingConsentPageUrl',
+            'personalMeetingUrls',
+            'personalMeetingUrls[]',
+            'phoneNumber',
+            'settings',
+            'spokenLanguages',
+            'spokenLanguages[]',
+            'title',
+            'trustedEmailAddress',
+        ],
+        'calls': [
+            'calendarEventId',
+            'clientUniqueId',
+            'customData',
+            'direction',
+            'duration',
+            'id',
+            'isPrivate',
+            'language',
+            'media',
+            'meetingUrl',
+            'primaryUserId',
+            'purpose',
+            'scheduled',
+            'scope',
+            'sdrDisposition',
+            'started',
+            'system',
+            'title',
+            'url',
+            'workspaceId',
+        ],
+        'calls_extensive': [
+            'id',
+            'startdatetime',
+            'collaboration',
+            'collaboration.brief',
+            'content',
+            'content.brief',
+            'content.highlights',
+            'content.highlights[]',
+            'content.keyPoints',
+            'content.keyPoints[]',
+            'content.outline',
+            'content.outline[]',
+            'content.pointsOfInterest',
+            'content.pointsOfInterest.actionItems',
+            'content.pointsOfInterest.actionItems[]',
+            'content.topics',
+            'content.topics[]',
+            'content.trackers',
+            'content.trackers[]',
+            'context',
+            'context.objects',
+            'context.objects[]',
+            'context.system',
+            'interaction',
+            'interaction.interactionStats',
+            'interaction.interactionStats[]',
+            'interaction.questions',
+            'interaction.questions.companyCount',
+            'interaction.questions.nonCompanyCount',
+            'interaction.speakers',
+            'interaction.speakers[]',
+            'interaction.video',
+            'interaction.video[]',
+            'media',
+            'media.audioUrl',
+            'media.videoUrl',
+            'metaData',
+            'metaData.calendarEventId',
+            'metaData.clientUniqueId',
+            'metaData.customData',
+            'metaData.direction',
+            'metaData.duration',
+            'metaData.id',
+            'metaData.isPrivate',
+            'metaData.language',
+            'metaData.media',
+            'metaData.meetingUrl',
+            'metaData.primaryUserId',
+            'metaData.purpose',
+            'metaData.scheduled',
+            'metaData.scope',
+            'metaData.sdrDisposition',
+            'metaData.started',
+            'metaData.system',
+            'metaData.title',
+            'metaData.url',
+            'metaData.workspaceId',
+            'parties',
+            'parties[]',
+        ],
+        'settings_scorecards': [
+            'created',
+            'enabled',
+            'questions',
+            'questions[]',
+            'scorecardId',
+            'scorecardName',
+            'updated',
+            'updaterUserId',
+            'workspaceId',
+        ],
+        'stats_activity_scorecards': [
+            'answeredScorecardId',
+            'answers',
+            'answers[]',
+            'callId',
+            'callStartTime',
+            'reviewTime',
+            'reviewedUserId',
+            'reviewerUserId',
+            'scorecardId',
+            'scorecardName',
+            'visibilityType',
+        ],
+        'call_transcripts': [
+            'callId',
+            'started',
+            'transcript',
+            'transcript[]',
+        ],
+    },
+    semantic_search_fields={
+        'call_transcripts': {
+            'transcript': SemanticSearchConfig(
+                content_type='json',
+                samples=[
+                    SemanticSample(
+                        name='speaker_turn',
+                        windowed=True,
+                        sampling=SemanticSampling(
+                            sample_type='element',
+                            unit_label='speaker_turn',
+                            sample_path='[]',
+                            text_path='sentences[].text',
+                        ),
+                    ),
+                ],
+                windowing=SemanticWindowing(
+                    context_max_chars=2048,
+                ),
+                embedding=SemanticEmbedding(
+                    model='text-embedding-3-small',
+                ),
+                metadata=[
+                    SemanticMetadataField(
+                        name='speakerId',
+                        path='speakerId',
+                    ),
+                    SemanticMetadataField(
+                        name='topic',
+                        path='topic',
+                    ),
+                    SemanticMetadataField(
+                        name='callId',
+                        path='/callId',
+                    ),
+                    SemanticMetadataField(
+                        name='started',
+                        path='/started',
+                    ),
+                ],
+            ),
+        },
+    },
+    enrichment_configs={
+        'call_transcripts': [
+            EnrichmentConfig(
+                target='calls_extensive',
+                match=[
+                    EnrichmentMatch(
+                        local='/callId',
+                        foreign='id',
+                    ),
+                    EnrichmentMatch(
+                        local='speakerId',
+                        foreign='parties[].speakerId',
+                    ),
+                ],
+                project=[
+                    EnrichmentProjection(
+                        name='speakerName',
+                        from_='parties[].name',
+                    ),
+                    EnrichmentProjection(
+                        name='speakerTitle',
+                        from_='parties[].title',
+                    ),
+                    EnrichmentProjection(
+                        name='speakerAffiliation',
+                        from_='parties[].affiliation',
+                    ),
+                ],
+            ),
+        ],
+    },
+    example_questions=ExampleQuestions(
+        direct=[
+            'List all users in my Gong account',
+            'Show me calls from last week',
+            'Get the transcript for a recent call',
+            'List all workspaces in Gong',
+            'Show me the scorecard configurations',
+            'What trackers are set up in my account?',
+            'Get coaching metrics for a manager',
+        ],
+        context_store_search=[
+            'What are the activity stats for our sales team?',
+            'Find calls mentioning {keyword} this month',
+            'Show me calls for rep {user_id} in the last 30 days',
+            'Which calls had the longest duration last week?',
+        ],
+        search=[
+            'What are the activity stats for our sales team?',
+            'Find calls mentioning {keyword} this month',
+            'Show me calls for rep {user_id} in the last 30 days',
+            'Which calls had the longest duration last week?',
+        ],
+        unsupported=[
+            'Create a new user in Gong',
+            'Delete a call recording',
+            'Update scorecard questions',
+            'Schedule a new meeting',
+            'Send feedback to a team member',
+            'Modify tracker keywords',
+        ],
+    ),
+)

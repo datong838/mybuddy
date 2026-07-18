@@ -1,0 +1,816 @@
+"""
+Airtable connector.
+"""
+
+from __future__ import annotations
+
+import logging
+from typing import Any, Callable, Mapping, TypeVar, overload
+try:
+    from typing import Literal
+except ImportError:
+    from typing_extensions import Literal
+
+from pydantic import BaseModel
+
+from .connector_model import AirtableConnectorModel
+from airbyte_agent_sdk.introspection import describe_entities, generate_tool_description
+from airbyte_agent_sdk.translation import DEFAULT_MAX_OUTPUT_CHARS, FrameworkName, translate_exceptions
+from airbyte_agent_sdk.types import AirbyteAuthConfig
+from .types import (
+    BasesListParams,
+    RecordsGetParams,
+    RecordsListParams,
+    TablesListParams,
+    AirbyteSearchParams,
+    BasesSearchFilter,
+    BasesSearchQuery,
+    TablesSearchFilter,
+    TablesSearchQuery,
+)
+from .models import AirtableAuthConfig
+
+# Import response models and envelope models at runtime
+from .models import (
+    AirtableCheckResult,
+    AirtableExecuteResult,
+    AirtableExecuteResultWithMeta,
+    BasesListResult,
+    TablesListResult,
+    RecordsListResult,
+    Base,
+    Record,
+    Table,
+    AirbyteSearchMeta,
+    AirbyteSearchResult,
+    BasesSearchData,
+    BasesSearchResult,
+    TablesSearchData,
+    TablesSearchResult,
+)
+
+# TypeVar for decorator type preservation
+_F = TypeVar("_F", bound=Callable[..., Any])
+
+
+
+
+class AirtableConnector:
+    """
+    Type-safe Airtable API connector.
+
+    Auto-generated from OpenAPI specification with full type safety.
+    """
+
+    connector_name = "airtable"
+    connector_version = "1.0.8"
+    sdk_version = "0.1.287"
+
+    # Map of (entity, action) -> needs_envelope for envelope wrapping decision
+    _ENVELOPE_MAP = {
+        ("bases", "list"): True,
+        ("tables", "list"): True,
+        ("records", "list"): True,
+        ("records", "get"): None,
+    }
+
+    # Map of (entity, action) -> {python_param_name: api_param_name}
+    # Used to convert snake_case TypedDict keys to API parameter names in execute()
+    _PARAM_MAP = {
+        ('bases', 'list'): {'offset': 'offset'},
+        ('tables', 'list'): {'base_id': 'base_id'},
+        ('records', 'list'): {'base_id': 'base_id', 'table_id_or_name': 'table_id_or_name', 'offset': 'offset', 'page_size': 'pageSize', 'view': 'view', 'filter_by_formula': 'filterByFormula', 'sort': 'sort'},
+        ('records', 'get'): {'base_id': 'base_id', 'table_id_or_name': 'table_id_or_name', 'record_id': 'record_id'},
+    }
+
+    # Accepted auth_config types for isinstance validation
+    _ACCEPTED_AUTH_TYPES = (AirtableAuthConfig, AirbyteAuthConfig)
+
+    def __init__(
+        self,
+        auth_config: AirtableAuthConfig | AirbyteAuthConfig | BaseModel | None = None,
+        on_token_refresh: Any | None = None    ):
+        """
+        Initialize a new airtable connector instance.
+
+        Supports both local and hosted execution modes:
+        - Local mode: Provide connector-specific auth config (e.g., AirtableAuthConfig)
+        - Hosted mode: Provide `AirbyteAuthConfig` with client credentials and either `connector_id` or `workspace_name`
+
+        Args:
+            auth_config: Either connector-specific auth config for local mode, or AirbyteAuthConfig for hosted mode
+            on_token_refresh: Optional callback for OAuth2 token refresh persistence.
+                Called with new_tokens dict when tokens are refreshed. Can be sync or async.
+                Example: lambda tokens: save_to_database(tokens)
+        Examples:
+            # Local mode (direct API calls)
+            connector = AirtableConnector(auth_config=AirtableAuthConfig(personal_access_token="..."))
+            # Hosted mode with explicit connector_id (no lookup needed)
+            connector = AirtableConnector(
+                auth_config=AirbyteAuthConfig(
+                    airbyte_client_id="client_abc123",
+                    airbyte_client_secret="secret_xyz789",
+                    connector_id="existing-source-uuid"
+                )
+            )
+
+            # Hosted mode with lookup by workspace_name
+            connector = AirtableConnector(
+                auth_config=AirbyteAuthConfig(
+                    workspace_name="user-123",
+                    organization_id="00000000-0000-0000-0000-000000000123",
+                    airbyte_client_id="client_abc123",
+                    airbyte_client_secret="secret_xyz789"
+                )
+            )
+        """
+        # Accept AirbyteAuthConfig from any vendored SDK version
+        if (
+            auth_config is not None
+            and not isinstance(auth_config, AirbyteAuthConfig)
+            and type(auth_config).__name__ == AirbyteAuthConfig.__name__
+        ):
+            auth_config = AirbyteAuthConfig(**auth_config.model_dump())
+
+        # Validate auth_config type
+        if auth_config is not None and not isinstance(auth_config, self._ACCEPTED_AUTH_TYPES):
+            raise TypeError(
+                f"Unsupported auth_config type: {type(auth_config).__name__}. "
+                f"Expected one of: {', '.join(t.__name__ for t in self._ACCEPTED_AUTH_TYPES)}"
+            )
+
+        # Hosted mode: auth_config is AirbyteAuthConfig
+        is_hosted = isinstance(auth_config, AirbyteAuthConfig)
+
+        if is_hosted:
+            from airbyte_agent_sdk.executor import HostedExecutor
+            self._executor = HostedExecutor(
+                airbyte_client_id=auth_config.airbyte_client_id,
+                airbyte_client_secret=auth_config.airbyte_client_secret,
+                connector_id=auth_config.connector_id,
+                workspace_name=auth_config.workspace_name or "default",
+                organization_id=auth_config.organization_id,
+                connector_definition_id=str(AirtableConnectorModel.id),
+                model=AirtableConnectorModel,
+            )
+        else:
+            # Local mode: auth_config required (must be connector-specific auth type)
+            if not auth_config:
+                raise ValueError(
+                    "Either provide AirbyteAuthConfig with client credentials for hosted mode, "
+                    "or AirtableAuthConfig for local mode"
+                )
+
+            from airbyte_agent_sdk.executor import LocalExecutor
+
+            # Build config_values dict from server variables
+            config_values = None
+
+            self._executor = LocalExecutor(
+                model=AirtableConnectorModel,
+                auth_config=auth_config.model_dump() if auth_config else None,
+                config_values=config_values,
+                on_token_refresh=on_token_refresh
+            )
+
+            # Update base_url with server variables if provided
+
+        # Initialize entity query objects
+        self.bases = BasesQuery(self)
+        self.tables = TablesQuery(self)
+        self.records = RecordsQuery(self)
+
+    # ===== TYPED EXECUTE METHOD (Recommended Interface) =====
+
+    @overload
+    async def execute(
+        self,
+        entity: Literal["bases"],
+        action: Literal["list"],
+        params: "BasesListParams",
+        *,
+        select_fields: list[str] | None = ...,
+        exclude_fields: list[str] | None = ...,
+        skip_truncation: bool = ...
+    ) -> "BasesListResult": ...
+
+    @overload
+    async def execute(
+        self,
+        entity: Literal["tables"],
+        action: Literal["list"],
+        params: "TablesListParams",
+        *,
+        select_fields: list[str] | None = ...,
+        exclude_fields: list[str] | None = ...,
+        skip_truncation: bool = ...
+    ) -> "TablesListResult": ...
+
+    @overload
+    async def execute(
+        self,
+        entity: Literal["records"],
+        action: Literal["list"],
+        params: "RecordsListParams",
+        *,
+        select_fields: list[str] | None = ...,
+        exclude_fields: list[str] | None = ...,
+        skip_truncation: bool = ...
+    ) -> "RecordsListResult": ...
+
+    @overload
+    async def execute(
+        self,
+        entity: Literal["records"],
+        action: Literal["get"],
+        params: "RecordsGetParams",
+        *,
+        select_fields: list[str] | None = ...,
+        exclude_fields: list[str] | None = ...,
+        skip_truncation: bool = ...
+    ) -> "Record": ...
+
+
+    @overload
+    async def execute(
+        self,
+        entity: str,
+        action: Literal["list", "get", "context_store_search"],
+        params: Mapping[str, Any],
+        *,
+        select_fields: list[str] | None = ...,
+        exclude_fields: list[str] | None = ...,
+        skip_truncation: bool = ...
+    ) -> AirtableExecuteResult[Any] | AirtableExecuteResultWithMeta[Any, Any] | Any: ...
+
+    async def execute(
+        self,
+        entity: str,
+        action: Literal["list", "get", "context_store_search"],
+        params: Mapping[str, Any] | None = None,
+        *,
+        select_fields: list[str] | None = None,
+        exclude_fields: list[str] | None = None,
+        skip_truncation: bool = True
+    ) -> Any:
+        """
+        Execute an entity operation with full type safety.
+
+        This is the recommended interface for blessed connectors as it:
+        - Uses the same signature as non-blessed connectors
+        - Provides full IDE autocomplete for entity/action/params
+        - Makes migration from generic to blessed connectors seamless
+
+        Args:
+            entity: Entity name (e.g., "customers")
+            action: Operation action (e.g., "create", "get", "list")
+            params: Operation parameters (typed based on entity+action)
+            select_fields: Optional allowlist of dot-notation fields to include
+            exclude_fields: Optional blocklist of dot-notation fields to remove
+            skip_truncation: Disable long-text truncation for collection actions
+
+        Returns:
+            Typed response based on the operation
+
+        Example:
+            customer = await connector.execute(
+                entity="customers",
+                action="get",
+                params={"id": "cus_123"}
+            )
+        """
+        from airbyte_agent_sdk.executor import ExecutionConfig
+
+        # Remap parameter names from snake_case (TypedDict keys) to API parameter names
+        resolved_params = dict(params) if params is not None else None
+        if resolved_params:
+            param_map = self._PARAM_MAP.get((entity, action), {})
+            if param_map:
+                resolved_params = {param_map.get(k, k): v for k, v in resolved_params.items()}
+
+        # Use ExecutionConfig for both local and hosted executors
+        config = ExecutionConfig(
+            entity=entity,
+            action=action,
+            params=resolved_params,
+            select_fields=select_fields,
+            exclude_fields=exclude_fields,
+            skip_truncation=skip_truncation
+        )
+
+        result = await self._executor.execute(config)
+
+        if not result.success:
+            raise RuntimeError(f"Execution failed: {result.error}")
+
+        # Check if this operation has extractors configured
+        has_extractors = self._ENVELOPE_MAP.get((entity, action), False)
+
+        if has_extractors:
+            # With extractors - return Pydantic envelope with data and meta
+            if result.meta is not None:
+                return AirtableExecuteResultWithMeta[Any, Any](
+                    data=result.data,
+                    meta=result.meta
+                )
+            else:
+                return AirtableExecuteResult[Any](data=result.data)
+        else:
+            # No extractors - return raw response data
+            return result.data
+
+    # ===== HEALTH CHECK METHOD =====
+
+    async def check(self) -> AirtableCheckResult:
+        """
+        Perform a health check to verify connectivity and credentials.
+
+        Executes a lightweight list operation (limit=1) to validate that
+        the connector can communicate with the API and credentials are valid.
+
+        Returns:
+            AirtableCheckResult with status ("healthy" or "unhealthy") and optional error message
+
+        Example:
+            result = await connector.check()
+            if result.status == "healthy":
+                print("Connection verified!")
+            else:
+                print(f"Check failed: {result.error}")
+        """
+        result = await self._executor.check()
+
+        if result.success and isinstance(result.data, dict):
+            return AirtableCheckResult(
+                status=result.data.get("status", "unhealthy"),
+                error=result.data.get("error"),
+                checked_entity=result.data.get("checked_entity"),
+                checked_action=result.data.get("checked_action"),
+            )
+        else:
+            return AirtableCheckResult(
+                status="unhealthy",
+                error=result.error or "Unknown error during health check",
+            )
+
+    # ===== INTROSPECTION METHODS =====
+
+    @classmethod
+    def tool_utils(
+        cls,
+        func: _F | None = None,
+        *,
+        update_docstring: bool = True,
+        max_output_chars: int | None = DEFAULT_MAX_OUTPUT_CHARS,
+        framework: FrameworkName | None = None,
+        internal_retries: int = 0,
+        should_internal_retry: Callable[[Exception, tuple[Any, ...], dict[str, Any]], bool] | None = None,
+        exhausted_runtime_failure_message: Callable[[Exception, tuple[Any, ...], dict[str, Any]], str | None] | None = None,
+    ) -> _F | Callable[[_F], _F]:
+        """
+        Add connector-specific documentation and runtime safeguards to one tool.
+
+        For new agents, prefer `build_connector_tools`. It returns progressive
+        `inspect_connector`, `read_skill_docs`, and `execute` tools so the agent
+        can load only the connector guidance it needs:
+
+        ```python
+        from airbyte_agent_sdk import build_connector_tools
+        from pydantic_ai import Agent
+
+        tools = build_connector_tools(connector, framework="pydantic_ai")
+        agent = Agent("openai:gpt-4o", tools=tools.as_list())
+        ```
+
+        ### Legacy: one generated-description tool
+
+        Existing integrations can keep using `tool_utils` for one broad
+        `execute` tool with the connector's full generated catalog in its
+        description:
+
+        ```python
+        from fastmcp import FastMCP
+
+        connector = AirtableConnector()
+        mcp = FastMCP("Connector Agent")
+
+        @mcp.tool()
+        @AirtableConnector.tool_utils
+        async def execute(entity: str, action: str, params: dict):
+            ...
+        ```
+
+        Configure documentation, output limits, framework translation, and
+        retries when needed:
+
+        ```python
+        @mcp.tool()
+        @AirtableConnector.tool_utils(update_docstring=False, max_output_chars=None)
+        async def execute(entity: str, action: str, params: dict):
+            ...
+
+        @mcp.tool()
+        @AirtableConnector.tool_utils(framework="pydantic_ai", internal_retries=2)
+        async def execute(entity: str, action: str, params: dict):
+            ...
+        ```
+
+        This decorator composes `translate_exceptions` for runtime wrapping,
+        output-size checks, framework signal translation, and optional internal
+        retries, then adds connector-specific docstring augmentation.
+
+        Args:
+            update_docstring: When True, append connector capabilities to `__doc__`.
+            max_output_chars: Max serialized output size before raising. Use `None` to disable.
+            framework: One of `"pydantic_ai" | "langchain" | "openai_agents" | "mcp"`.
+                Defaults to `None`, which auto-detects each framework's canonical
+                import in order. Explicit always wins.
+            internal_retries: How many transient runtime failures (429/5xx, network,
+                timeout) to retry silently before surfacing. Default 0. Forwarded to
+                `airbyte_agent_sdk.translation.translate_exceptions`.
+            should_internal_retry: Optional predicate `(error, args, kwargs) -> bool`
+                further restricting which retryable errors are safe for this specific
+                tool. Forwarded to `airbyte_agent_sdk.translation.translate_exceptions`.
+            exhausted_runtime_failure_message: Optional callback
+                `(error, args, kwargs) -> str | None`. Invoked after internal retries
+                are exhausted or were skipped because `should_internal_retry` returned
+                `False`. Forwarded to `airbyte_agent_sdk.translation.translate_exceptions`.
+        """
+
+        def decorate(inner: _F) -> _F:
+            if update_docstring:
+                description = generate_tool_description(
+                    AirtableConnectorModel,
+                )
+                original_doc = inner.__doc__ or ""
+                if original_doc.strip():
+                    full_doc = f"{original_doc.strip()}\n{description}"
+                else:
+                    full_doc = description
+            else:
+                full_doc = ""
+
+            wrapped = translate_exceptions(
+                inner,
+                framework=framework,
+                max_output_chars=max_output_chars,
+                internal_retries=internal_retries,
+                should_internal_retry=should_internal_retry,
+                exhausted_runtime_failure_message=exhausted_runtime_failure_message,
+            )
+
+            if update_docstring:
+                wrapped.__doc__ = full_doc
+            return wrapped  # type: ignore[return-value]
+
+        if func is not None:
+            return decorate(func)
+        return decorate
+
+    def list_entities(self) -> list[dict[str, Any]]:
+        """
+        Get structured data about available entities, actions, and parameters.
+
+        Returns a list of entity descriptions with:
+        - entity_name: Name of the entity (e.g., "contacts", "deals")
+        - description: Entity description from the first endpoint
+        - available_actions: List of actions (e.g., ["list", "get", "create"])
+        - parameters: Dict mapping action -> list of parameter dicts
+
+        Example:
+            entities = connector.list_entities()
+            for entity in entities:
+                print(f"{entity['entity_name']}: {entity['available_actions']}")
+        """
+        return describe_entities(AirtableConnectorModel)
+
+    def entity_schema(self, entity: str) -> dict[str, Any] | None:
+        """
+        Get the JSON schema for an entity.
+
+        Args:
+            entity: Entity name (e.g., "contacts", "companies")
+
+        Returns:
+            JSON schema dict describing the entity structure, or None if not found.
+
+        Example:
+            schema = connector.entity_schema("contacts")
+            if schema:
+                print(f"Contact properties: {list(schema.get('properties', {}).keys())}")
+        """
+        entity_def = next(
+            (e for e in AirtableConnectorModel.entities if e.name == entity),
+            None
+        )
+        if entity_def is None:
+            logging.getLogger(__name__).warning(
+                f"Entity '{entity}' not found. Available entities: "
+                f"{[e.name for e in AirtableConnectorModel.entities]}"
+            )
+        return entity_def.entity_schema if entity_def else None
+
+    @property
+    def connector_id(self) -> str | None:
+        """Get the connector/source ID (only available in hosted mode).
+
+        Returns:
+            The connector ID if in hosted mode, None if in local mode.
+        """
+        if hasattr(self, '_executor') and hasattr(self._executor, '_connector_id'):
+            return self._executor._connector_id
+        return None
+
+    # ===== RESOURCE MANAGEMENT =====
+
+    async def close(self):
+        """Close the connector and release resources."""
+        await self._executor.close()
+
+    async def __aenter__(self):
+        """Async context manager entry."""
+        return self
+
+    async def __aexit__(self, exc_type, exc_val, exc_tb):
+        """Async context manager exit."""
+        await self.close()
+
+
+
+class BasesQuery:
+    """
+    Query class for Bases entity operations.
+    """
+
+    def __init__(self, connector: AirtableConnector):
+        """Initialize query with connector reference."""
+        self._connector = connector
+
+    async def list(
+        self,
+        offset: str | None = None,
+        **kwargs
+    ) -> BasesListResult:
+        """
+        Returns a list of all bases the user has access to
+
+        Args:
+            offset: Pagination offset from previous response
+            **kwargs: Additional parameters
+
+        Returns:
+            BasesListResult
+        """
+        params = {k: v for k, v in {
+            "offset": offset,
+            **kwargs
+        }.items() if v is not None}
+
+        result = await self._connector.execute("bases", "list", params)
+        # Cast generic envelope to concrete typed result
+        return BasesListResult(
+            data=result.data,
+            meta=getattr(result, "meta", None)
+        )
+
+
+
+    async def context_store_search(
+        self,
+        query: BasesSearchQuery,
+        limit: int | None = None,
+        cursor: str | None = None,
+        fields: list[list[str]] | None = None,
+    ) -> BasesSearchResult:
+        """
+        Search bases records from Airbyte cache.
+
+        This operation searches cached data from Airbyte syncs.
+        Only available in hosted execution mode.
+
+        Available filter fields (BasesSearchFilter):
+        - id: Unique identifier for the base
+        - name: Name of the base
+        - permission_level: Permission level for the base
+
+        Args:
+            query: Filter and sort conditions. Supports operators like eq, neq, gt, gte, lt, lte,
+                   in, like, fuzzy, keyword, not, and, or. Example: {"filter": {"eq": {"status": "active"}}}
+            limit: Maximum results to return (default 1000)
+            cursor: Pagination cursor from previous response's meta.cursor
+            fields: Field paths to include in results. Each path is a list of keys for nested access.
+                    Example: [["id"], ["user", "name"]] returns id and user.name fields.
+
+        Returns:
+            BasesSearchResult with typed records, pagination metadata, and optional search metadata
+
+        Raises:
+            NotImplementedError: If called in local execution mode
+        """
+        params: dict[str, Any] = {"query": query}
+        if limit is not None:
+            params["limit"] = limit
+        if cursor is not None:
+            params["cursor"] = cursor
+        if fields is not None:
+            params["fields"] = fields
+
+        result = await self._connector.execute("bases", "context_store_search", params)
+
+        # Parse response into typed result
+        meta_data = result.get("meta")
+        return BasesSearchResult(
+            data=[
+                BasesSearchData(**row)
+                for row in result.get("data", [])
+                if isinstance(row, dict)
+            ],
+            meta=AirbyteSearchMeta(
+                has_more=meta_data.get("has_more", False) if isinstance(meta_data, dict) else False,
+                cursor=meta_data.get("cursor") if isinstance(meta_data, dict) else None,
+                took_ms=meta_data.get("took_ms") if isinstance(meta_data, dict) else None,
+            ),
+        )
+
+class TablesQuery:
+    """
+    Query class for Tables entity operations.
+    """
+
+    def __init__(self, connector: AirtableConnector):
+        """Initialize query with connector reference."""
+        self._connector = connector
+
+    async def list(
+        self,
+        base_id: str,
+        **kwargs
+    ) -> TablesListResult:
+        """
+        Returns a list of all tables in the specified base with their schema information
+
+        Args:
+            base_id: The ID of the base
+            **kwargs: Additional parameters
+
+        Returns:
+            TablesListResult
+        """
+        params = {k: v for k, v in {
+            "base_id": base_id,
+            **kwargs
+        }.items() if v is not None}
+
+        result = await self._connector.execute("tables", "list", params)
+        # Cast generic envelope to concrete typed result
+        return TablesListResult(
+            data=result.data
+        )
+
+
+
+    async def context_store_search(
+        self,
+        query: TablesSearchQuery,
+        limit: int | None = None,
+        cursor: str | None = None,
+        fields: list[list[str]] | None = None,
+    ) -> TablesSearchResult:
+        """
+        Search tables records from Airbyte cache.
+
+        This operation searches cached data from Airbyte syncs.
+        Only available in hosted execution mode.
+
+        Available filter fields (TablesSearchFilter):
+        - id: Unique identifier for the table
+        - name: Name of the table
+        - primary_field_id: ID of the primary field
+        - fields: List of fields in the table
+        - views: List of views in the table
+
+        Args:
+            query: Filter and sort conditions. Supports operators like eq, neq, gt, gte, lt, lte,
+                   in, like, fuzzy, keyword, not, and, or. Example: {"filter": {"eq": {"status": "active"}}}
+            limit: Maximum results to return (default 1000)
+            cursor: Pagination cursor from previous response's meta.cursor
+            fields: Field paths to include in results. Each path is a list of keys for nested access.
+                    Example: [["id"], ["user", "name"]] returns id and user.name fields.
+
+        Returns:
+            TablesSearchResult with typed records, pagination metadata, and optional search metadata
+
+        Raises:
+            NotImplementedError: If called in local execution mode
+        """
+        params: dict[str, Any] = {"query": query}
+        if limit is not None:
+            params["limit"] = limit
+        if cursor is not None:
+            params["cursor"] = cursor
+        if fields is not None:
+            params["fields"] = fields
+
+        result = await self._connector.execute("tables", "context_store_search", params)
+
+        # Parse response into typed result
+        meta_data = result.get("meta")
+        return TablesSearchResult(
+            data=[
+                TablesSearchData(**row)
+                for row in result.get("data", [])
+                if isinstance(row, dict)
+            ],
+            meta=AirbyteSearchMeta(
+                has_more=meta_data.get("has_more", False) if isinstance(meta_data, dict) else False,
+                cursor=meta_data.get("cursor") if isinstance(meta_data, dict) else None,
+                took_ms=meta_data.get("took_ms") if isinstance(meta_data, dict) else None,
+            ),
+        )
+
+class RecordsQuery:
+    """
+    Query class for Records entity operations.
+    """
+
+    def __init__(self, connector: AirtableConnector):
+        """Initialize query with connector reference."""
+        self._connector = connector
+
+    async def list(
+        self,
+        base_id: str,
+        table_id_or_name: str,
+        offset: str | None = None,
+        page_size: int | None = None,
+        view: str | None = None,
+        filter_by_formula: str | None = None,
+        sort: str | None = None,
+        **kwargs
+    ) -> RecordsListResult:
+        """
+        Returns a paginated list of records from the specified table
+
+        Args:
+            base_id: The ID of the base
+            table_id_or_name: The ID or name of the table
+            offset: Pagination offset from previous response
+            page_size: Number of records per page (max 100)
+            view: Name or ID of a view to filter records
+            filter_by_formula: Airtable formula to filter records
+            sort: Sort configuration as JSON array
+            **kwargs: Additional parameters
+
+        Returns:
+            RecordsListResult
+        """
+        params = {k: v for k, v in {
+            "base_id": base_id,
+            "table_id_or_name": table_id_or_name,
+            "offset": offset,
+            "pageSize": page_size,
+            "view": view,
+            "filterByFormula": filter_by_formula,
+            "sort": sort,
+            **kwargs
+        }.items() if v is not None}
+
+        result = await self._connector.execute("records", "list", params)
+        # Cast generic envelope to concrete typed result
+        return RecordsListResult(
+            data=result.data,
+            meta=getattr(result, "meta", None)
+        )
+
+
+
+    async def get(
+        self,
+        base_id: str,
+        table_id_or_name: str,
+        record_id: str,
+        **kwargs
+    ) -> Record:
+        """
+        Returns a single record by ID from the specified table
+
+        Args:
+            base_id: The ID of the base
+            table_id_or_name: The ID or name of the table
+            record_id: The ID of the record
+            **kwargs: Additional parameters
+
+        Returns:
+            Record
+        """
+        params = {k: v for k, v in {
+            "base_id": base_id,
+            "table_id_or_name": table_id_or_name,
+            "record_id": record_id,
+            **kwargs
+        }.items() if v is not None}
+
+        result = await self._connector.execute("records", "get", params)
+        return result
+
+

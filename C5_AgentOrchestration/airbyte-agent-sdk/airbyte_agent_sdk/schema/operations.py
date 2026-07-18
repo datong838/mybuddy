@@ -1,0 +1,207 @@
+"""
+Operation and PathItem models for OpenAPI 3.1.
+
+References:
+- https://spec.openapis.org/oas/v3.1.0#operation-object
+- https://spec.openapis.org/oas/v3.1.0#path-item-object
+"""
+
+from typing import Any, Dict, List
+
+from pydantic import Field, model_validator
+
+from ..extensions import AIRBYTE_FILE_URL_DESCRIPTION, ActionTypeLiteral
+from .components import AiHints, Parameter, PathOverrideConfig, RequestBody, Response
+from .extensions import ExtensionAwareModel
+from .security import SecurityRequirement
+
+
+class Operation(ExtensionAwareModel):
+    """
+    Single API operation (GET, POST, PUT, PATCH, DELETE, etc.).
+
+    OpenAPI Reference: https://spec.openapis.org/oas/v3.1.0#operation-object
+
+    Extensions:
+    - x-airbyte-entity: Entity name (Airbyte extension)
+    - x-airbyte-action: Semantic action (Airbyte extension)
+    - x-airbyte-path-override: Path override (Airbyte extension)
+    - x-airbyte-record-extractor: JSONPath to extract records from response (Airbyte extension)
+    - x-airbyte-ai-hints: AI guidance for this specific operation (Airbyte extension)
+
+    """
+
+    # Standard OpenAPI fields
+    tags: List[str] | None = None
+    summary: str | None = None
+    description: str | None = None
+    external_docs: Dict[str, Any] | None = Field(None, alias="externalDocs")
+    operation_id: str | None = Field(None, alias="operationId")
+    parameters: List[Parameter] | None = None
+    request_body: RequestBody | None = Field(None, alias="requestBody")
+    responses: Dict[str, Response] = Field(default_factory=dict)
+    callbacks: Dict[str, Any] | None = None
+    deprecated: bool | None = None
+    security: List[SecurityRequirement] | None = None
+    servers: List[Any] | None = None  # Can override root servers
+
+    # Airbyte extensions
+    x_airbyte_entity: str = Field(..., alias="x-airbyte-entity")
+    x_airbyte_action: ActionTypeLiteral = Field(..., alias="x-airbyte-action")
+    x_airbyte_path_override: PathOverrideConfig | None = Field(
+        None,
+        alias="x-airbyte-path-override",
+        description=("Override path for HTTP requests when OpenAPI path differs from actual endpoint"),
+    )
+    x_airbyte_record_extractor: str | None = Field(
+        None,
+        alias="x-airbyte-record-extractor",
+        description=(
+            "JSONPath expression to extract records from API response envelopes. "
+            "When specified, executor extracts data at this path instead of returning "
+            "full response. Returns array for list/api_search actions, single record for "
+            "get/create/update/delete actions."
+        ),
+    )
+    x_airbyte_record_filter: str | None = Field(
+        None,
+        alias="x-airbyte-record-filter",
+        description=(
+            "Jinja expression evaluated per record to decide whether the record is "
+            "emitted. Runs **after** `x-airbyte-record-extractor` on each extracted "
+            "record; records for which the expression is truthy are kept, others are "
+            "dropped. The expression receives the current record as `record` and the "
+            "connector config as `config`, and must render to a boolean-like value "
+            "(`True`/`False`/`1`/`0`/non-empty strings). "
+            "Example: `{{ not record.isPrivate }}`. Only valid on `list` and `api_search` "
+            "operations."
+        ),
+    )
+    x_airbyte_record_transform: Dict[str, str] | None = Field(
+        None,
+        alias="x-airbyte-record-transform",
+        description=(
+            "Dictionary mapping output field names to Jinja expressions evaluated "
+            "per extracted record. Runs after `x-airbyte-record-extractor` and before "
+            "`x-airbyte-record-filter`. The template receives the current record as "
+            "`record` and the connector config as `config`. Primitive extracted records "
+            "are wrapped as `{value: ...}` before evaluation. Example: "
+            "{'customer_id': \"{{ record.value | replace('customers/', '') }}\"}."
+        ),
+    )
+    x_airbyte_meta_extractor: Dict[str, str] | None = Field(
+        None,
+        alias="x-airbyte-meta-extractor",
+        description=(
+            "Dictionary mapping field names to JSONPath expressions for extracting "
+            "metadata (pagination info, request IDs, etc.) from API response envelopes. "
+            "Each key becomes a field in ExecutionResult.meta with the value extracted "
+            "using the corresponding JSONPath expression. "
+            "Example: {'pagination': '$.pagination', 'request_id': '$.requestId'}"
+        ),
+    )
+    x_airbyte_file_url: str | None = Field(
+        None,
+        alias="x-airbyte-file-url",
+        description=AIRBYTE_FILE_URL_DESCRIPTION,
+    )
+    x_airbyte_untested: bool | None = Field(
+        None,
+        alias="x-airbyte-untested",
+        description=(
+            "Mark operation as untested to skip cassette validation in readiness checks. "
+            "Use this for operations that cannot be recorded (e.g., webhooks, real-time streams). "
+            "Validation will generate a warning instead of an error when cassettes are missing."
+        ),
+    )
+    x_airbyte_no_pagination: str | None = Field(
+        None,
+        alias="x-airbyte-no-pagination",
+        description=(
+            "Opt a list operation out of the pagination readiness check with a justification. "
+            "By default, every list operation must declare x-airbyte-meta-extractor with a "
+            "next-page / cursor field so the executor can continue paginating. Set this to a "
+            "non-empty string explaining why the underlying API genuinely does not paginate "
+            "(e.g., 'API returns the full resource list in a single response; no pagination'). "
+            "Empty strings are treated as missing and will fail validation."
+        ),
+    )
+    x_airbyte_preferred_for_check: bool | None = Field(
+        None,
+        alias="x-airbyte-preferred-for-check",
+        description=(
+            "Mark this operation as the preferred operation for health checks. "
+            "When the CHECK action is executed, this operation will be used instead of "
+            "falling back to the first available list operation. The operation's actual "
+            "action type (get, list, etc.) will be respected. Choose a lightweight, "
+            "always-available endpoint (e.g., users, accounts)."
+        ),
+    )
+    x_airbyte_upload_file_param: str | None = Field(
+        None,
+        alias="x-airbyte-upload-file-param",
+        description=(
+            "Parameter name containing base64-encoded file content for multipart/related uploads. "
+            "When set, the executor builds a multipart/related body with JSON metadata and binary file content."
+        ),
+    )
+    x_airbyte_ai_hints: AiHints | None = Field(
+        None,
+        alias="x-airbyte-ai-hints",
+        description=(
+            "AI hints for this specific operation. Use for action-level guidance, "
+            "especially write actions whose request params should not be treated as streams."
+        ),
+    )
+
+    @model_validator(mode="after")
+    def validate_download_action_requirements(self) -> "Operation":
+        """
+        Validate download operation requirements.
+
+        Rules:
+        - If x-airbyte-action is "download":
+          - x-airbyte-file-url must be non-empty if provided
+        - If x-airbyte-action is not "download":
+          - x-airbyte-file-url must not be present
+        """
+        action = self.x_airbyte_action
+        file_url = self.x_airbyte_file_url
+
+        if action == "download":
+            # If file_url is provided, it must be non-empty
+            if file_url is not None and not file_url.strip():
+                raise ValueError("x-airbyte-file-url must be non-empty when provided for download operations")
+        else:
+            # Non-download actions cannot have file_url
+            if file_url is not None:
+                raise ValueError(f"x-airbyte-file-url can only be used with x-airbyte-action: download, but action is '{action}'")
+
+        return self
+
+
+class PathItem(ExtensionAwareModel):
+    """
+    Path item containing operations for different HTTP methods.
+
+    OpenAPI Reference: https://spec.openapis.org/oas/v3.1.0#path-item-object
+    """
+
+    # Common fields for all operations
+    summary: str | None = None
+    description: str | None = None
+    servers: List[Any] | None = None
+    parameters: List[Parameter] | None = None
+
+    # HTTP methods (all optional)
+    get: Operation | None = None
+    put: Operation | None = None
+    post: Operation | None = None
+    delete: Operation | None = None
+    options: Operation | None = None
+    head: Operation | None = None
+    patch: Operation | None = None
+    trace: Operation | None = None
+
+    # Reference support
+    ref: str | None = Field(None, alias="$ref")

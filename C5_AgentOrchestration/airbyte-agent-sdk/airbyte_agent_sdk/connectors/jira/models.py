@@ -1,0 +1,1556 @@
+"""
+Pydantic models for jira connector.
+
+This module contains Pydantic models used for authentication configuration
+and response envelope types.
+"""
+
+from __future__ import annotations
+
+from pydantic import BaseModel, ConfigDict, Field
+from typing import TypeVar, Generic, Any
+from typing import Optional
+
+# Authentication configuration - multiple options available
+
+class JiraOauth20AuthenticationAuthConfig(BaseModel):
+    """OAuth 2.0 Authentication"""
+
+    model_config = ConfigDict(extra="forbid")
+
+    access_token: Optional[str] = None
+    """Your Jira Cloud OAuth 2.0 access token"""
+    refresh_token: str
+    """Your Jira Cloud OAuth 2.0 refresh token (requires offline_access scope)"""
+    client_id: Optional[str] = None
+    """Your Jira OAuth App Client ID from the Atlassian Developer Console"""
+    client_secret: Optional[str] = None
+    """Your Jira OAuth App Client Secret from the Atlassian Developer Console"""
+
+class JiraJiraApiTokenAuthenticationAuthConfig(BaseModel):
+    """Jira API Token Authentication - Authenticate using your Atlassian account email and API token"""
+
+    model_config = ConfigDict(extra="forbid")
+
+    username: str
+    """Your Atlassian account email address"""
+    password: str
+    """Your Jira API token from https://id.atlassian.com/manage-profile/security/api-tokens"""
+
+JiraAuthConfig = JiraOauth20AuthenticationAuthConfig | JiraJiraApiTokenAuthenticationAuthConfig
+
+# OAuth credential override
+
+class JiraOAuthCredentials(BaseModel):
+    """Jira OAuth App Credentials - Provide your own Jira OAuth app credentials to override the default Airbyte-managed ones."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    client_id: str
+    """Your Jira OAuth app's client ID"""
+    client_secret: str
+    """Your Jira OAuth app's client secret"""
+
+# ===== RESPONSE TYPE DEFINITIONS (PYDANTIC) =====
+
+class ProjectComponentsItem(BaseModel):
+    """Nested schema for Project.components_item"""
+    model_config = ConfigDict(extra="allow", populate_by_name=True)
+
+    self: str | None = Field(default=None)
+    id: str | None = Field(default=None)
+    name: str | None = Field(default=None)
+    description: str | None = Field(default=None)
+    is_assignee_type_valid: bool | None = Field(default=None, alias="isAssigneeTypeValid")
+
+class ProjectAvatarurls(BaseModel):
+    """URLs for project avatars in different sizes"""
+    model_config = ConfigDict(extra="allow", populate_by_name=True)
+
+    field_16x16: str | None = Field(default=None, alias="16x16")
+    field_24x24: str | None = Field(default=None, alias="24x24")
+    field_32x32: str | None = Field(default=None, alias="32x32")
+    field_48x48: str | None = Field(default=None, alias="48x48")
+
+class ProjectIssuetypesItem(BaseModel):
+    """Nested schema for Project.issueTypes_item"""
+    model_config = ConfigDict(extra="allow", populate_by_name=True)
+
+    self: str | None = Field(default=None)
+    id: str | None = Field(default=None)
+    description: str | None = Field(default=None)
+    icon_url: str | None = Field(default=None, alias="iconUrl")
+    name: str | None = Field(default=None)
+    subtask: bool | None = Field(default=None)
+    avatar_id: int | None | None = Field(default=None, alias="avatarId")
+    hierarchy_level: int | None | None = Field(default=None, alias="hierarchyLevel")
+
+class ProjectProjectcategory(BaseModel):
+    """Project category information"""
+    model_config = ConfigDict(extra="allow", populate_by_name=True)
+
+    self: str | None = Field(default=None)
+    id: str | None = Field(default=None)
+    name: str | None = Field(default=None)
+    description: str | None = Field(default=None)
+
+class ProjectVersionsItem(BaseModel):
+    """Nested schema for Project.versions_item"""
+    model_config = ConfigDict(extra="allow", populate_by_name=True)
+
+    self: str | None = Field(default=None)
+    id: str | None = Field(default=None)
+    name: str | None = Field(default=None)
+    description: str | None = Field(default=None)
+    archived: bool | None = Field(default=None)
+    released: bool | None = Field(default=None)
+    start_date: str | None | None = Field(default=None, alias="startDate")
+    release_date: str | None | None = Field(default=None, alias="releaseDate")
+    overdue: bool | None | None = Field(default=None)
+    user_start_date: str | None | None = Field(default=None, alias="userStartDate")
+    user_release_date: str | None | None = Field(default=None, alias="userReleaseDate")
+    project_id: int | None = Field(default=None, alias="projectId")
+
+class ProjectLeadAvatarurls(BaseModel):
+    """URLs for user avatars in different sizes"""
+    model_config = ConfigDict(extra="allow", populate_by_name=True)
+
+    field_16x16: str | None = Field(default=None, alias="16x16")
+    field_24x24: str | None = Field(default=None, alias="24x24")
+    field_32x32: str | None = Field(default=None, alias="32x32")
+    field_48x48: str | None = Field(default=None, alias="48x48")
+
+class ProjectLead(BaseModel):
+    """Project lead user (available with expand=lead)"""
+    model_config = ConfigDict(extra="allow", populate_by_name=True)
+
+    self: str | None = Field(default=None)
+    account_id: str | None = Field(default=None, alias="accountId")
+    account_type: str | None = Field(default=None, alias="accountType")
+    avatar_urls: ProjectLeadAvatarurls | None = Field(default=None, alias="avatarUrls", description="URLs for user avatars in different sizes")
+    """URLs for user avatars in different sizes"""
+    display_name: str | None = Field(default=None, alias="displayName")
+    active: bool | None = Field(default=None)
+
+class Project(BaseModel):
+    """Jira project object"""
+    model_config = ConfigDict(extra="allow", populate_by_name=True)
+
+    id: str | None = Field(default=None)
+    key: str | None = Field(default=None)
+    name: str | None = Field(default=None)
+    self: str | None = Field(default=None)
+    expand: str | None = Field(default=None)
+    description: str | None = Field(default=None)
+    lead: ProjectLead | None = Field(default=None)
+    avatar_urls: ProjectAvatarurls | None = Field(default=None, alias="avatarUrls")
+    project_type_key: str | None = Field(default=None, alias="projectTypeKey")
+    simplified: bool | None = Field(default=None)
+    style: str | None = Field(default=None)
+    is_private: bool | None = Field(default=None, alias="isPrivate")
+    properties: dict[str, Any] | None = Field(default=None)
+    project_category: ProjectProjectcategory | None = Field(default=None, alias="projectCategory")
+    entity_id: str | None = Field(default=None, alias="entityId")
+    uuid: str | None = Field(default=None)
+    url: str | None = Field(default=None)
+    assignee_type: str | None = Field(default=None, alias="assigneeType")
+    components: list[ProjectComponentsItem] | None = Field(default=None)
+    issue_types: list[ProjectIssuetypesItem] | None = Field(default=None, alias="issueTypes")
+    versions: list[ProjectVersionsItem] | None = Field(default=None)
+    roles: dict[str, str] | None = Field(default=None)
+
+class ProjectsList(BaseModel):
+    """Paginated list of projects from search results"""
+    model_config = ConfigDict(extra="allow", populate_by_name=True)
+
+    self: str | None = Field(default=None)
+    next_page: str | None = Field(default=None, alias="nextPage")
+    max_results: int | None = Field(default=None, alias="maxResults")
+    start_at: int | None = Field(default=None, alias="startAt")
+    total: int | None = Field(default=None)
+    is_last: bool | None = Field(default=None, alias="isLast")
+    values: list[Project] | None = Field(default=None)
+
+class IssueFieldsProjectAvatarurls(BaseModel):
+    """URLs for user avatars in different sizes"""
+    model_config = ConfigDict(extra="allow", populate_by_name=True)
+
+    field_16x16: str | None = Field(default=None, alias="16x16")
+    field_24x24: str | None = Field(default=None, alias="24x24")
+    field_32x32: str | None = Field(default=None, alias="32x32")
+    field_48x48: str | None = Field(default=None, alias="48x48")
+
+class IssueFieldsProjectProjectcategory(BaseModel):
+    """Nested schema for IssueFieldsProject.projectCategory"""
+    model_config = ConfigDict(extra="allow", populate_by_name=True)
+
+    self: str | None = Field(default=None)
+    id: str | None = Field(default=None)
+    name: str | None = Field(default=None)
+    description: str | None = Field(default=None)
+
+class IssueFieldsProject(BaseModel):
+    """Project information"""
+    model_config = ConfigDict(extra="allow", populate_by_name=True)
+
+    self: str | None = Field(default=None)
+    id: str | None = Field(default=None)
+    key: str | None = Field(default=None)
+    name: str | None = Field(default=None)
+    project_type_key: str | None = Field(default=None, alias="projectTypeKey")
+    simplified: bool | None = Field(default=None)
+    avatar_urls: IssueFieldsProjectAvatarurls | None = Field(default=None, alias="avatarUrls", description="URLs for user avatars in different sizes")
+    """URLs for user avatars in different sizes"""
+    project_category: IssueFieldsProjectProjectcategory | None | None = Field(default=None, alias="projectCategory")
+
+class IssueFieldsPriority(BaseModel):
+    """Issue priority information"""
+    model_config = ConfigDict(extra="allow", populate_by_name=True)
+
+    self: str | None = Field(default=None)
+    icon_url: str | None = Field(default=None, alias="iconUrl")
+    name: str | None = Field(default=None)
+    id: str | None = Field(default=None)
+
+class IssueFieldsReporterAvatarurls(BaseModel):
+    """URLs for user avatars in different sizes"""
+    model_config = ConfigDict(extra="allow", populate_by_name=True)
+
+    field_16x16: str | None = Field(default=None, alias="16x16")
+    field_24x24: str | None = Field(default=None, alias="24x24")
+    field_32x32: str | None = Field(default=None, alias="32x32")
+    field_48x48: str | None = Field(default=None, alias="48x48")
+
+class IssueFieldsReporter(BaseModel):
+    """Issue reporter user information"""
+    model_config = ConfigDict(extra="allow", populate_by_name=True)
+
+    self: str | None = Field(default=None)
+    account_id: str | None = Field(default=None, alias="accountId")
+    email_address: str | None = Field(default=None, alias="emailAddress")
+    avatar_urls: IssueFieldsReporterAvatarurls | None = Field(default=None, alias="avatarUrls", description="URLs for user avatars in different sizes")
+    """URLs for user avatars in different sizes"""
+    display_name: str | None = Field(default=None, alias="displayName")
+    active: bool | None = Field(default=None)
+    time_zone: str | None = Field(default=None, alias="timeZone")
+    account_type: str | None = Field(default=None, alias="accountType")
+
+class IssueFieldsIssuetype(BaseModel):
+    """Issue type information"""
+    model_config = ConfigDict(extra="allow", populate_by_name=True)
+
+    self: str | None = Field(default=None)
+    id: str | None = Field(default=None)
+    description: str | None = Field(default=None)
+    icon_url: str | None = Field(default=None, alias="iconUrl")
+    name: str | None = Field(default=None)
+    subtask: bool | None = Field(default=None)
+    avatar_id: int | None | None = Field(default=None, alias="avatarId")
+    hierarchy_level: int | None | None = Field(default=None, alias="hierarchyLevel")
+
+class IssueFieldsStatusStatuscategory(BaseModel):
+    """Nested schema for IssueFieldsStatus.statusCategory"""
+    model_config = ConfigDict(extra="allow", populate_by_name=True)
+
+    self: str | None = Field(default=None)
+    id: int | None = Field(default=None)
+    key: str | None = Field(default=None)
+    color_name: str | None = Field(default=None, alias="colorName")
+    name: str | None = Field(default=None)
+
+class IssueFieldsStatus(BaseModel):
+    """Issue status information"""
+    model_config = ConfigDict(extra="allow", populate_by_name=True)
+
+    self: str | None = Field(default=None)
+    description: str | None = Field(default=None)
+    icon_url: str | None = Field(default=None, alias="iconUrl")
+    name: str | None = Field(default=None)
+    id: str | None = Field(default=None)
+    status_category: IssueFieldsStatusStatuscategory | None = Field(default=None, alias="statusCategory")
+
+class IssueFieldsAssigneeAvatarurls(BaseModel):
+    """URLs for user avatars in different sizes"""
+    model_config = ConfigDict(extra="allow", populate_by_name=True)
+
+    field_16x16: str | None = Field(default=None, alias="16x16")
+    field_24x24: str | None = Field(default=None, alias="24x24")
+    field_32x32: str | None = Field(default=None, alias="32x32")
+    field_48x48: str | None = Field(default=None, alias="48x48")
+
+class IssueFieldsAssignee(BaseModel):
+    """Issue assignee user information (null if unassigned)"""
+    model_config = ConfigDict(extra="allow", populate_by_name=True)
+
+    self: str | None = Field(default=None)
+    account_id: str | None = Field(default=None, alias="accountId")
+    email_address: str | None = Field(default=None, alias="emailAddress")
+    avatar_urls: IssueFieldsAssigneeAvatarurls | None = Field(default=None, alias="avatarUrls", description="URLs for user avatars in different sizes")
+    """URLs for user avatars in different sizes"""
+    display_name: str | None = Field(default=None, alias="displayName")
+    active: bool | None = Field(default=None)
+    time_zone: str | None = Field(default=None, alias="timeZone")
+    account_type: str | None = Field(default=None, alias="accountType")
+
+class IssueFields(BaseModel):
+    """Issue fields (actual fields depend on 'fields' parameter in request)"""
+    model_config = ConfigDict(extra="allow", populate_by_name=True)
+
+    summary: str | None = Field(default=None, description="Issue summary/title")
+    """Issue summary/title"""
+    issuetype: IssueFieldsIssuetype | None = Field(default=None, description="Issue type information")
+    """Issue type information"""
+    created: str | None = Field(default=None, description="Issue creation timestamp")
+    """Issue creation timestamp"""
+    updated: str | None = Field(default=None, description="Issue last update timestamp")
+    """Issue last update timestamp"""
+    project: IssueFieldsProject | None = Field(default=None, description="Project information")
+    """Project information"""
+    reporter: IssueFieldsReporter | None | None = Field(default=None, description="Issue reporter user information")
+    """Issue reporter user information"""
+    assignee: IssueFieldsAssignee | None | None = Field(default=None, description="Issue assignee user information (null if unassigned)")
+    """Issue assignee user information (null if unassigned)"""
+    priority: IssueFieldsPriority | None | None = Field(default=None, description="Issue priority information")
+    """Issue priority information"""
+    status: IssueFieldsStatus | None = Field(default=None, description="Issue status information")
+    """Issue status information"""
+
+class Issue(BaseModel):
+    """Jira issue object"""
+    model_config = ConfigDict(extra="allow", populate_by_name=True)
+
+    id: str | None = Field(default=None)
+    key: str | None = Field(default=None)
+    self: str | None = Field(default=None)
+    expand: str | None = Field(default=None)
+    fields: IssueFields | None = Field(default=None)
+
+class IssuesList(BaseModel):
+    """Paginated list of issues from JQL search"""
+    model_config = ConfigDict(extra="allow", populate_by_name=True)
+
+    issues: list[Issue] | None = Field(default=None)
+    total: int | None = Field(default=None)
+    max_results: int | None = Field(default=None, alias="maxResults")
+    start_at: int | None = Field(default=None, alias="startAt")
+    next_page_token: str | None = Field(default=None, alias="nextPageToken")
+    is_last: bool | None = Field(default=None, alias="isLast")
+
+class UserGroupsItemsItem(BaseModel):
+    """Nested schema for UserGroups.items_item"""
+    model_config = ConfigDict(extra="allow", populate_by_name=True)
+
+    name: str | None = Field(default=None)
+    group_id: str | None = Field(default=None, alias="groupId")
+    self: str | None = Field(default=None)
+
+class UserGroups(BaseModel):
+    """User groups (available with expand=groups)"""
+    model_config = ConfigDict(extra="allow", populate_by_name=True)
+
+    size: int | None = Field(default=None, description="Number of groups")
+    """Number of groups"""
+    items: list[UserGroupsItemsItem] | None = Field(default=None, description="Array of group objects")
+    """Array of group objects"""
+
+class UserAvatarurls(BaseModel):
+    """URLs for user avatars in different sizes"""
+    model_config = ConfigDict(extra="allow", populate_by_name=True)
+
+    field_16x16: str | None = Field(default=None, alias="16x16")
+    field_24x24: str | None = Field(default=None, alias="24x24")
+    field_32x32: str | None = Field(default=None, alias="32x32")
+    field_48x48: str | None = Field(default=None, alias="48x48")
+
+class UserApplicationrolesItemsItemGroupdetailsItem(BaseModel):
+    """Nested schema for UserApplicationrolesItemsItem.groupDetails_item"""
+    model_config = ConfigDict(extra="allow", populate_by_name=True)
+
+    name: str | None = Field(default=None)
+    group_id: str | None = Field(default=None, alias="groupId")
+    self: str | None = Field(default=None)
+
+class UserApplicationrolesItemsItemDefaultgroupsdetailsItem(BaseModel):
+    """Nested schema for UserApplicationrolesItemsItem.defaultGroupsDetails_item"""
+    model_config = ConfigDict(extra="allow", populate_by_name=True)
+
+    name: str | None = Field(default=None)
+    group_id: str | None = Field(default=None, alias="groupId")
+    self: str | None = Field(default=None)
+
+class UserApplicationrolesItemsItem(BaseModel):
+    """Nested schema for UserApplicationroles.items_item"""
+    model_config = ConfigDict(extra="allow", populate_by_name=True)
+
+    key: str | None = Field(default=None)
+    name: str | None = Field(default=None)
+    groups: list[str] | None = Field(default=None)
+    group_details: list[UserApplicationrolesItemsItemGroupdetailsItem] | None = Field(default=None, alias="groupDetails")
+    default_groups: list[str] | None = Field(default=None, alias="defaultGroups")
+    default_groups_details: list[UserApplicationrolesItemsItemDefaultgroupsdetailsItem] | None = Field(default=None, alias="defaultGroupsDetails")
+    selected_by_default: bool | None = Field(default=None, alias="selectedByDefault")
+    defined: bool | None = Field(default=None)
+    number_of_seats: int | None = Field(default=None, alias="numberOfSeats")
+    remaining_seats: int | None = Field(default=None, alias="remainingSeats")
+    user_count: int | None = Field(default=None, alias="userCount")
+    user_count_description: str | None = Field(default=None, alias="userCountDescription")
+    has_unlimited_seats: bool | None = Field(default=None, alias="hasUnlimitedSeats")
+    platform: bool | None = Field(default=None)
+
+class UserApplicationroles(BaseModel):
+    """User application roles (available with expand=applicationRoles)"""
+    model_config = ConfigDict(extra="allow", populate_by_name=True)
+
+    size: int | None = Field(default=None, description="Number of application roles")
+    """Number of application roles"""
+    items: list[UserApplicationrolesItemsItem] | None = Field(default=None, description="Array of application role objects")
+    """Array of application role objects"""
+
+class User(BaseModel):
+    """Jira user object"""
+    model_config = ConfigDict(extra="allow", populate_by_name=True)
+
+    self: str | None = Field(default=None)
+    account_id: str | None = Field(default=None, alias="accountId")
+    account_type: str | None = Field(default=None, alias="accountType")
+    email_address: str | None = Field(default=None, alias="emailAddress")
+    avatar_urls: UserAvatarurls | None = Field(default=None, alias="avatarUrls")
+    display_name: str | None = Field(default=None, alias="displayName")
+    active: bool | None = Field(default=None)
+    time_zone: str | None = Field(default=None, alias="timeZone")
+    locale: str | None = Field(default=None)
+    expand: str | None = Field(default=None)
+    groups: UserGroups | None = Field(default=None)
+    application_roles: UserApplicationroles | None = Field(default=None, alias="applicationRoles")
+
+class IssueFieldSchema(BaseModel):
+    """Schema information for the field"""
+    model_config = ConfigDict(extra="allow", populate_by_name=True)
+
+    type_: str | None = Field(default=None, alias="type", description="Field type (e.g., string, number, array)")
+    """Field type (e.g., string, number, array)"""
+    system: str | None | None = Field(default=None, description="System field identifier")
+    """System field identifier"""
+    items: str | None | None = Field(default=None, description="Type of items in array fields")
+    """Type of items in array fields"""
+    custom: str | None | None = Field(default=None, description="Custom field type identifier")
+    """Custom field type identifier"""
+    custom_id: int | None | None = Field(default=None, alias="customId", description="Custom field ID")
+    """Custom field ID"""
+    configuration: dict[str, Any] | None | None = Field(default=None, description="Field configuration")
+    """Field configuration"""
+
+class IssueField(BaseModel):
+    """Jira issue field object (custom or system field)"""
+    model_config = ConfigDict(extra="allow", populate_by_name=True)
+
+    id: str | None = Field(default=None)
+    key: str | None = Field(default=None)
+    name: str | None = Field(default=None)
+    custom: bool | None = Field(default=None)
+    orderable: bool | None = Field(default=None)
+    navigable: bool | None = Field(default=None)
+    searchable: bool | None = Field(default=None)
+    clause_names: list[str] | None = Field(default=None, alias="clauseNames")
+    schema_: IssueFieldSchema | None = Field(default=None, alias="schema")
+    untranslated_name: str | None = Field(default=None, alias="untranslatedName")
+    type_display_name: str | None = Field(default=None, alias="typeDisplayName")
+    description: str | None = Field(default=None)
+    searcher_key: str | None = Field(default=None, alias="searcherKey")
+    screens_count: int | None = Field(default=None, alias="screensCount")
+    contexts_count: int | None = Field(default=None, alias="contextsCount")
+    is_locked: bool | None = Field(default=None, alias="isLocked")
+    last_used: str | None = Field(default=None, alias="lastUsed")
+
+class IssueFieldSearchResults(BaseModel):
+    """Paginated search results for issue fields"""
+    model_config = ConfigDict(extra="allow", populate_by_name=True)
+
+    max_results: int | None = Field(default=None, alias="maxResults")
+    start_at: int | None = Field(default=None, alias="startAt")
+    total: int | None = Field(default=None)
+    is_last: bool | None = Field(default=None, alias="isLast")
+    values: list[IssueField] | None = Field(default=None)
+
+class IssueCommentVisibility(BaseModel):
+    """Visibility restrictions for the comment"""
+    model_config = ConfigDict(extra="allow", populate_by_name=True)
+
+    type_: str | None = Field(default=None, alias="type")
+    value: str | None = Field(default=None)
+    identifier: str | None | None = Field(default=None)
+
+class IssueCommentBodyContentItemContentItem(BaseModel):
+    """Nested schema for IssueCommentBodyContentItem.content_item"""
+    model_config = ConfigDict(extra="allow", populate_by_name=True)
+
+    type_: str | None = Field(default=None, alias="type", description="Content type (e.g., 'text')")
+    """Content type (e.g., 'text')"""
+    text: str | None = Field(default=None, description="Text content")
+    """Text content"""
+
+class IssueCommentBodyContentItem(BaseModel):
+    """Nested schema for IssueCommentBody.content_item"""
+    model_config = ConfigDict(extra="allow", populate_by_name=True)
+
+    type_: str | None = Field(default=None, alias="type", description="Block type (e.g., 'paragraph')")
+    """Block type (e.g., 'paragraph')"""
+    content: list[IssueCommentBodyContentItemContentItem] | None = Field(default=None, description="Nested content items")
+    """Nested content items"""
+
+class IssueCommentBody(BaseModel):
+    """Comment content in ADF (Atlassian Document Format)"""
+    model_config = ConfigDict(extra="allow", populate_by_name=True)
+
+    type_: str | None = Field(default=None, alias="type", description="Document type (always 'doc')")
+    """Document type (always 'doc')"""
+    version: int | None = Field(default=None, description="ADF version")
+    """ADF version"""
+    content: list[IssueCommentBodyContentItem] | None = Field(default=None, description="Array of content blocks")
+    """Array of content blocks"""
+
+class IssueCommentUpdateauthorAvatarurls(BaseModel):
+    """URLs for user avatars in different sizes"""
+    model_config = ConfigDict(extra="allow", populate_by_name=True)
+
+    field_16x16: str | None = Field(default=None, alias="16x16")
+    field_24x24: str | None = Field(default=None, alias="24x24")
+    field_32x32: str | None = Field(default=None, alias="32x32")
+    field_48x48: str | None = Field(default=None, alias="48x48")
+
+class IssueCommentUpdateauthor(BaseModel):
+    """User who last updated the comment"""
+    model_config = ConfigDict(extra="allow", populate_by_name=True)
+
+    self: str | None = Field(default=None)
+    account_id: str | None = Field(default=None, alias="accountId")
+    email_address: str | None = Field(default=None, alias="emailAddress")
+    display_name: str | None = Field(default=None, alias="displayName")
+    active: bool | None = Field(default=None)
+    time_zone: str | None = Field(default=None, alias="timeZone")
+    account_type: str | None = Field(default=None, alias="accountType")
+    avatar_urls: IssueCommentUpdateauthorAvatarurls | None = Field(default=None, alias="avatarUrls", description="URLs for user avatars in different sizes")
+    """URLs for user avatars in different sizes"""
+
+class IssueCommentAuthorAvatarurls(BaseModel):
+    """URLs for user avatars in different sizes"""
+    model_config = ConfigDict(extra="allow", populate_by_name=True)
+
+    field_16x16: str | None = Field(default=None, alias="16x16")
+    field_24x24: str | None = Field(default=None, alias="24x24")
+    field_32x32: str | None = Field(default=None, alias="32x32")
+    field_48x48: str | None = Field(default=None, alias="48x48")
+
+class IssueCommentAuthor(BaseModel):
+    """Comment author user information"""
+    model_config = ConfigDict(extra="allow", populate_by_name=True)
+
+    self: str | None = Field(default=None)
+    account_id: str | None = Field(default=None, alias="accountId")
+    email_address: str | None = Field(default=None, alias="emailAddress")
+    display_name: str | None = Field(default=None, alias="displayName")
+    active: bool | None = Field(default=None)
+    time_zone: str | None = Field(default=None, alias="timeZone")
+    account_type: str | None = Field(default=None, alias="accountType")
+    avatar_urls: IssueCommentAuthorAvatarurls | None = Field(default=None, alias="avatarUrls", description="URLs for user avatars in different sizes")
+    """URLs for user avatars in different sizes"""
+
+class IssueComment(BaseModel):
+    """Jira issue comment object"""
+    model_config = ConfigDict(extra="allow", populate_by_name=True)
+
+    id: str | None = Field(default=None)
+    self: str | None = Field(default=None)
+    body: IssueCommentBody | None = Field(default=None)
+    author: IssueCommentAuthor | None = Field(default=None)
+    update_author: IssueCommentUpdateauthor | None = Field(default=None, alias="updateAuthor")
+    created: str | None = Field(default=None)
+    updated: str | None = Field(default=None)
+    jsd_public: bool | None = Field(default=None, alias="jsdPublic")
+    visibility: IssueCommentVisibility | None = Field(default=None)
+    rendered_body: str | None = Field(default=None, alias="renderedBody")
+    properties: list[dict[str, Any]] | None = Field(default=None)
+
+class IssueCommentsList(BaseModel):
+    """Paginated list of issue comments"""
+    model_config = ConfigDict(extra="allow", populate_by_name=True)
+
+    start_at: int | None = Field(default=None, alias="startAt")
+    max_results: int | None = Field(default=None, alias="maxResults")
+    total: int | None = Field(default=None)
+    comments: list[IssueComment] | None = Field(default=None)
+
+class WorklogCommentContentItemContentItem(BaseModel):
+    """Nested schema for WorklogCommentContentItem.content_item"""
+    model_config = ConfigDict(extra="allow", populate_by_name=True)
+
+    type_: str | None = Field(default=None, alias="type", description="Content type (e.g., 'text')")
+    """Content type (e.g., 'text')"""
+    text: str | None = Field(default=None, description="Text content")
+    """Text content"""
+
+class WorklogCommentContentItem(BaseModel):
+    """Nested schema for WorklogComment.content_item"""
+    model_config = ConfigDict(extra="allow", populate_by_name=True)
+
+    type_: str | None = Field(default=None, alias="type", description="Block type (e.g., 'paragraph')")
+    """Block type (e.g., 'paragraph')"""
+    content: list[WorklogCommentContentItemContentItem] | None = Field(default=None, description="Nested content items")
+    """Nested content items"""
+
+class WorklogComment(BaseModel):
+    """Comment associated with the worklog (ADF format)"""
+    model_config = ConfigDict(extra="allow", populate_by_name=True)
+
+    type_: str | None = Field(default=None, alias="type", description="Document type (always 'doc')")
+    """Document type (always 'doc')"""
+    version: int | None = Field(default=None, description="ADF version")
+    """ADF version"""
+    content: list[WorklogCommentContentItem] | None = Field(default=None, description="Array of content blocks")
+    """Array of content blocks"""
+
+class WorklogAuthorAvatarurls(BaseModel):
+    """URLs for user avatars in different sizes"""
+    model_config = ConfigDict(extra="allow", populate_by_name=True)
+
+    field_16x16: str | None = Field(default=None, alias="16x16")
+    field_24x24: str | None = Field(default=None, alias="24x24")
+    field_32x32: str | None = Field(default=None, alias="32x32")
+    field_48x48: str | None = Field(default=None, alias="48x48")
+
+class WorklogAuthor(BaseModel):
+    """Worklog author user information"""
+    model_config = ConfigDict(extra="allow", populate_by_name=True)
+
+    self: str | None = Field(default=None)
+    account_id: str | None = Field(default=None, alias="accountId")
+    email_address: str | None = Field(default=None, alias="emailAddress")
+    display_name: str | None = Field(default=None, alias="displayName")
+    active: bool | None = Field(default=None)
+    time_zone: str | None = Field(default=None, alias="timeZone")
+    account_type: str | None = Field(default=None, alias="accountType")
+    avatar_urls: WorklogAuthorAvatarurls | None = Field(default=None, alias="avatarUrls", description="URLs for user avatars in different sizes")
+    """URLs for user avatars in different sizes"""
+
+class WorklogVisibility(BaseModel):
+    """Visibility restrictions for the worklog"""
+    model_config = ConfigDict(extra="allow", populate_by_name=True)
+
+    type_: str | None = Field(default=None, alias="type")
+    value: str | None = Field(default=None)
+    identifier: str | None | None = Field(default=None)
+
+class WorklogUpdateauthorAvatarurls(BaseModel):
+    """URLs for user avatars in different sizes"""
+    model_config = ConfigDict(extra="allow", populate_by_name=True)
+
+    field_16x16: str | None = Field(default=None, alias="16x16")
+    field_24x24: str | None = Field(default=None, alias="24x24")
+    field_32x32: str | None = Field(default=None, alias="32x32")
+    field_48x48: str | None = Field(default=None, alias="48x48")
+
+class WorklogUpdateauthor(BaseModel):
+    """User who last updated the worklog"""
+    model_config = ConfigDict(extra="allow", populate_by_name=True)
+
+    self: str | None = Field(default=None)
+    account_id: str | None = Field(default=None, alias="accountId")
+    email_address: str | None = Field(default=None, alias="emailAddress")
+    display_name: str | None = Field(default=None, alias="displayName")
+    active: bool | None = Field(default=None)
+    time_zone: str | None = Field(default=None, alias="timeZone")
+    account_type: str | None = Field(default=None, alias="accountType")
+    avatar_urls: WorklogUpdateauthorAvatarurls | None = Field(default=None, alias="avatarUrls", description="URLs for user avatars in different sizes")
+    """URLs for user avatars in different sizes"""
+
+class Worklog(BaseModel):
+    """Jira worklog object"""
+    model_config = ConfigDict(extra="allow", populate_by_name=True)
+
+    id: str | None = Field(default=None)
+    self: str | None = Field(default=None)
+    author: WorklogAuthor | None = Field(default=None)
+    update_author: WorklogUpdateauthor | None = Field(default=None, alias="updateAuthor")
+    comment: WorklogComment | None = Field(default=None)
+    created: str | None = Field(default=None)
+    updated: str | None = Field(default=None)
+    started: str | None = Field(default=None)
+    time_spent: str | None = Field(default=None, alias="timeSpent")
+    time_spent_seconds: int | None = Field(default=None, alias="timeSpentSeconds")
+    issue_id: str | None = Field(default=None, alias="issueId")
+    visibility: WorklogVisibility | None = Field(default=None)
+    properties: list[dict[str, Any]] | None = Field(default=None)
+
+class WorklogsList(BaseModel):
+    """Paginated list of issue worklogs"""
+    model_config = ConfigDict(extra="allow", populate_by_name=True)
+
+    start_at: int | None = Field(default=None, alias="startAt")
+    max_results: int | None = Field(default=None, alias="maxResults")
+    total: int | None = Field(default=None)
+    worklogs: list[Worklog] | None = Field(default=None)
+
+class IssueAssigneeParams(BaseModel):
+    """Parameters for assigning an issue to a user"""
+    model_config = ConfigDict(extra="allow", populate_by_name=True)
+
+    account_id: str | None = Field(default=None, alias="accountId")
+
+class EmptyResponse(BaseModel):
+    """Empty response object (returned for 204 No Content responses)"""
+    model_config = ConfigDict(extra="allow", populate_by_name=True)
+
+    pass
+
+class IssueCreateParamsFieldsPriority(BaseModel):
+    """Issue priority"""
+    model_config = ConfigDict(extra="allow", populate_by_name=True)
+
+    id: str | None = Field(default=None, description="Priority ID")
+    """Priority ID"""
+    name: str | None = Field(default=None, description="Priority name (e.g., 'Highest', 'High', 'Medium', 'Low', 'Lowest')")
+    """Priority name (e.g., 'Highest', 'High', 'Medium', 'Low', 'Lowest')"""
+
+class IssueCreateParamsFieldsIssuetype(BaseModel):
+    """The type of issue (e.g., Bug, Task, Story)"""
+    model_config = ConfigDict(extra="allow", populate_by_name=True)
+
+    id: str | None = Field(default=None, description="Issue type ID")
+    """Issue type ID"""
+    name: str | None = Field(default=None, description="Issue type name (e.g., 'Bug', 'Task', 'Story')")
+    """Issue type name (e.g., 'Bug', 'Task', 'Story')"""
+
+class IssueCreateParamsFieldsDescriptionContentItemContentItem(BaseModel):
+    """Nested schema for IssueCreateParamsFieldsDescriptionContentItem.content_item"""
+    model_config = ConfigDict(extra="allow", populate_by_name=True)
+
+    type_: str | None = Field(default=None, alias="type", description="Content type (e.g., 'text')")
+    """Content type (e.g., 'text')"""
+    text: str | None = Field(default=None, description="Text content")
+    """Text content"""
+
+class IssueCreateParamsFieldsDescriptionContentItem(BaseModel):
+    """Nested schema for IssueCreateParamsFieldsDescription.content_item"""
+    model_config = ConfigDict(extra="allow", populate_by_name=True)
+
+    type_: str | None = Field(default=None, alias="type", description="Block type (e.g., 'paragraph')")
+    """Block type (e.g., 'paragraph')"""
+    content: list[IssueCreateParamsFieldsDescriptionContentItemContentItem] | None = Field(default=None)
+
+class IssueCreateParamsFieldsDescription(BaseModel):
+    """Issue description in Atlassian Document Format (ADF)"""
+    model_config = ConfigDict(extra="allow", populate_by_name=True)
+
+    type_: str | None = Field(default=None, alias="type", description="Document type (always 'doc')")
+    """Document type (always 'doc')"""
+    version: int | None = Field(default=None, description="ADF version")
+    """ADF version"""
+    content: list[IssueCreateParamsFieldsDescriptionContentItem] | None = Field(default=None, description="Array of content blocks")
+    """Array of content blocks"""
+
+class IssueCreateParamsFieldsProject(BaseModel):
+    """The project to create the issue in"""
+    model_config = ConfigDict(extra="allow", populate_by_name=True)
+
+    id: str | None = Field(default=None, description="Project ID")
+    """Project ID"""
+    key: str | None = Field(default=None, description="Project key (e.g., 'PROJ')")
+    """Project key (e.g., 'PROJ')"""
+
+class IssueCreateParamsFieldsParent(BaseModel):
+    """Parent issue for subtasks"""
+    model_config = ConfigDict(extra="allow", populate_by_name=True)
+
+    key: str | None = Field(default=None, description="Parent issue key")
+    """Parent issue key"""
+
+class IssueCreateParamsFieldsAssignee(BaseModel):
+    """The user to assign the issue to"""
+    model_config = ConfigDict(extra="allow", populate_by_name=True)
+
+    account_id: str | None = Field(default=None, alias="accountId", description="The account ID of the user")
+    """The account ID of the user"""
+
+class IssueCreateParamsFields(BaseModel):
+    """The issue fields to set"""
+    model_config = ConfigDict(extra="allow", populate_by_name=True)
+
+    project: IssueCreateParamsFieldsProject = Field(description="The project to create the issue in")
+    """The project to create the issue in"""
+    issuetype: IssueCreateParamsFieldsIssuetype = Field(description="The type of issue (e.g., Bug, Task, Story)")
+    """The type of issue (e.g., Bug, Task, Story)"""
+    summary: str = Field(description="A brief summary of the issue (title)")
+    """A brief summary of the issue (title)"""
+    description: IssueCreateParamsFieldsDescription | None = Field(default=None, description="Issue description in Atlassian Document Format (ADF)")
+    """Issue description in Atlassian Document Format (ADF)"""
+    priority: IssueCreateParamsFieldsPriority | None = Field(default=None, description="Issue priority")
+    """Issue priority"""
+    assignee: IssueCreateParamsFieldsAssignee | None = Field(default=None, description="The user to assign the issue to")
+    """The user to assign the issue to"""
+    labels: list[str] | None = Field(default=None, description="Labels to add to the issue")
+    """Labels to add to the issue"""
+    parent: IssueCreateParamsFieldsParent | None = Field(default=None, description="Parent issue for subtasks")
+    """Parent issue for subtasks"""
+
+class IssueCreateParams(BaseModel):
+    """Parameters for creating a new issue"""
+    model_config = ConfigDict(extra="allow", populate_by_name=True)
+
+    fields: IssueCreateParamsFields
+    update: dict[str, Any] | None = Field(default=None)
+
+class IssueCreateResponse(BaseModel):
+    """Response from creating an issue"""
+    model_config = ConfigDict(extra="allow", populate_by_name=True)
+
+    id: str | None = Field(default=None)
+    key: str | None = Field(default=None)
+    self: str | None = Field(default=None)
+
+class IssueUpdateParamsTransition(BaseModel):
+    """Transition the issue to a new status"""
+    model_config = ConfigDict(extra="allow", populate_by_name=True)
+
+    id: str | None = Field(default=None, description="The ID of the transition to perform")
+    """The ID of the transition to perform"""
+
+class IssueUpdateParamsFieldsDescriptionContentItemContentItem(BaseModel):
+    """Nested schema for IssueUpdateParamsFieldsDescriptionContentItem.content_item"""
+    model_config = ConfigDict(extra="allow", populate_by_name=True)
+
+    type_: str | None = Field(default=None, alias="type", description="Content type (e.g., 'text')")
+    """Content type (e.g., 'text')"""
+    text: str | None = Field(default=None, description="Text content")
+    """Text content"""
+
+class IssueUpdateParamsFieldsDescriptionContentItem(BaseModel):
+    """Nested schema for IssueUpdateParamsFieldsDescription.content_item"""
+    model_config = ConfigDict(extra="allow", populate_by_name=True)
+
+    type_: str | None = Field(default=None, alias="type", description="Block type (e.g., 'paragraph')")
+    """Block type (e.g., 'paragraph')"""
+    content: list[IssueUpdateParamsFieldsDescriptionContentItemContentItem] | None = Field(default=None)
+
+class IssueUpdateParamsFieldsDescription(BaseModel):
+    """Issue description in Atlassian Document Format (ADF)"""
+    model_config = ConfigDict(extra="allow", populate_by_name=True)
+
+    type_: str | None = Field(default=None, alias="type", description="Document type (always 'doc')")
+    """Document type (always 'doc')"""
+    version: int | None = Field(default=None, description="ADF version")
+    """ADF version"""
+    content: list[IssueUpdateParamsFieldsDescriptionContentItem] | None = Field(default=None, description="Array of content blocks")
+    """Array of content blocks"""
+
+class IssueUpdateParamsFieldsAssignee(BaseModel):
+    """The user to assign the issue to"""
+    model_config = ConfigDict(extra="allow", populate_by_name=True)
+
+    account_id: str | None = Field(default=None, alias="accountId", description="The account ID of the user (use null to unassign)")
+    """The account ID of the user (use null to unassign)"""
+
+class IssueUpdateParamsFieldsPriority(BaseModel):
+    """Issue priority"""
+    model_config = ConfigDict(extra="allow", populate_by_name=True)
+
+    id: str | None = Field(default=None, description="Priority ID")
+    """Priority ID"""
+    name: str | None = Field(default=None, description="Priority name (e.g., 'Highest', 'High', 'Medium', 'Low', 'Lowest')")
+    """Priority name (e.g., 'Highest', 'High', 'Medium', 'Low', 'Lowest')"""
+
+class IssueUpdateParamsFields(BaseModel):
+    """The issue fields to update"""
+    model_config = ConfigDict(extra="allow", populate_by_name=True)
+
+    summary: str | None = Field(default=None, description="A brief summary of the issue (title)")
+    """A brief summary of the issue (title)"""
+    description: IssueUpdateParamsFieldsDescription | None = Field(default=None, description="Issue description in Atlassian Document Format (ADF)")
+    """Issue description in Atlassian Document Format (ADF)"""
+    priority: IssueUpdateParamsFieldsPriority | None = Field(default=None, description="Issue priority")
+    """Issue priority"""
+    assignee: IssueUpdateParamsFieldsAssignee | None = Field(default=None, description="The user to assign the issue to")
+    """The user to assign the issue to"""
+    labels: list[str] | None = Field(default=None, description="Labels for the issue")
+    """Labels for the issue"""
+
+class IssueUpdateParams(BaseModel):
+    """Parameters for updating an issue. Only fields included are updated."""
+    model_config = ConfigDict(extra="allow", populate_by_name=True)
+
+    fields: IssueUpdateParamsFields | None = Field(default=None)
+    update: dict[str, Any] | None = Field(default=None)
+    transition: IssueUpdateParamsTransition | None = Field(default=None)
+
+class CommentCreateParamsVisibility(BaseModel):
+    """Restrict comment visibility to a group or role"""
+    model_config = ConfigDict(extra="allow", populate_by_name=True)
+
+    type_: str | None = Field(default=None, alias="type", description="The type of visibility restriction")
+    """The type of visibility restriction"""
+    value: str | None = Field(default=None, description="The name of the group or role")
+    """The name of the group or role"""
+    identifier: str | None = Field(default=None, description="The ID of the group or role")
+    """The ID of the group or role"""
+
+class CommentCreateParamsBodyContentItemContentItem(BaseModel):
+    """Nested schema for CommentCreateParamsBodyContentItem.content_item"""
+    model_config = ConfigDict(extra="allow", populate_by_name=True)
+
+    type_: str | None = Field(default=None, alias="type", description="Content type (e.g., 'text')")
+    """Content type (e.g., 'text')"""
+    text: str | None = Field(default=None, description="Text content")
+    """Text content"""
+
+class CommentCreateParamsBodyContentItem(BaseModel):
+    """Nested schema for CommentCreateParamsBody.content_item"""
+    model_config = ConfigDict(extra="allow", populate_by_name=True)
+
+    type_: str | None = Field(default=None, alias="type", description="Block type (e.g., 'paragraph')")
+    """Block type (e.g., 'paragraph')"""
+    content: list[CommentCreateParamsBodyContentItemContentItem] | None = Field(default=None)
+
+class CommentCreateParamsBody(BaseModel):
+    """Comment content in Atlassian Document Format (ADF)"""
+    model_config = ConfigDict(extra="allow", populate_by_name=True)
+
+    type_: str = Field(alias="type", description="Document type (always 'doc')")
+    """Document type (always 'doc')"""
+    version: int = Field(description="ADF version")
+    """ADF version"""
+    content: list[CommentCreateParamsBodyContentItem] = Field(description="Array of content blocks")
+    """Array of content blocks"""
+
+class CommentCreateParams(BaseModel):
+    """Parameters for creating a comment on an issue"""
+    model_config = ConfigDict(extra="allow", populate_by_name=True)
+
+    body: CommentCreateParamsBody
+    visibility: CommentCreateParamsVisibility | None = Field(default=None)
+    properties: list[dict[str, Any]] | None = Field(default=None)
+
+class CommentUpdateParamsVisibility(BaseModel):
+    """Restrict comment visibility to a group or role"""
+    model_config = ConfigDict(extra="allow", populate_by_name=True)
+
+    type_: str | None = Field(default=None, alias="type", description="The type of visibility restriction")
+    """The type of visibility restriction"""
+    value: str | None = Field(default=None, description="The name of the group or role")
+    """The name of the group or role"""
+    identifier: str | None = Field(default=None, description="The ID of the group or role")
+    """The ID of the group or role"""
+
+class CommentUpdateParamsBodyContentItemContentItem(BaseModel):
+    """Nested schema for CommentUpdateParamsBodyContentItem.content_item"""
+    model_config = ConfigDict(extra="allow", populate_by_name=True)
+
+    type_: str | None = Field(default=None, alias="type", description="Content type (e.g., 'text')")
+    """Content type (e.g., 'text')"""
+    text: str | None = Field(default=None, description="Text content")
+    """Text content"""
+
+class CommentUpdateParamsBodyContentItem(BaseModel):
+    """Nested schema for CommentUpdateParamsBody.content_item"""
+    model_config = ConfigDict(extra="allow", populate_by_name=True)
+
+    type_: str | None = Field(default=None, alias="type", description="Block type (e.g., 'paragraph')")
+    """Block type (e.g., 'paragraph')"""
+    content: list[CommentUpdateParamsBodyContentItemContentItem] | None = Field(default=None)
+
+class CommentUpdateParamsBody(BaseModel):
+    """Updated comment content in Atlassian Document Format (ADF)"""
+    model_config = ConfigDict(extra="allow", populate_by_name=True)
+
+    type_: str = Field(alias="type", description="Document type (always 'doc')")
+    """Document type (always 'doc')"""
+    version: int = Field(description="ADF version")
+    """ADF version"""
+    content: list[CommentUpdateParamsBodyContentItem] = Field(description="Array of content blocks")
+    """Array of content blocks"""
+
+class CommentUpdateParams(BaseModel):
+    """Parameters for updating a comment. Only fields included are updated."""
+    model_config = ConfigDict(extra="allow", populate_by_name=True)
+
+    body: CommentUpdateParamsBody
+    visibility: CommentUpdateParamsVisibility | None = Field(default=None)
+
+class IssueTransitionToStatuscategory(BaseModel):
+    """Nested schema for IssueTransitionTo.statusCategory"""
+    model_config = ConfigDict(extra="allow", populate_by_name=True)
+
+    self: str | None = Field(default=None)
+    id: int | None = Field(default=None)
+    key: str | None = Field(default=None)
+    color_name: str | None = Field(default=None, alias="colorName")
+    name: str | None = Field(default=None)
+
+class IssueTransitionTo(BaseModel):
+    """The target status after performing this transition"""
+    model_config = ConfigDict(extra="allow", populate_by_name=True)
+
+    self: str | None = Field(default=None)
+    description: str | None = Field(default=None)
+    icon_url: str | None = Field(default=None, alias="iconUrl")
+    name: str | None = Field(default=None, description="The name of the target status")
+    """The name of the target status"""
+    id: str | None = Field(default=None)
+    status_category: IssueTransitionToStatuscategory | None = Field(default=None, alias="statusCategory")
+
+class IssueTransition(BaseModel):
+    """A workflow transition that can be performed on an issue"""
+    model_config = ConfigDict(extra="allow", populate_by_name=True)
+
+    id: str | None = Field(default=None)
+    name: str | None = Field(default=None)
+    to: IssueTransitionTo | None = Field(default=None)
+    has_screen: bool | None = Field(default=None, alias="hasScreen")
+    is_global: bool | None = Field(default=None, alias="isGlobal")
+    is_initial: bool | None = Field(default=None, alias="isInitial")
+    is_conditional: bool | None = Field(default=None, alias="isConditional")
+    is_looped: bool | None = Field(default=None, alias="isLooped")
+
+class IssueTransitionsList(BaseModel):
+    """List of available transitions for an issue"""
+    model_config = ConfigDict(extra="allow", populate_by_name=True)
+
+    expand: str | None = Field(default=None)
+    transitions: list[IssueTransition] | None = Field(default=None)
+
+class IssueTransitionParamsTransition(BaseModel):
+    """The transition to perform"""
+    model_config = ConfigDict(extra="allow", populate_by_name=True)
+
+    id: str = Field(description="The ID of the transition to perform. Get available transition IDs from the GET transitions endpoint.")
+    """The ID of the transition to perform. Get available transition IDs from the GET transitions endpoint."""
+
+class IssueTransitionParams(BaseModel):
+    """Parameters for transitioning an issue to a new status"""
+    model_config = ConfigDict(extra="allow", populate_by_name=True)
+
+    transition: IssueTransitionParamsTransition
+    fields: dict[str, Any] | None = Field(default=None)
+    update: dict[str, Any] | None = Field(default=None)
+    history_metadata: dict[str, Any] | None = Field(default=None, alias="historyMetadata")
+
+class WorklogCreateParamsCommentContentItemContentItem(BaseModel):
+    """Nested schema for WorklogCreateParamsCommentContentItem.content_item"""
+    model_config = ConfigDict(extra="allow", populate_by_name=True)
+
+    type_: str | None = Field(default=None, alias="type", description="Content type (e.g., 'text')")
+    """Content type (e.g., 'text')"""
+    text: str | None = Field(default=None, description="Text content")
+    """Text content"""
+
+class WorklogCreateParamsCommentContentItem(BaseModel):
+    """Nested schema for WorklogCreateParamsComment.content_item"""
+    model_config = ConfigDict(extra="allow", populate_by_name=True)
+
+    type_: str | None = Field(default=None, alias="type", description="Block type (e.g., 'paragraph')")
+    """Block type (e.g., 'paragraph')"""
+    content: list[WorklogCreateParamsCommentContentItemContentItem] | None = Field(default=None)
+
+class WorklogCreateParamsComment(BaseModel):
+    """A comment about the work done in Atlassian Document Format (ADF)"""
+    model_config = ConfigDict(extra="allow", populate_by_name=True)
+
+    type_: str | None = Field(default=None, alias="type", description="Document type (always 'doc')")
+    """Document type (always 'doc')"""
+    version: int | None = Field(default=None, description="ADF version")
+    """ADF version"""
+    content: list[WorklogCreateParamsCommentContentItem] | None = Field(default=None, description="Array of content blocks")
+    """Array of content blocks"""
+
+class WorklogCreateParamsVisibility(BaseModel):
+    """Restrict worklog visibility to a group or role"""
+    model_config = ConfigDict(extra="allow", populate_by_name=True)
+
+    type_: str | None = Field(default=None, alias="type", description="The type of visibility restriction")
+    """The type of visibility restriction"""
+    value: str | None = Field(default=None, description="The name of the group or role")
+    """The name of the group or role"""
+    identifier: str | None = Field(default=None, description="The ID of the group or role")
+    """The ID of the group or role"""
+
+class WorklogCreateParams(BaseModel):
+    """Parameters for adding a worklog entry to an issue. Either timeSpentSeconds or timeSpent must be provided."""
+    model_config = ConfigDict(extra="allow", populate_by_name=True)
+
+    time_spent_seconds: int | None = Field(default=None, alias="timeSpentSeconds")
+    time_spent: str | None = Field(default=None, alias="timeSpent")
+    started: str | None = Field(default=None)
+    comment: WorklogCreateParamsComment | None = Field(default=None)
+    visibility: WorklogCreateParamsVisibility | None = Field(default=None)
+
+class IssueLinkCreateParamsType(BaseModel):
+    """The type of link (e.g., Blocks, Duplicate, Relates)"""
+    model_config = ConfigDict(extra="allow", populate_by_name=True)
+
+    name: str | None = Field(default=None, description="The name of the link type (e.g., Blocks, Duplicate, Relates, Cloners)")
+    """The name of the link type (e.g., Blocks, Duplicate, Relates, Cloners)"""
+    id: str | None = Field(default=None, description="The ID of the link type")
+    """The ID of the link type"""
+    inward: str | None = Field(default=None, description="The inward description (e.g., is blocked by)")
+    """The inward description (e.g., is blocked by)"""
+    outward: str | None = Field(default=None, description="The outward description (e.g., blocks)")
+    """The outward description (e.g., blocks)"""
+
+class IssueLinkCreateParamsInwardissue(BaseModel):
+    """The inward issue (the issue that is affected by the link)"""
+    model_config = ConfigDict(extra="allow", populate_by_name=True)
+
+    key: str = Field(description="The issue key (e.g., PROJ-123)")
+    """The issue key (e.g., PROJ-123)"""
+    id: str | None = Field(default=None, description="The issue ID")
+    """The issue ID"""
+
+class IssueLinkCreateParamsOutwardissue(BaseModel):
+    """The outward issue (the issue that causes the link)"""
+    model_config = ConfigDict(extra="allow", populate_by_name=True)
+
+    key: str = Field(description="The issue key (e.g., PROJ-456)")
+    """The issue key (e.g., PROJ-456)"""
+    id: str | None = Field(default=None, description="The issue ID")
+    """The issue ID"""
+
+class IssueLinkCreateParamsCommentBodyContentItemContentItem(BaseModel):
+    """Nested schema for IssueLinkCreateParamsCommentBodyContentItem.content_item"""
+    model_config = ConfigDict(extra="allow", populate_by_name=True)
+
+    type_: str | None = Field(default=None, alias="type")
+    text: str | None = Field(default=None)
+
+class IssueLinkCreateParamsCommentBodyContentItem(BaseModel):
+    """Nested schema for IssueLinkCreateParamsCommentBody.content_item"""
+    model_config = ConfigDict(extra="allow", populate_by_name=True)
+
+    type_: str | None = Field(default=None, alias="type")
+    content: list[IssueLinkCreateParamsCommentBodyContentItemContentItem] | None = Field(default=None)
+
+class IssueLinkCreateParamsCommentBody(BaseModel):
+    """Nested schema for IssueLinkCreateParamsComment.body"""
+    model_config = ConfigDict(extra="allow", populate_by_name=True)
+
+    type_: str | None = Field(default=None, alias="type")
+    version: int | None = Field(default=None)
+    content: list[IssueLinkCreateParamsCommentBodyContentItem] | None = Field(default=None)
+
+class IssueLinkCreateParamsComment(BaseModel):
+    """A comment about the link in Atlassian Document Format (ADF)"""
+    model_config = ConfigDict(extra="allow", populate_by_name=True)
+
+    body: IssueLinkCreateParamsCommentBody | None = Field(default=None)
+
+class IssueLinkCreateParams(BaseModel):
+    """Parameters for creating a link between two issues"""
+    model_config = ConfigDict(extra="allow", populate_by_name=True)
+
+    type_: IssueLinkCreateParamsType = Field(alias="type")
+    inward_issue: IssueLinkCreateParamsInwardissue = Field(alias="inwardIssue")
+    outward_issue: IssueLinkCreateParamsOutwardissue = Field(alias="outwardIssue")
+    comment: IssueLinkCreateParamsComment | None = Field(default=None)
+
+# ===== METADATA TYPE DEFINITIONS (PYDANTIC) =====
+# Meta types for operations that extract metadata (e.g., pagination info)
+
+class IssuesApiSearchResultMeta(BaseModel):
+    """Metadata for issues.Action.API_SEARCH operation"""
+    model_config = ConfigDict(extra="allow", populate_by_name=True)
+
+    next_page_token: str | None = Field(default=None, alias="nextPageToken")
+    is_last: bool | None = Field(default=None, alias="isLast")
+    total: int | None = Field(default=None)
+
+class ProjectsApiSearchResultMeta(BaseModel):
+    """Metadata for projects.Action.API_SEARCH operation"""
+    model_config = ConfigDict(extra="allow", populate_by_name=True)
+
+    next_page: str | None = Field(default=None, alias="nextPage")
+    total: int | None = Field(default=None)
+
+class IssueCommentsListResultMeta(BaseModel):
+    """Metadata for issue_comments.Action.LIST operation"""
+    model_config = ConfigDict(extra="allow", populate_by_name=True)
+
+    next_offset: int | None = Field(default=None)
+    max_results: int | None = Field(default=None)
+    total: int | None = Field(default=None)
+
+class IssueWorklogsListResultMeta(BaseModel):
+    """Metadata for issue_worklogs.Action.LIST operation"""
+    model_config = ConfigDict(extra="allow", populate_by_name=True)
+
+    next_offset: int | None = Field(default=None)
+    max_results: int | None = Field(default=None)
+    total: int | None = Field(default=None)
+
+# ===== CHECK RESULT MODEL =====
+
+class JiraCheckResult(BaseModel):
+    """Result of a health check operation.
+
+    Returned by the check() method to indicate connectivity and credential status.
+    """
+    model_config = ConfigDict(extra="forbid")
+
+    status: str
+    """Health check status: 'healthy' or 'unhealthy'."""
+    error: str | None = None
+    """Error message if status is 'unhealthy', None otherwise."""
+    checked_entity: str | None = None
+    """Entity name used for the health check."""
+    checked_action: str | None = None
+    """Action name used for the health check."""
+
+
+# ===== RESPONSE ENVELOPE MODELS =====
+
+# Type variables for generic envelope models
+T = TypeVar('T')
+S = TypeVar('S')
+
+
+class JiraExecuteResult(BaseModel, Generic[T]):
+    """Response envelope with data only.
+
+    Used for actions that return data without metadata.
+    """
+    model_config = ConfigDict(extra="forbid")
+
+    data: T
+    """Response data containing the result of the action."""
+
+
+class JiraExecuteResultWithMeta(JiraExecuteResult[T], Generic[T, S]):
+    """Response envelope with data and metadata.
+
+    Used for actions that return both data and metadata (e.g., pagination info).
+    """
+    meta: S | None = None
+    """Metadata about the response (e.g., pagination cursors, record counts)."""
+
+# ===== SEARCH DATA MODELS =====
+# Entity-specific Pydantic models for search result data
+
+# Type variable for search data generic
+D = TypeVar('D')
+
+class IssuesSearchData(BaseModel):
+    """Search result data for issues entity."""
+    model_config = ConfigDict(extra="allow")
+
+    changelog: dict[str, Any] | None = None
+    """Details of changelogs associated with the issue"""
+    created: str | None = None
+    """The timestamp when the issue was created"""
+    editmeta: dict[str, Any] | None = None
+    """The metadata for the fields on the issue that can be amended"""
+    expand: str = None
+    """Expand options that include additional issue details in the response"""
+    fields: dict[str, Any] = None
+    """Details of various fields associated with the issue"""
+    fields_to_include: dict[str, Any] = None
+    """Specify the fields to include in the fetched issues data"""
+    id: str = None
+    """The unique ID of the issue"""
+    key: str = None
+    """The unique key of the issue"""
+    names: dict[str, Any] = None
+    """The ID and name of each field present on the issue"""
+    operations: dict[str, Any] | None = None
+    """The operations that can be performed on the issue"""
+    project_id: str = None
+    """The ID of the project containing the issue"""
+    project_key: str = None
+    """The key of the project containing the issue"""
+    properties: dict[str, Any] = None
+    """Details of the issue properties identified in the request"""
+    rendered_fields: dict[str, Any] = None
+    """The rendered value of each field present on the issue"""
+    schema_: dict[str, Any] = None
+    """The schema describing each field present on the issue"""
+    self: str = None
+    """The URL of the issue details"""
+    transitions: list[Any] = None
+    """The transitions that can be performed on the issue"""
+    updated: str | None = None
+    """The timestamp when the issue was last updated"""
+    versioned_representations: dict[str, Any] = None
+    """The versions of each field on the issue"""
+
+
+class ProjectsSearchData(BaseModel):
+    """Search result data for projects entity."""
+    model_config = ConfigDict(extra="allow")
+
+    archived: bool = None
+    """Whether the project is archived"""
+    archived_by: dict[str, Any] | None = None
+    """The user who archived the project"""
+    archived_date: str | None = None
+    """The date when the project was archived"""
+    assignee_type: str | None = None
+    """The default assignee when creating issues for this project"""
+    avatar_urls: dict[str, Any] = None
+    """The URLs of the project's avatars"""
+    components: list[Any] = None
+    """List of the components contained in the project"""
+    deleted: bool = None
+    """Whether the project is marked as deleted"""
+    deleted_by: dict[str, Any] | None = None
+    """The user who marked the project as deleted"""
+    deleted_date: str | None = None
+    """The date when the project was marked as deleted"""
+    description: str | None = None
+    """A brief description of the project"""
+    email: str | None = None
+    """An email address associated with the project"""
+    entity_id: str | None = None
+    """The unique identifier of the project entity"""
+    expand: str | None = None
+    """Expand options that include additional project details in the response"""
+    favourite: bool = None
+    """Whether the project is selected as a favorite"""
+    id: str = None
+    """The ID of the project"""
+    insight: dict[str, Any] | None = None
+    """Insights about the project"""
+    is_private: bool = None
+    """Whether the project is private"""
+    issue_type_hierarchy: dict[str, Any] | None = None
+    """The issue type hierarchy for the project"""
+    issue_types: list[Any] = None
+    """List of the issue types available in the project"""
+    key: str = None
+    """The key of the project"""
+    lead: dict[str, Any] | None = None
+    """The username of the project lead"""
+    name: str = None
+    """The name of the project"""
+    permissions: dict[str, Any] | None = None
+    """User permissions on the project"""
+    project_category: dict[str, Any] | None = None
+    """The category the project belongs to"""
+    project_type_key: str | None = None
+    """The project type of the project"""
+    properties: dict[str, Any] = None
+    """Map of project properties"""
+    retention_till_date: str | None = None
+    """The date when the project is deleted permanently"""
+    roles: dict[str, Any] = None
+    """The name and self URL for each role defined in the project"""
+    self: str = None
+    """The URL of the project details"""
+    simplified: bool = None
+    """Whether the project is simplified"""
+    style: str | None = None
+    """The type of the project"""
+    url: str | None = None
+    """A link to information about this project"""
+    uuid: str | None = None
+    """Unique ID for next-gen projects"""
+    versions: list[Any] = None
+    """The versions defined in the project"""
+
+
+class UsersSearchData(BaseModel):
+    """Search result data for users entity."""
+    model_config = ConfigDict(extra="allow")
+
+    account_id: str = None
+    """The account ID of the user, uniquely identifying the user across all Atlassian products"""
+    account_type: str | None = None
+    """The user account type (atlassian, app, or customer)"""
+    active: bool = None
+    """Indicates whether the user is active"""
+    application_roles: dict[str, Any] | None = None
+    """The application roles assigned to the user"""
+    avatar_urls: dict[str, Any] = None
+    """The avatars of the user"""
+    display_name: str | None = None
+    """The display name of the user"""
+    email_address: str | None = None
+    """The email address of the user"""
+    expand: str | None = None
+    """Options to include additional user details in the response"""
+    groups: dict[str, Any] | None = None
+    """The groups to which the user belongs"""
+    key: str | None = None
+    """Deprecated property"""
+    locale: str | None = None
+    """The locale of the user"""
+    name: str | None = None
+    """Deprecated property"""
+    self: str = None
+    """The URL of the user"""
+    time_zone: str | None = None
+    """The time zone specified in the user's profile"""
+
+
+class IssueCommentsSearchData(BaseModel):
+    """Search result data for issue_comments entity."""
+    model_config = ConfigDict(extra="allow")
+
+    author: dict[str, Any] | None = None
+    """The ID of the user who created the comment"""
+    body: dict[str, Any] = None
+    """The comment text in Atlassian Document Format"""
+    created: str = None
+    """The date and time at which the comment was created"""
+    id: str = None
+    """The ID of the comment"""
+    issue_id: str | None = None
+    """Id of the related issue"""
+    jsd_public: bool = None
+    """Whether the comment is visible in Jira Service Desk"""
+    properties: list[Any] = None
+    """A list of comment properties"""
+    rendered_body: str | None = None
+    """The rendered version of the comment"""
+    self: str = None
+    """The URL of the comment"""
+    update_author: dict[str, Any] | None = None
+    """The ID of the user who updated the comment last"""
+    updated: str = None
+    """The date and time at which the comment was updated last"""
+    visibility: dict[str, Any] | None = None
+    """The group or role to which this item is visible"""
+
+
+class IssueFieldsSearchData(BaseModel):
+    """Search result data for issue_fields entity."""
+    model_config = ConfigDict(extra="allow")
+
+    clause_names: list[Any] = None
+    """The names that can be used to reference the field in an advanced search"""
+    custom: bool = None
+    """Whether the field is a custom field"""
+    id: str = None
+    """The ID of the field"""
+    key: str | None = None
+    """The key of the field"""
+    name: str = None
+    """The name of the field"""
+    navigable: bool = None
+    """Whether the field can be used as a column on the issue navigator"""
+    orderable: bool = None
+    """Whether the content of the field can be used to order lists"""
+    schema_: dict[str, Any] | None = None
+    """The data schema for the field"""
+    scope: dict[str, Any] | None = None
+    """The scope of the field"""
+    searchable: bool = None
+    """Whether the content of the field can be searched"""
+    untranslated_name: str | None = None
+    """The untranslated name of the field"""
+
+
+class IssueWorklogsSearchData(BaseModel):
+    """Search result data for issue_worklogs entity."""
+    model_config = ConfigDict(extra="allow")
+
+    author: dict[str, Any] = None
+    """Details of the user who created the worklog"""
+    comment: dict[str, Any] | None = None
+    """A comment about the worklog in Atlassian Document Format"""
+    created: str = None
+    """The datetime on which the worklog was created"""
+    id: str = None
+    """The ID of the worklog record"""
+    issue_id: str = None
+    """The ID of the issue this worklog is for"""
+    properties: list[Any] = None
+    """Details of properties for the worklog"""
+    self: str = None
+    """The URL of the worklog item"""
+    started: str = None
+    """The datetime on which the worklog effort was started"""
+    time_spent: str | None = None
+    """The time spent working on the issue as days, hours, or minutes"""
+    time_spent_seconds: int = None
+    """The time in seconds spent working on the issue"""
+    update_author: dict[str, Any] | None = None
+    """Details of the user who last updated the worklog"""
+    updated: str = None
+    """The datetime on which the worklog was last updated"""
+    visibility: dict[str, Any] | None = None
+    """Details about any restrictions in the visibility of the worklog"""
+
+
+# ===== GENERIC SEARCH RESULT TYPES =====
+
+class AirbyteSearchMeta(BaseModel):
+    """Pagination metadata for search responses."""
+    model_config = ConfigDict(extra="allow")
+
+    has_more: bool = False
+    """Whether more results are available."""
+    cursor: str | None = None
+    """Cursor for fetching the next page of results."""
+    took_ms: int | None = None
+    """Time taken to execute the search in milliseconds."""
+
+
+class AirbyteSearchResult(BaseModel, Generic[D]):
+    """Result from Airbyte cache search operations with typed records."""
+    model_config = ConfigDict(extra="allow")
+
+    data: list[D] = Field(default_factory=list)
+    """List of matching records."""
+    meta: AirbyteSearchMeta = Field(default_factory=AirbyteSearchMeta)
+    """Pagination metadata."""
+
+
+# ===== ENTITY-SPECIFIC SEARCH RESULT TYPE ALIASES =====
+
+IssuesSearchResult = AirbyteSearchResult[IssuesSearchData]
+"""Search result type for issues entity."""
+
+ProjectsSearchResult = AirbyteSearchResult[ProjectsSearchData]
+"""Search result type for projects entity."""
+
+UsersSearchResult = AirbyteSearchResult[UsersSearchData]
+"""Search result type for users entity."""
+
+IssueCommentsSearchResult = AirbyteSearchResult[IssueCommentsSearchData]
+"""Search result type for issue_comments entity."""
+
+IssueFieldsSearchResult = AirbyteSearchResult[IssueFieldsSearchData]
+"""Search result type for issue_fields entity."""
+
+IssueWorklogsSearchResult = AirbyteSearchResult[IssueWorklogsSearchData]
+"""Search result type for issue_worklogs entity."""
+
+
+
+# ===== OPERATION RESULT TYPE ALIASES =====
+
+# Concrete type aliases for each operation result.
+# These provide simpler, more readable type annotations than using the generic forms.
+
+IssuesApiSearchResult = JiraExecuteResultWithMeta[list[Issue], IssuesApiSearchResultMeta]
+"""Result type for issues.api_search operation with data and metadata."""
+
+ProjectsApiSearchResult = JiraExecuteResultWithMeta[list[Project], ProjectsApiSearchResultMeta]
+"""Result type for projects.api_search operation with data and metadata."""
+
+UsersListResult = JiraExecuteResult[list[User]]
+"""Result type for users.list operation."""
+
+UsersApiSearchResult = JiraExecuteResult[list[User]]
+"""Result type for users.api_search operation."""
+
+IssueFieldsListResult = JiraExecuteResult[list[IssueField]]
+"""Result type for issue_fields.list operation."""
+
+IssueFieldsApiSearchResult = JiraExecuteResult[IssueFieldSearchResults]
+"""Result type for issue_fields.api_search operation."""
+
+IssueCommentsListResult = JiraExecuteResultWithMeta[list[IssueComment], IssueCommentsListResultMeta]
+"""Result type for issue_comments.list operation with data and metadata."""
+
+IssueTransitionsListResult = JiraExecuteResult[list[IssueTransition]]
+"""Result type for issue_transitions.list operation."""
+
+IssueWorklogsListResult = JiraExecuteResultWithMeta[list[Worklog], IssueWorklogsListResultMeta]
+"""Result type for issue_worklogs.list operation with data and metadata."""
+

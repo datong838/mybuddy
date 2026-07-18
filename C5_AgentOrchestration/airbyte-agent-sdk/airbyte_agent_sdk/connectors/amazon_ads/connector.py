@@ -1,0 +1,1356 @@
+"""
+Amazon-Ads connector.
+"""
+
+from __future__ import annotations
+
+import logging
+from typing import Any, Callable, Mapping, TypeVar, overload
+try:
+    from typing import Literal
+except ImportError:
+    from typing_extensions import Literal
+
+from pydantic import BaseModel
+
+from .connector_model import AmazonAdsConnectorModel
+from airbyte_agent_sdk.introspection import describe_entities, generate_tool_description
+from airbyte_agent_sdk.translation import DEFAULT_MAX_OUTPUT_CHARS, FrameworkName, translate_exceptions
+from airbyte_agent_sdk.types import AirbyteAuthConfig
+from .types import (
+    PortfoliosGetParams,
+    PortfoliosListParams,
+    ProfilesGetParams,
+    ProfilesListParams,
+    SponsoredBrandsAdGroupsListParams,
+    SponsoredBrandsAdGroupsListParamsStatefilter,
+    SponsoredBrandsCampaignsListParams,
+    SponsoredBrandsCampaignsListParamsStatefilter,
+    SponsoredProductAdGroupsListParams,
+    SponsoredProductAdGroupsListParamsStatefilter,
+    SponsoredProductCampaignsGetParams,
+    SponsoredProductCampaignsListParams,
+    SponsoredProductCampaignsListParamsStatefilter,
+    SponsoredProductKeywordsListParams,
+    SponsoredProductKeywordsListParamsStatefilter,
+    SponsoredProductNegativeKeywordsListParams,
+    SponsoredProductNegativeKeywordsListParamsStatefilter,
+    SponsoredProductNegativeTargetsListParams,
+    SponsoredProductNegativeTargetsListParamsStatefilter,
+    SponsoredProductProductAdsListParams,
+    SponsoredProductProductAdsListParamsStatefilter,
+    SponsoredProductTargetsListParams,
+    SponsoredProductTargetsListParamsStatefilter,
+    AirbyteSearchParams,
+    ProfilesSearchFilter,
+    ProfilesSearchQuery,
+)
+from .models import AmazonAdsAuthConfig
+
+# Import response models and envelope models at runtime
+from .models import (
+    AmazonAdsCheckResult,
+    AmazonAdsExecuteResult,
+    AmazonAdsExecuteResultWithMeta,
+    ProfilesListResult,
+    PortfoliosListResult,
+    SponsoredProductCampaignsListResult,
+    SponsoredProductAdGroupsListResult,
+    SponsoredProductKeywordsListResult,
+    SponsoredProductProductAdsListResult,
+    SponsoredProductTargetsListResult,
+    SponsoredProductNegativeKeywordsListResult,
+    SponsoredProductNegativeTargetsListResult,
+    SponsoredBrandsCampaignsListResult,
+    SponsoredBrandsAdGroupsListResult,
+    Portfolio,
+    Profile,
+    SponsoredProductCampaign,
+    AirbyteSearchMeta,
+    AirbyteSearchResult,
+    ProfilesSearchData,
+    ProfilesSearchResult,
+)
+
+# TypeVar for decorator type preservation
+_F = TypeVar("_F", bound=Callable[..., Any])
+
+
+
+
+class AmazonAdsConnector:
+    """
+    Type-safe Amazon-Ads API connector.
+
+    Auto-generated from OpenAPI specification with full type safety.
+    """
+
+    connector_name = "amazon-ads"
+    connector_version = "1.0.10"
+    sdk_version = "0.1.287"
+
+    # Map of (entity, action) -> needs_envelope for envelope wrapping decision
+    _ENVELOPE_MAP = {
+        ("profiles", "list"): True,
+        ("profiles", "get"): None,
+        ("portfolios", "list"): True,
+        ("portfolios", "get"): None,
+        ("sponsored_product_campaigns", "list"): True,
+        ("sponsored_product_campaigns", "get"): None,
+        ("sponsored_product_ad_groups", "list"): True,
+        ("sponsored_product_keywords", "list"): True,
+        ("sponsored_product_product_ads", "list"): True,
+        ("sponsored_product_targets", "list"): True,
+        ("sponsored_product_negative_keywords", "list"): True,
+        ("sponsored_product_negative_targets", "list"): True,
+        ("sponsored_brands_campaigns", "list"): True,
+        ("sponsored_brands_ad_groups", "list"): True,
+    }
+
+    # Map of (entity, action) -> {python_param_name: api_param_name}
+    # Used to convert snake_case TypedDict keys to API parameter names in execute()
+    _PARAM_MAP = {
+        ('profiles', 'list'): {'profile_type_filter': 'profileTypeFilter'},
+        ('profiles', 'get'): {'profile_id': 'profileId'},
+        ('portfolios', 'list'): {'include_extended_data_fields': 'includeExtendedDataFields'},
+        ('portfolios', 'get'): {'portfolio_id': 'portfolioId'},
+        ('sponsored_product_campaigns', 'list'): {'state_filter': 'stateFilter', 'max_results': 'maxResults', 'next_token': 'nextToken'},
+        ('sponsored_product_campaigns', 'get'): {'campaign_id': 'campaignId'},
+        ('sponsored_product_ad_groups', 'list'): {'state_filter': 'stateFilter', 'max_results': 'maxResults', 'next_token': 'nextToken'},
+        ('sponsored_product_keywords', 'list'): {'state_filter': 'stateFilter', 'max_results': 'maxResults', 'next_token': 'nextToken'},
+        ('sponsored_product_product_ads', 'list'): {'state_filter': 'stateFilter', 'max_results': 'maxResults', 'next_token': 'nextToken'},
+        ('sponsored_product_targets', 'list'): {'state_filter': 'stateFilter', 'max_results': 'maxResults', 'next_token': 'nextToken'},
+        ('sponsored_product_negative_keywords', 'list'): {'state_filter': 'stateFilter', 'max_results': 'maxResults', 'next_token': 'nextToken'},
+        ('sponsored_product_negative_targets', 'list'): {'state_filter': 'stateFilter', 'max_results': 'maxResults', 'next_token': 'nextToken'},
+        ('sponsored_brands_campaigns', 'list'): {'state_filter': 'stateFilter', 'max_results': 'maxResults', 'next_token': 'nextToken'},
+        ('sponsored_brands_ad_groups', 'list'): {'state_filter': 'stateFilter', 'max_results': 'maxResults', 'next_token': 'nextToken'},
+    }
+
+    # Accepted auth_config types for isinstance validation
+    _ACCEPTED_AUTH_TYPES = (AmazonAdsAuthConfig, AirbyteAuthConfig)
+
+    def __init__(
+        self,
+        auth_config: AmazonAdsAuthConfig | AirbyteAuthConfig | BaseModel | None = None,
+        on_token_refresh: Any | None = None,
+        region: str | None = None    ):
+        """
+        Initialize a new amazon-ads connector instance.
+
+        Supports both local and hosted execution modes:
+        - Local mode: Provide connector-specific auth config (e.g., AmazonAdsAuthConfig)
+        - Hosted mode: Provide `AirbyteAuthConfig` with client credentials and either `connector_id` or `workspace_name`
+
+        Args:
+            auth_config: Either connector-specific auth config for local mode, or AirbyteAuthConfig for hosted mode
+            on_token_refresh: Optional callback for OAuth2 token refresh persistence.
+                Called with new_tokens dict when tokens are refreshed. Can be sync or async.
+                Example: lambda tokens: save_to_database(tokens)            region: The Amazon Ads API endpoint URL based on region:
+- NA (North America): https://advertising-api.amazon.com
+- EU (Europe): https://advertising-api-eu.amazon.com
+- FE (Far East): https://advertising-api-fe.amazon.com
+
+        Examples:
+            # Local mode (direct API calls)
+            connector = AmazonAdsConnector(auth_config=AmazonAdsAuthConfig(client_id="...", client_secret="...", refresh_token="..."))
+            # Hosted mode with explicit connector_id (no lookup needed)
+            connector = AmazonAdsConnector(
+                auth_config=AirbyteAuthConfig(
+                    airbyte_client_id="client_abc123",
+                    airbyte_client_secret="secret_xyz789",
+                    connector_id="existing-source-uuid"
+                )
+            )
+
+            # Hosted mode with lookup by workspace_name
+            connector = AmazonAdsConnector(
+                auth_config=AirbyteAuthConfig(
+                    workspace_name="user-123",
+                    organization_id="00000000-0000-0000-0000-000000000123",
+                    airbyte_client_id="client_abc123",
+                    airbyte_client_secret="secret_xyz789"
+                )
+            )
+        """
+        # Accept AirbyteAuthConfig from any vendored SDK version
+        if (
+            auth_config is not None
+            and not isinstance(auth_config, AirbyteAuthConfig)
+            and type(auth_config).__name__ == AirbyteAuthConfig.__name__
+        ):
+            auth_config = AirbyteAuthConfig(**auth_config.model_dump())
+
+        # Validate auth_config type
+        if auth_config is not None and not isinstance(auth_config, self._ACCEPTED_AUTH_TYPES):
+            raise TypeError(
+                f"Unsupported auth_config type: {type(auth_config).__name__}. "
+                f"Expected one of: {', '.join(t.__name__ for t in self._ACCEPTED_AUTH_TYPES)}"
+            )
+
+        # Hosted mode: auth_config is AirbyteAuthConfig
+        is_hosted = isinstance(auth_config, AirbyteAuthConfig)
+
+        if is_hosted:
+            from airbyte_agent_sdk.executor import HostedExecutor
+            self._executor = HostedExecutor(
+                airbyte_client_id=auth_config.airbyte_client_id,
+                airbyte_client_secret=auth_config.airbyte_client_secret,
+                connector_id=auth_config.connector_id,
+                workspace_name=auth_config.workspace_name or "default",
+                organization_id=auth_config.organization_id,
+                connector_definition_id=str(AmazonAdsConnectorModel.id),
+                model=AmazonAdsConnectorModel,
+            )
+        else:
+            # Local mode: auth_config required (must be connector-specific auth type)
+            if not auth_config:
+                raise ValueError(
+                    "Either provide AirbyteAuthConfig with client credentials for hosted mode, "
+                    "or AmazonAdsAuthConfig for local mode"
+                )
+
+            from airbyte_agent_sdk.executor import LocalExecutor
+
+            # Build config_values dict from server variables
+            config_values: dict[str, str] = {}
+            if region:
+                config_values["region"] = region
+
+            self._executor = LocalExecutor(
+                model=AmazonAdsConnectorModel,
+                auth_config=auth_config.model_dump() if auth_config else None,
+                config_values=config_values,
+                on_token_refresh=on_token_refresh
+            )
+
+            # Update base_url with server variables if provided
+            base_url = self._executor.http_client.base_url
+            if region:
+                base_url = base_url.replace("{region}", region)
+            self._executor.http_client.base_url = base_url
+
+        # Initialize entity query objects
+        self.profiles = ProfilesQuery(self)
+        self.portfolios = PortfoliosQuery(self)
+        self.sponsored_product_campaigns = SponsoredProductCampaignsQuery(self)
+        self.sponsored_product_ad_groups = SponsoredProductAdGroupsQuery(self)
+        self.sponsored_product_keywords = SponsoredProductKeywordsQuery(self)
+        self.sponsored_product_product_ads = SponsoredProductProductAdsQuery(self)
+        self.sponsored_product_targets = SponsoredProductTargetsQuery(self)
+        self.sponsored_product_negative_keywords = SponsoredProductNegativeKeywordsQuery(self)
+        self.sponsored_product_negative_targets = SponsoredProductNegativeTargetsQuery(self)
+        self.sponsored_brands_campaigns = SponsoredBrandsCampaignsQuery(self)
+        self.sponsored_brands_ad_groups = SponsoredBrandsAdGroupsQuery(self)
+
+    # ===== TYPED EXECUTE METHOD (Recommended Interface) =====
+
+    @overload
+    async def execute(
+        self,
+        entity: Literal["profiles"],
+        action: Literal["list"],
+        params: "ProfilesListParams",
+        *,
+        select_fields: list[str] | None = ...,
+        exclude_fields: list[str] | None = ...,
+        skip_truncation: bool = ...
+    ) -> "ProfilesListResult": ...
+
+    @overload
+    async def execute(
+        self,
+        entity: Literal["profiles"],
+        action: Literal["get"],
+        params: "ProfilesGetParams",
+        *,
+        select_fields: list[str] | None = ...,
+        exclude_fields: list[str] | None = ...,
+        skip_truncation: bool = ...
+    ) -> "Profile": ...
+
+    @overload
+    async def execute(
+        self,
+        entity: Literal["portfolios"],
+        action: Literal["list"],
+        params: "PortfoliosListParams",
+        *,
+        select_fields: list[str] | None = ...,
+        exclude_fields: list[str] | None = ...,
+        skip_truncation: bool = ...
+    ) -> "PortfoliosListResult": ...
+
+    @overload
+    async def execute(
+        self,
+        entity: Literal["portfolios"],
+        action: Literal["get"],
+        params: "PortfoliosGetParams",
+        *,
+        select_fields: list[str] | None = ...,
+        exclude_fields: list[str] | None = ...,
+        skip_truncation: bool = ...
+    ) -> "Portfolio": ...
+
+    @overload
+    async def execute(
+        self,
+        entity: Literal["sponsored_product_campaigns"],
+        action: Literal["list"],
+        params: "SponsoredProductCampaignsListParams",
+        *,
+        select_fields: list[str] | None = ...,
+        exclude_fields: list[str] | None = ...,
+        skip_truncation: bool = ...
+    ) -> "SponsoredProductCampaignsListResult": ...
+
+    @overload
+    async def execute(
+        self,
+        entity: Literal["sponsored_product_campaigns"],
+        action: Literal["get"],
+        params: "SponsoredProductCampaignsGetParams",
+        *,
+        select_fields: list[str] | None = ...,
+        exclude_fields: list[str] | None = ...,
+        skip_truncation: bool = ...
+    ) -> "SponsoredProductCampaign": ...
+
+    @overload
+    async def execute(
+        self,
+        entity: Literal["sponsored_product_ad_groups"],
+        action: Literal["list"],
+        params: "SponsoredProductAdGroupsListParams",
+        *,
+        select_fields: list[str] | None = ...,
+        exclude_fields: list[str] | None = ...,
+        skip_truncation: bool = ...
+    ) -> "SponsoredProductAdGroupsListResult": ...
+
+    @overload
+    async def execute(
+        self,
+        entity: Literal["sponsored_product_keywords"],
+        action: Literal["list"],
+        params: "SponsoredProductKeywordsListParams",
+        *,
+        select_fields: list[str] | None = ...,
+        exclude_fields: list[str] | None = ...,
+        skip_truncation: bool = ...
+    ) -> "SponsoredProductKeywordsListResult": ...
+
+    @overload
+    async def execute(
+        self,
+        entity: Literal["sponsored_product_product_ads"],
+        action: Literal["list"],
+        params: "SponsoredProductProductAdsListParams",
+        *,
+        select_fields: list[str] | None = ...,
+        exclude_fields: list[str] | None = ...,
+        skip_truncation: bool = ...
+    ) -> "SponsoredProductProductAdsListResult": ...
+
+    @overload
+    async def execute(
+        self,
+        entity: Literal["sponsored_product_targets"],
+        action: Literal["list"],
+        params: "SponsoredProductTargetsListParams",
+        *,
+        select_fields: list[str] | None = ...,
+        exclude_fields: list[str] | None = ...,
+        skip_truncation: bool = ...
+    ) -> "SponsoredProductTargetsListResult": ...
+
+    @overload
+    async def execute(
+        self,
+        entity: Literal["sponsored_product_negative_keywords"],
+        action: Literal["list"],
+        params: "SponsoredProductNegativeKeywordsListParams",
+        *,
+        select_fields: list[str] | None = ...,
+        exclude_fields: list[str] | None = ...,
+        skip_truncation: bool = ...
+    ) -> "SponsoredProductNegativeKeywordsListResult": ...
+
+    @overload
+    async def execute(
+        self,
+        entity: Literal["sponsored_product_negative_targets"],
+        action: Literal["list"],
+        params: "SponsoredProductNegativeTargetsListParams",
+        *,
+        select_fields: list[str] | None = ...,
+        exclude_fields: list[str] | None = ...,
+        skip_truncation: bool = ...
+    ) -> "SponsoredProductNegativeTargetsListResult": ...
+
+    @overload
+    async def execute(
+        self,
+        entity: Literal["sponsored_brands_campaigns"],
+        action: Literal["list"],
+        params: "SponsoredBrandsCampaignsListParams",
+        *,
+        select_fields: list[str] | None = ...,
+        exclude_fields: list[str] | None = ...,
+        skip_truncation: bool = ...
+    ) -> "SponsoredBrandsCampaignsListResult": ...
+
+    @overload
+    async def execute(
+        self,
+        entity: Literal["sponsored_brands_ad_groups"],
+        action: Literal["list"],
+        params: "SponsoredBrandsAdGroupsListParams",
+        *,
+        select_fields: list[str] | None = ...,
+        exclude_fields: list[str] | None = ...,
+        skip_truncation: bool = ...
+    ) -> "SponsoredBrandsAdGroupsListResult": ...
+
+
+    @overload
+    async def execute(
+        self,
+        entity: str,
+        action: Literal["list", "get", "context_store_search"],
+        params: Mapping[str, Any],
+        *,
+        select_fields: list[str] | None = ...,
+        exclude_fields: list[str] | None = ...,
+        skip_truncation: bool = ...
+    ) -> AmazonAdsExecuteResult[Any] | AmazonAdsExecuteResultWithMeta[Any, Any] | Any: ...
+
+    async def execute(
+        self,
+        entity: str,
+        action: Literal["list", "get", "context_store_search"],
+        params: Mapping[str, Any] | None = None,
+        *,
+        select_fields: list[str] | None = None,
+        exclude_fields: list[str] | None = None,
+        skip_truncation: bool = True
+    ) -> Any:
+        """
+        Execute an entity operation with full type safety.
+
+        This is the recommended interface for blessed connectors as it:
+        - Uses the same signature as non-blessed connectors
+        - Provides full IDE autocomplete for entity/action/params
+        - Makes migration from generic to blessed connectors seamless
+
+        Args:
+            entity: Entity name (e.g., "customers")
+            action: Operation action (e.g., "create", "get", "list")
+            params: Operation parameters (typed based on entity+action)
+            select_fields: Optional allowlist of dot-notation fields to include
+            exclude_fields: Optional blocklist of dot-notation fields to remove
+            skip_truncation: Disable long-text truncation for collection actions
+
+        Returns:
+            Typed response based on the operation
+
+        Example:
+            customer = await connector.execute(
+                entity="customers",
+                action="get",
+                params={"id": "cus_123"}
+            )
+        """
+        from airbyte_agent_sdk.executor import ExecutionConfig
+
+        # Remap parameter names from snake_case (TypedDict keys) to API parameter names
+        resolved_params = dict(params) if params is not None else None
+        if resolved_params:
+            param_map = self._PARAM_MAP.get((entity, action), {})
+            if param_map:
+                resolved_params = {param_map.get(k, k): v for k, v in resolved_params.items()}
+
+        # Use ExecutionConfig for both local and hosted executors
+        config = ExecutionConfig(
+            entity=entity,
+            action=action,
+            params=resolved_params,
+            select_fields=select_fields,
+            exclude_fields=exclude_fields,
+            skip_truncation=skip_truncation
+        )
+
+        result = await self._executor.execute(config)
+
+        if not result.success:
+            raise RuntimeError(f"Execution failed: {result.error}")
+
+        # Check if this operation has extractors configured
+        has_extractors = self._ENVELOPE_MAP.get((entity, action), False)
+
+        if has_extractors:
+            # With extractors - return Pydantic envelope with data and meta
+            if result.meta is not None:
+                return AmazonAdsExecuteResultWithMeta[Any, Any](
+                    data=result.data,
+                    meta=result.meta
+                )
+            else:
+                return AmazonAdsExecuteResult[Any](data=result.data)
+        else:
+            # No extractors - return raw response data
+            return result.data
+
+    # ===== HEALTH CHECK METHOD =====
+
+    async def check(self) -> AmazonAdsCheckResult:
+        """
+        Perform a health check to verify connectivity and credentials.
+
+        Executes a lightweight list operation (limit=1) to validate that
+        the connector can communicate with the API and credentials are valid.
+
+        Returns:
+            AmazonAdsCheckResult with status ("healthy" or "unhealthy") and optional error message
+
+        Example:
+            result = await connector.check()
+            if result.status == "healthy":
+                print("Connection verified!")
+            else:
+                print(f"Check failed: {result.error}")
+        """
+        result = await self._executor.check()
+
+        if result.success and isinstance(result.data, dict):
+            return AmazonAdsCheckResult(
+                status=result.data.get("status", "unhealthy"),
+                error=result.data.get("error"),
+                checked_entity=result.data.get("checked_entity"),
+                checked_action=result.data.get("checked_action"),
+            )
+        else:
+            return AmazonAdsCheckResult(
+                status="unhealthy",
+                error=result.error or "Unknown error during health check",
+            )
+
+    # ===== INTROSPECTION METHODS =====
+
+    @classmethod
+    def tool_utils(
+        cls,
+        func: _F | None = None,
+        *,
+        update_docstring: bool = True,
+        max_output_chars: int | None = DEFAULT_MAX_OUTPUT_CHARS,
+        framework: FrameworkName | None = None,
+        internal_retries: int = 0,
+        should_internal_retry: Callable[[Exception, tuple[Any, ...], dict[str, Any]], bool] | None = None,
+        exhausted_runtime_failure_message: Callable[[Exception, tuple[Any, ...], dict[str, Any]], str | None] | None = None,
+    ) -> _F | Callable[[_F], _F]:
+        """
+        Add connector-specific documentation and runtime safeguards to one tool.
+
+        For new agents, prefer `build_connector_tools`. It returns progressive
+        `inspect_connector`, `read_skill_docs`, and `execute` tools so the agent
+        can load only the connector guidance it needs:
+
+        ```python
+        from airbyte_agent_sdk import build_connector_tools
+        from pydantic_ai import Agent
+
+        tools = build_connector_tools(connector, framework="pydantic_ai")
+        agent = Agent("openai:gpt-4o", tools=tools.as_list())
+        ```
+
+        ### Legacy: one generated-description tool
+
+        Existing integrations can keep using `tool_utils` for one broad
+        `execute` tool with the connector's full generated catalog in its
+        description:
+
+        ```python
+        from fastmcp import FastMCP
+
+        connector = AmazonAdsConnector()
+        mcp = FastMCP("Connector Agent")
+
+        @mcp.tool()
+        @AmazonAdsConnector.tool_utils
+        async def execute(entity: str, action: str, params: dict):
+            ...
+        ```
+
+        Configure documentation, output limits, framework translation, and
+        retries when needed:
+
+        ```python
+        @mcp.tool()
+        @AmazonAdsConnector.tool_utils(update_docstring=False, max_output_chars=None)
+        async def execute(entity: str, action: str, params: dict):
+            ...
+
+        @mcp.tool()
+        @AmazonAdsConnector.tool_utils(framework="pydantic_ai", internal_retries=2)
+        async def execute(entity: str, action: str, params: dict):
+            ...
+        ```
+
+        This decorator composes `translate_exceptions` for runtime wrapping,
+        output-size checks, framework signal translation, and optional internal
+        retries, then adds connector-specific docstring augmentation.
+
+        Args:
+            update_docstring: When True, append connector capabilities to `__doc__`.
+            max_output_chars: Max serialized output size before raising. Use `None` to disable.
+            framework: One of `"pydantic_ai" | "langchain" | "openai_agents" | "mcp"`.
+                Defaults to `None`, which auto-detects each framework's canonical
+                import in order. Explicit always wins.
+            internal_retries: How many transient runtime failures (429/5xx, network,
+                timeout) to retry silently before surfacing. Default 0. Forwarded to
+                `airbyte_agent_sdk.translation.translate_exceptions`.
+            should_internal_retry: Optional predicate `(error, args, kwargs) -> bool`
+                further restricting which retryable errors are safe for this specific
+                tool. Forwarded to `airbyte_agent_sdk.translation.translate_exceptions`.
+            exhausted_runtime_failure_message: Optional callback
+                `(error, args, kwargs) -> str | None`. Invoked after internal retries
+                are exhausted or were skipped because `should_internal_retry` returned
+                `False`. Forwarded to `airbyte_agent_sdk.translation.translate_exceptions`.
+        """
+
+        def decorate(inner: _F) -> _F:
+            if update_docstring:
+                description = generate_tool_description(
+                    AmazonAdsConnectorModel,
+                )
+                original_doc = inner.__doc__ or ""
+                if original_doc.strip():
+                    full_doc = f"{original_doc.strip()}\n{description}"
+                else:
+                    full_doc = description
+            else:
+                full_doc = ""
+
+            wrapped = translate_exceptions(
+                inner,
+                framework=framework,
+                max_output_chars=max_output_chars,
+                internal_retries=internal_retries,
+                should_internal_retry=should_internal_retry,
+                exhausted_runtime_failure_message=exhausted_runtime_failure_message,
+            )
+
+            if update_docstring:
+                wrapped.__doc__ = full_doc
+            return wrapped  # type: ignore[return-value]
+
+        if func is not None:
+            return decorate(func)
+        return decorate
+
+    def list_entities(self) -> list[dict[str, Any]]:
+        """
+        Get structured data about available entities, actions, and parameters.
+
+        Returns a list of entity descriptions with:
+        - entity_name: Name of the entity (e.g., "contacts", "deals")
+        - description: Entity description from the first endpoint
+        - available_actions: List of actions (e.g., ["list", "get", "create"])
+        - parameters: Dict mapping action -> list of parameter dicts
+
+        Example:
+            entities = connector.list_entities()
+            for entity in entities:
+                print(f"{entity['entity_name']}: {entity['available_actions']}")
+        """
+        return describe_entities(AmazonAdsConnectorModel)
+
+    def entity_schema(self, entity: str) -> dict[str, Any] | None:
+        """
+        Get the JSON schema for an entity.
+
+        Args:
+            entity: Entity name (e.g., "contacts", "companies")
+
+        Returns:
+            JSON schema dict describing the entity structure, or None if not found.
+
+        Example:
+            schema = connector.entity_schema("contacts")
+            if schema:
+                print(f"Contact properties: {list(schema.get('properties', {}).keys())}")
+        """
+        entity_def = next(
+            (e for e in AmazonAdsConnectorModel.entities if e.name == entity),
+            None
+        )
+        if entity_def is None:
+            logging.getLogger(__name__).warning(
+                f"Entity '{entity}' not found. Available entities: "
+                f"{[e.name for e in AmazonAdsConnectorModel.entities]}"
+            )
+        return entity_def.entity_schema if entity_def else None
+
+    @property
+    def connector_id(self) -> str | None:
+        """Get the connector/source ID (only available in hosted mode).
+
+        Returns:
+            The connector ID if in hosted mode, None if in local mode.
+        """
+        if hasattr(self, '_executor') and hasattr(self._executor, '_connector_id'):
+            return self._executor._connector_id
+        return None
+
+    # ===== RESOURCE MANAGEMENT =====
+
+    async def close(self):
+        """Close the connector and release resources."""
+        await self._executor.close()
+
+    async def __aenter__(self):
+        """Async context manager entry."""
+        return self
+
+    async def __aexit__(self, exc_type, exc_val, exc_tb):
+        """Async context manager exit."""
+        await self.close()
+
+
+
+class ProfilesQuery:
+    """
+    Query class for Profiles entity operations.
+    """
+
+    def __init__(self, connector: AmazonAdsConnector):
+        """Initialize query with connector reference."""
+        self._connector = connector
+
+    async def list(
+        self,
+        profile_type_filter: str | None = None,
+        **kwargs
+    ) -> ProfilesListResult:
+        """
+        Returns a list of advertising profiles associated with the authenticated user.
+Profiles represent an advertiser's account in a specific marketplace. Advertisers
+may have a single profile if they advertise in only one marketplace, or a separate
+profile for each marketplace if they advertise regionally or globally.
+
+
+        Args:
+            profile_type_filter: Filter profiles by type. Comma-separated list of profile types.
+Valid values: seller, vendor, agency
+
+            **kwargs: Additional parameters
+
+        Returns:
+            ProfilesListResult
+        """
+        params = {k: v for k, v in {
+            "profileTypeFilter": profile_type_filter,
+            **kwargs
+        }.items() if v is not None}
+
+        result = await self._connector.execute("profiles", "list", params)
+        # Cast generic envelope to concrete typed result
+        return ProfilesListResult(
+            data=result.data
+        )
+
+
+
+    async def get(
+        self,
+        profile_id: str,
+        **kwargs
+    ) -> Profile:
+        """
+        Retrieves a single advertising profile by its ID. The profile contains
+information about the advertiser's account in a specific marketplace.
+
+
+        Args:
+            profile_id: The unique identifier of the profile
+            **kwargs: Additional parameters
+
+        Returns:
+            Profile
+        """
+        params = {k: v for k, v in {
+            "profileId": profile_id,
+            **kwargs
+        }.items() if v is not None}
+
+        result = await self._connector.execute("profiles", "get", params)
+        return result
+
+
+
+    async def context_store_search(
+        self,
+        query: ProfilesSearchQuery,
+        limit: int | None = None,
+        cursor: str | None = None,
+        fields: list[list[str]] | None = None,
+    ) -> ProfilesSearchResult:
+        """
+        Search profiles records from Airbyte cache.
+
+        This operation searches cached data from Airbyte syncs.
+        Only available in hosted execution mode.
+
+        Available filter fields (ProfilesSearchFilter):
+        - account_info: 
+        - country_code: 
+        - currency_code: 
+        - daily_budget: 
+        - profile_id: 
+        - timezone: 
+
+        Args:
+            query: Filter and sort conditions. Supports operators like eq, neq, gt, gte, lt, lte,
+                   in, like, fuzzy, keyword, not, and, or. Example: {"filter": {"eq": {"status": "active"}}}
+            limit: Maximum results to return (default 1000)
+            cursor: Pagination cursor from previous response's meta.cursor
+            fields: Field paths to include in results. Each path is a list of keys for nested access.
+                    Example: [["id"], ["user", "name"]] returns id and user.name fields.
+
+        Returns:
+            ProfilesSearchResult with typed records, pagination metadata, and optional search metadata
+
+        Raises:
+            NotImplementedError: If called in local execution mode
+        """
+        params: dict[str, Any] = {"query": query}
+        if limit is not None:
+            params["limit"] = limit
+        if cursor is not None:
+            params["cursor"] = cursor
+        if fields is not None:
+            params["fields"] = fields
+
+        result = await self._connector.execute("profiles", "context_store_search", params)
+
+        # Parse response into typed result
+        meta_data = result.get("meta")
+        return ProfilesSearchResult(
+            data=[
+                ProfilesSearchData(**row)
+                for row in result.get("data", [])
+                if isinstance(row, dict)
+            ],
+            meta=AirbyteSearchMeta(
+                has_more=meta_data.get("has_more", False) if isinstance(meta_data, dict) else False,
+                cursor=meta_data.get("cursor") if isinstance(meta_data, dict) else None,
+                took_ms=meta_data.get("took_ms") if isinstance(meta_data, dict) else None,
+            ),
+        )
+
+class PortfoliosQuery:
+    """
+    Query class for Portfolios entity operations.
+    """
+
+    def __init__(self, connector: AmazonAdsConnector):
+        """Initialize query with connector reference."""
+        self._connector = connector
+
+    async def list(
+        self,
+        include_extended_data_fields: str | None = None,
+        **kwargs
+    ) -> PortfoliosListResult:
+        """
+        Returns a list of portfolios for the specified profile. Portfolios are used to
+group campaigns together for organizational and budget management purposes.
+
+
+        Args:
+            include_extended_data_fields: Whether to include extended data fields in the response
+            **kwargs: Additional parameters
+
+        Returns:
+            PortfoliosListResult
+        """
+        params = {k: v for k, v in {
+            "includeExtendedDataFields": include_extended_data_fields,
+            **kwargs
+        }.items() if v is not None}
+
+        result = await self._connector.execute("portfolios", "list", params)
+        # Cast generic envelope to concrete typed result
+        return PortfoliosListResult(
+            data=result.data,
+            meta=getattr(result, "meta", None)
+        )
+
+
+
+    async def get(
+        self,
+        portfolio_id: str,
+        **kwargs
+    ) -> Portfolio:
+        """
+        Retrieves a single portfolio by its ID using the v2 API.
+
+
+        Args:
+            portfolio_id: The unique identifier of the portfolio
+            **kwargs: Additional parameters
+
+        Returns:
+            Portfolio
+        """
+        params = {k: v for k, v in {
+            "portfolioId": portfolio_id,
+            **kwargs
+        }.items() if v is not None}
+
+        result = await self._connector.execute("portfolios", "get", params)
+        return result
+
+
+
+class SponsoredProductCampaignsQuery:
+    """
+    Query class for SponsoredProductCampaigns entity operations.
+    """
+
+    def __init__(self, connector: AmazonAdsConnector):
+        """Initialize query with connector reference."""
+        self._connector = connector
+
+    async def list(
+        self,
+        state_filter: SponsoredProductCampaignsListParamsStatefilter | None = None,
+        max_results: int | None = None,
+        next_token: str | None = None,
+        **kwargs
+    ) -> SponsoredProductCampaignsListResult:
+        """
+        Returns a list of sponsored product campaigns for the specified profile.
+Sponsored Products campaigns promote individual product listings on Amazon.
+
+
+        Args:
+            state_filter: Parameter stateFilter
+            max_results: Maximum number of results to return
+            next_token: Token for pagination
+            **kwargs: Additional parameters
+
+        Returns:
+            SponsoredProductCampaignsListResult
+        """
+        params = {k: v for k, v in {
+            "stateFilter": state_filter,
+            "maxResults": max_results,
+            "nextToken": next_token,
+            **kwargs
+        }.items() if v is not None}
+
+        result = await self._connector.execute("sponsored_product_campaigns", "list", params)
+        # Cast generic envelope to concrete typed result
+        return SponsoredProductCampaignsListResult(
+            data=result.data,
+            meta=getattr(result, "meta", None)
+        )
+
+
+
+    async def get(
+        self,
+        campaign_id: str,
+        **kwargs
+    ) -> SponsoredProductCampaign:
+        """
+        Retrieves a single sponsored product campaign by its ID using the v2 API.
+
+
+        Args:
+            campaign_id: The unique identifier of the campaign
+            **kwargs: Additional parameters
+
+        Returns:
+            SponsoredProductCampaign
+        """
+        params = {k: v for k, v in {
+            "campaignId": campaign_id,
+            **kwargs
+        }.items() if v is not None}
+
+        result = await self._connector.execute("sponsored_product_campaigns", "get", params)
+        return result
+
+
+
+class SponsoredProductAdGroupsQuery:
+    """
+    Query class for SponsoredProductAdGroups entity operations.
+    """
+
+    def __init__(self, connector: AmazonAdsConnector):
+        """Initialize query with connector reference."""
+        self._connector = connector
+
+    async def list(
+        self,
+        state_filter: SponsoredProductAdGroupsListParamsStatefilter | None = None,
+        max_results: int | None = None,
+        next_token: str | None = None,
+        **kwargs
+    ) -> SponsoredProductAdGroupsListResult:
+        """
+        Returns a list of sponsored product ad groups for the specified profile.
+Ad groups are used to organize ads and targeting within a campaign.
+
+
+        Args:
+            state_filter: Parameter stateFilter
+            max_results: Maximum number of results to return
+            next_token: Token for pagination
+            **kwargs: Additional parameters
+
+        Returns:
+            SponsoredProductAdGroupsListResult
+        """
+        params = {k: v for k, v in {
+            "stateFilter": state_filter,
+            "maxResults": max_results,
+            "nextToken": next_token,
+            **kwargs
+        }.items() if v is not None}
+
+        result = await self._connector.execute("sponsored_product_ad_groups", "list", params)
+        # Cast generic envelope to concrete typed result
+        return SponsoredProductAdGroupsListResult(
+            data=result.data,
+            meta=getattr(result, "meta", None)
+        )
+
+
+
+class SponsoredProductKeywordsQuery:
+    """
+    Query class for SponsoredProductKeywords entity operations.
+    """
+
+    def __init__(self, connector: AmazonAdsConnector):
+        """Initialize query with connector reference."""
+        self._connector = connector
+
+    async def list(
+        self,
+        state_filter: SponsoredProductKeywordsListParamsStatefilter | None = None,
+        max_results: int | None = None,
+        next_token: str | None = None,
+        **kwargs
+    ) -> SponsoredProductKeywordsListResult:
+        """
+        Returns a list of sponsored product keywords for the specified profile.
+Keywords are used in manual targeting campaigns to match shopper search queries.
+
+
+        Args:
+            state_filter: Parameter stateFilter
+            max_results: Maximum number of results to return
+            next_token: Token for pagination
+            **kwargs: Additional parameters
+
+        Returns:
+            SponsoredProductKeywordsListResult
+        """
+        params = {k: v for k, v in {
+            "stateFilter": state_filter,
+            "maxResults": max_results,
+            "nextToken": next_token,
+            **kwargs
+        }.items() if v is not None}
+
+        result = await self._connector.execute("sponsored_product_keywords", "list", params)
+        # Cast generic envelope to concrete typed result
+        return SponsoredProductKeywordsListResult(
+            data=result.data,
+            meta=getattr(result, "meta", None)
+        )
+
+
+
+class SponsoredProductProductAdsQuery:
+    """
+    Query class for SponsoredProductProductAds entity operations.
+    """
+
+    def __init__(self, connector: AmazonAdsConnector):
+        """Initialize query with connector reference."""
+        self._connector = connector
+
+    async def list(
+        self,
+        state_filter: SponsoredProductProductAdsListParamsStatefilter | None = None,
+        max_results: int | None = None,
+        next_token: str | None = None,
+        **kwargs
+    ) -> SponsoredProductProductAdsListResult:
+        """
+        Returns a list of sponsored product ads for the specified profile.
+Product ads associate an advertised product with an ad group.
+
+
+        Args:
+            state_filter: Parameter stateFilter
+            max_results: Maximum number of results to return
+            next_token: Token for pagination
+            **kwargs: Additional parameters
+
+        Returns:
+            SponsoredProductProductAdsListResult
+        """
+        params = {k: v for k, v in {
+            "stateFilter": state_filter,
+            "maxResults": max_results,
+            "nextToken": next_token,
+            **kwargs
+        }.items() if v is not None}
+
+        result = await self._connector.execute("sponsored_product_product_ads", "list", params)
+        # Cast generic envelope to concrete typed result
+        return SponsoredProductProductAdsListResult(
+            data=result.data,
+            meta=getattr(result, "meta", None)
+        )
+
+
+
+class SponsoredProductTargetsQuery:
+    """
+    Query class for SponsoredProductTargets entity operations.
+    """
+
+    def __init__(self, connector: AmazonAdsConnector):
+        """Initialize query with connector reference."""
+        self._connector = connector
+
+    async def list(
+        self,
+        state_filter: SponsoredProductTargetsListParamsStatefilter | None = None,
+        max_results: int | None = None,
+        next_token: str | None = None,
+        **kwargs
+    ) -> SponsoredProductTargetsListResult:
+        """
+        Returns a list of sponsored product targeting clauses for the specified profile.
+Targeting clauses define product or category targeting for ad groups.
+
+
+        Args:
+            state_filter: Parameter stateFilter
+            max_results: Maximum number of results to return
+            next_token: Token for pagination
+            **kwargs: Additional parameters
+
+        Returns:
+            SponsoredProductTargetsListResult
+        """
+        params = {k: v for k, v in {
+            "stateFilter": state_filter,
+            "maxResults": max_results,
+            "nextToken": next_token,
+            **kwargs
+        }.items() if v is not None}
+
+        result = await self._connector.execute("sponsored_product_targets", "list", params)
+        # Cast generic envelope to concrete typed result
+        return SponsoredProductTargetsListResult(
+            data=result.data,
+            meta=getattr(result, "meta", None)
+        )
+
+
+
+class SponsoredProductNegativeKeywordsQuery:
+    """
+    Query class for SponsoredProductNegativeKeywords entity operations.
+    """
+
+    def __init__(self, connector: AmazonAdsConnector):
+        """Initialize query with connector reference."""
+        self._connector = connector
+
+    async def list(
+        self,
+        state_filter: SponsoredProductNegativeKeywordsListParamsStatefilter | None = None,
+        max_results: int | None = None,
+        next_token: str | None = None,
+        **kwargs
+    ) -> SponsoredProductNegativeKeywordsListResult:
+        """
+        Returns a list of sponsored product negative keywords for the specified profile.
+Negative keywords prevent ads from showing for specific search terms.
+
+
+        Args:
+            state_filter: Parameter stateFilter
+            max_results: Maximum number of results to return
+            next_token: Token for pagination
+            **kwargs: Additional parameters
+
+        Returns:
+            SponsoredProductNegativeKeywordsListResult
+        """
+        params = {k: v for k, v in {
+            "stateFilter": state_filter,
+            "maxResults": max_results,
+            "nextToken": next_token,
+            **kwargs
+        }.items() if v is not None}
+
+        result = await self._connector.execute("sponsored_product_negative_keywords", "list", params)
+        # Cast generic envelope to concrete typed result
+        return SponsoredProductNegativeKeywordsListResult(
+            data=result.data,
+            meta=getattr(result, "meta", None)
+        )
+
+
+
+class SponsoredProductNegativeTargetsQuery:
+    """
+    Query class for SponsoredProductNegativeTargets entity operations.
+    """
+
+    def __init__(self, connector: AmazonAdsConnector):
+        """Initialize query with connector reference."""
+        self._connector = connector
+
+    async def list(
+        self,
+        state_filter: SponsoredProductNegativeTargetsListParamsStatefilter | None = None,
+        max_results: int | None = None,
+        next_token: str | None = None,
+        **kwargs
+    ) -> SponsoredProductNegativeTargetsListResult:
+        """
+        Returns a list of sponsored product negative targeting clauses for the specified profile.
+Negative targeting clauses exclude specific products or categories from targeting.
+
+
+        Args:
+            state_filter: Parameter stateFilter
+            max_results: Maximum number of results to return
+            next_token: Token for pagination
+            **kwargs: Additional parameters
+
+        Returns:
+            SponsoredProductNegativeTargetsListResult
+        """
+        params = {k: v for k, v in {
+            "stateFilter": state_filter,
+            "maxResults": max_results,
+            "nextToken": next_token,
+            **kwargs
+        }.items() if v is not None}
+
+        result = await self._connector.execute("sponsored_product_negative_targets", "list", params)
+        # Cast generic envelope to concrete typed result
+        return SponsoredProductNegativeTargetsListResult(
+            data=result.data,
+            meta=getattr(result, "meta", None)
+        )
+
+
+
+class SponsoredBrandsCampaignsQuery:
+    """
+    Query class for SponsoredBrandsCampaigns entity operations.
+    """
+
+    def __init__(self, connector: AmazonAdsConnector):
+        """Initialize query with connector reference."""
+        self._connector = connector
+
+    async def list(
+        self,
+        state_filter: SponsoredBrandsCampaignsListParamsStatefilter | None = None,
+        max_results: int | None = None,
+        next_token: str | None = None,
+        **kwargs
+    ) -> SponsoredBrandsCampaignsListResult:
+        """
+        Returns a list of sponsored brands campaigns for the specified profile.
+Sponsored Brands campaigns help drive discovery and sales with creative ad experiences.
+
+
+        Args:
+            state_filter: Parameter stateFilter
+            max_results: Maximum number of results to return
+            next_token: Token for pagination
+            **kwargs: Additional parameters
+
+        Returns:
+            SponsoredBrandsCampaignsListResult
+        """
+        params = {k: v for k, v in {
+            "stateFilter": state_filter,
+            "maxResults": max_results,
+            "nextToken": next_token,
+            **kwargs
+        }.items() if v is not None}
+
+        result = await self._connector.execute("sponsored_brands_campaigns", "list", params)
+        # Cast generic envelope to concrete typed result
+        return SponsoredBrandsCampaignsListResult(
+            data=result.data,
+            meta=getattr(result, "meta", None)
+        )
+
+
+
+class SponsoredBrandsAdGroupsQuery:
+    """
+    Query class for SponsoredBrandsAdGroups entity operations.
+    """
+
+    def __init__(self, connector: AmazonAdsConnector):
+        """Initialize query with connector reference."""
+        self._connector = connector
+
+    async def list(
+        self,
+        state_filter: SponsoredBrandsAdGroupsListParamsStatefilter | None = None,
+        max_results: int | None = None,
+        next_token: str | None = None,
+        **kwargs
+    ) -> SponsoredBrandsAdGroupsListResult:
+        """
+        Returns a list of sponsored brands ad groups for the specified profile.
+Ad groups organize ads and targeting within a Sponsored Brands campaign.
+
+
+        Args:
+            state_filter: Parameter stateFilter
+            max_results: Maximum number of results to return
+            next_token: Token for pagination
+            **kwargs: Additional parameters
+
+        Returns:
+            SponsoredBrandsAdGroupsListResult
+        """
+        params = {k: v for k, v in {
+            "stateFilter": state_filter,
+            "maxResults": max_results,
+            "nextToken": next_token,
+            **kwargs
+        }.items() if v is not None}
+
+        result = await self._connector.execute("sponsored_brands_ad_groups", "list", params)
+        # Cast generic envelope to concrete typed result
+        return SponsoredBrandsAdGroupsListResult(
+            data=result.data,
+            meta=getattr(result, "meta", None)
+        )
+
+

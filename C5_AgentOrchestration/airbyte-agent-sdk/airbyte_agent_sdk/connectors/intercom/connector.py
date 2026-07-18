@@ -1,0 +1,2239 @@
+"""
+Intercom connector.
+"""
+
+from __future__ import annotations
+
+import logging
+from typing import TYPE_CHECKING, Any, Callable, Mapping, TypeVar, overload
+try:
+    from typing import Literal
+except ImportError:
+    from typing_extensions import Literal
+
+from pydantic import BaseModel
+
+from .connector_model import IntercomConnectorModel
+from airbyte_agent_sdk.introspection import describe_entities, generate_tool_description
+from airbyte_agent_sdk.translation import DEFAULT_MAX_OUTPUT_CHARS, FrameworkName, translate_exceptions
+from airbyte_agent_sdk.types import AirbyteAuthConfig
+from .types import (
+    AdminsGetParams,
+    AdminsListParams,
+    CompaniesCreateParams,
+    CompaniesDeleteParams,
+    CompaniesGetParams,
+    CompaniesListParams,
+    CompaniesUpdateParams,
+    ContactsCreateParams,
+    ContactsDeleteParams,
+    ContactsGetParams,
+    ContactsListParams,
+    ContactsUpdateParams,
+    ConversationsCreateParams,
+    ConversationsCreateParamsFrom,
+    ConversationsDeleteParams,
+    ConversationsGetParams,
+    ConversationsListParams,
+    ConversationsUpdateParams,
+    InternalArticlesCreateParams,
+    InternalArticlesDeleteParams,
+    InternalArticlesUpdateParams,
+    NotesCreateParams,
+    SegmentsGetParams,
+    SegmentsListParams,
+    TagsCreateParams,
+    TagsDeleteParams,
+    TagsGetParams,
+    TagsListParams,
+    TeamsGetParams,
+    TeamsListParams,
+    AirbyteSearchParams,
+    CompaniesSearchFilter,
+    CompaniesSearchQuery,
+    ContactsSearchFilter,
+    ContactsSearchQuery,
+    ConversationsSearchFilter,
+    ConversationsSearchQuery,
+    TeamsSearchFilter,
+    TeamsSearchQuery,
+)
+from .models import IntercomAuthConfig
+if TYPE_CHECKING:
+    from .models import IntercomReplicationConfig
+
+# Import response models and envelope models at runtime
+from .models import (
+    IntercomCheckResult,
+    IntercomExecuteResult,
+    IntercomExecuteResultWithMeta,
+    ContactsListResult,
+    ConversationsListResult,
+    CompaniesListResult,
+    TeamsListResult,
+    AdminsListResult,
+    TagsListResult,
+    SegmentsListResult,
+    Admin,
+    Company,
+    CompanyDeletedResponse,
+    Contact,
+    ContactDeletedResponse,
+    Conversation,
+    ConversationDeletedResponse,
+    InternalArticle,
+    InternalArticleDeletedResponse,
+    Message,
+    Note,
+    Segment,
+    Tag,
+    TagDeletedResponse,
+    Team,
+    AirbyteSearchMeta,
+    AirbyteSearchResult,
+    CompaniesSearchData,
+    CompaniesSearchResult,
+    ContactsSearchData,
+    ContactsSearchResult,
+    ConversationsSearchData,
+    ConversationsSearchResult,
+    TeamsSearchData,
+    TeamsSearchResult,
+)
+
+# TypeVar for decorator type preservation
+_F = TypeVar("_F", bound=Callable[..., Any])
+
+
+
+
+class IntercomConnector:
+    """
+    Type-safe Intercom API connector.
+
+    Auto-generated from OpenAPI specification with full type safety.
+    """
+
+    connector_name = "intercom"
+    connector_version = "0.1.10"
+    sdk_version = "0.1.287"
+
+    # Map of (entity, action) -> needs_envelope for envelope wrapping decision
+    _ENVELOPE_MAP = {
+        ("contacts", "list"): True,
+        ("contacts", "create"): None,
+        ("contacts", "get"): None,
+        ("contacts", "update"): None,
+        ("contacts", "delete"): None,
+        ("conversations", "list"): True,
+        ("conversations", "create"): None,
+        ("conversations", "get"): None,
+        ("conversations", "update"): None,
+        ("conversations", "delete"): None,
+        ("companies", "list"): True,
+        ("companies", "create"): None,
+        ("companies", "get"): None,
+        ("companies", "update"): None,
+        ("companies", "delete"): None,
+        ("teams", "list"): True,
+        ("teams", "get"): None,
+        ("admins", "list"): True,
+        ("admins", "get"): None,
+        ("tags", "list"): True,
+        ("tags", "create"): None,
+        ("tags", "get"): None,
+        ("tags", "delete"): None,
+        ("notes", "create"): None,
+        ("segments", "list"): True,
+        ("segments", "get"): None,
+        ("internal_articles", "create"): None,
+        ("internal_articles", "update"): None,
+        ("internal_articles", "delete"): None,
+    }
+
+    # Map of (entity, action) -> {python_param_name: api_param_name}
+    # Used to convert snake_case TypedDict keys to API parameter names in execute()
+    _PARAM_MAP = {
+        ('contacts', 'list'): {'per_page': 'per_page', 'starting_after': 'starting_after'},
+        ('contacts', 'create'): {'role': 'role', 'external_id': 'external_id', 'email': 'email', 'phone': 'phone', 'name': 'name', 'avatar': 'avatar', 'signed_up_at': 'signed_up_at', 'last_seen_at': 'last_seen_at', 'owner_id': 'owner_id', 'unsubscribed_from_emails': 'unsubscribed_from_emails', 'custom_attributes': 'custom_attributes'},
+        ('contacts', 'get'): {'id': 'id'},
+        ('contacts', 'update'): {'role': 'role', 'external_id': 'external_id', 'email': 'email', 'phone': 'phone', 'name': 'name', 'avatar': 'avatar', 'signed_up_at': 'signed_up_at', 'last_seen_at': 'last_seen_at', 'owner_id': 'owner_id', 'unsubscribed_from_emails': 'unsubscribed_from_emails', 'custom_attributes': 'custom_attributes', 'id': 'id'},
+        ('contacts', 'delete'): {'id': 'id'},
+        ('conversations', 'list'): {'per_page': 'per_page', 'starting_after': 'starting_after'},
+        ('conversations', 'create'): {'from_': 'from', 'body': 'body', 'subject': 'subject', 'attachment_urls': 'attachment_urls', 'created_at': 'created_at'},
+        ('conversations', 'get'): {'id': 'id'},
+        ('conversations', 'update'): {'read': 'read', 'custom_attributes': 'custom_attributes', 'id': 'id'},
+        ('conversations', 'delete'): {'id': 'id'},
+        ('companies', 'list'): {'per_page': 'per_page', 'starting_after': 'starting_after'},
+        ('companies', 'create'): {'company_id': 'company_id', 'name': 'name', 'plan': 'plan', 'monthly_spend': 'monthly_spend', 'size': 'size', 'website': 'website', 'industry': 'industry', 'custom_attributes': 'custom_attributes'},
+        ('companies', 'get'): {'id': 'id'},
+        ('companies', 'update'): {'name': 'name', 'plan': 'plan', 'monthly_spend': 'monthly_spend', 'size': 'size', 'website': 'website', 'industry': 'industry', 'custom_attributes': 'custom_attributes', 'id': 'id'},
+        ('companies', 'delete'): {'id': 'id'},
+        ('teams', 'get'): {'id': 'id'},
+        ('admins', 'get'): {'id': 'id'},
+        ('tags', 'create'): {'name': 'name'},
+        ('tags', 'get'): {'id': 'id'},
+        ('tags', 'delete'): {'id': 'id'},
+        ('notes', 'create'): {'body': 'body', 'admin_id': 'admin_id', 'contact_id': 'contact_id'},
+        ('segments', 'list'): {'include_count': 'include_count'},
+        ('segments', 'get'): {'id': 'id'},
+        ('internal_articles', 'create'): {'title': 'title', 'body': 'body', 'owner_id': 'owner_id', 'author_id': 'author_id'},
+        ('internal_articles', 'update'): {'title': 'title', 'body': 'body', 'author_id': 'author_id', 'owner_id': 'owner_id', 'id': 'id'},
+        ('internal_articles', 'delete'): {'id': 'id'},
+    }
+
+    # Accepted auth_config types for isinstance validation
+    _ACCEPTED_AUTH_TYPES = (IntercomAuthConfig, AirbyteAuthConfig)
+
+    def __init__(
+        self,
+        auth_config: IntercomAuthConfig | AirbyteAuthConfig | BaseModel | None = None,
+        on_token_refresh: Any | None = None    ):
+        """
+        Initialize a new intercom connector instance.
+
+        Supports both local and hosted execution modes:
+        - Local mode: Provide connector-specific auth config (e.g., IntercomAuthConfig)
+        - Hosted mode: Provide `AirbyteAuthConfig` with client credentials and either `connector_id` or `workspace_name`
+
+        Args:
+            auth_config: Either connector-specific auth config for local mode, or AirbyteAuthConfig for hosted mode
+            on_token_refresh: Optional callback for OAuth2 token refresh persistence.
+                Called with new_tokens dict when tokens are refreshed. Can be sync or async.
+                Example: lambda tokens: save_to_database(tokens)
+        Examples:
+            # Local mode (direct API calls)
+            connector = IntercomConnector(auth_config=IntercomAuthConfig(access_token="..."))
+            # Hosted mode with explicit connector_id (no lookup needed)
+            connector = IntercomConnector(
+                auth_config=AirbyteAuthConfig(
+                    airbyte_client_id="client_abc123",
+                    airbyte_client_secret="secret_xyz789",
+                    connector_id="existing-source-uuid"
+                )
+            )
+
+            # Hosted mode with lookup by workspace_name
+            connector = IntercomConnector(
+                auth_config=AirbyteAuthConfig(
+                    workspace_name="user-123",
+                    organization_id="00000000-0000-0000-0000-000000000123",
+                    airbyte_client_id="client_abc123",
+                    airbyte_client_secret="secret_xyz789"
+                )
+            )
+        """
+        # Accept AirbyteAuthConfig from any vendored SDK version
+        if (
+            auth_config is not None
+            and not isinstance(auth_config, AirbyteAuthConfig)
+            and type(auth_config).__name__ == AirbyteAuthConfig.__name__
+        ):
+            auth_config = AirbyteAuthConfig(**auth_config.model_dump())
+
+        # Validate auth_config type
+        if auth_config is not None and not isinstance(auth_config, self._ACCEPTED_AUTH_TYPES):
+            raise TypeError(
+                f"Unsupported auth_config type: {type(auth_config).__name__}. "
+                f"Expected one of: {', '.join(t.__name__ for t in self._ACCEPTED_AUTH_TYPES)}"
+            )
+
+        # Hosted mode: auth_config is AirbyteAuthConfig
+        is_hosted = isinstance(auth_config, AirbyteAuthConfig)
+
+        if is_hosted:
+            from airbyte_agent_sdk.executor import HostedExecutor
+            self._executor = HostedExecutor(
+                airbyte_client_id=auth_config.airbyte_client_id,
+                airbyte_client_secret=auth_config.airbyte_client_secret,
+                connector_id=auth_config.connector_id,
+                workspace_name=auth_config.workspace_name or "default",
+                organization_id=auth_config.organization_id,
+                connector_definition_id=str(IntercomConnectorModel.id),
+                model=IntercomConnectorModel,
+            )
+        else:
+            # Local mode: auth_config required (must be connector-specific auth type)
+            if not auth_config:
+                raise ValueError(
+                    "Either provide AirbyteAuthConfig with client credentials for hosted mode, "
+                    "or IntercomAuthConfig for local mode"
+                )
+
+            from airbyte_agent_sdk.executor import LocalExecutor
+
+            # Build config_values dict from server variables
+            config_values = None
+
+            self._executor = LocalExecutor(
+                model=IntercomConnectorModel,
+                auth_config=auth_config.model_dump() if auth_config else None,
+                config_values=config_values,
+                on_token_refresh=on_token_refresh
+            )
+
+            # Update base_url with server variables if provided
+
+        # Initialize entity query objects
+        self.contacts = ContactsQuery(self)
+        self.conversations = ConversationsQuery(self)
+        self.companies = CompaniesQuery(self)
+        self.teams = TeamsQuery(self)
+        self.admins = AdminsQuery(self)
+        self.tags = TagsQuery(self)
+        self.notes = NotesQuery(self)
+        self.segments = SegmentsQuery(self)
+        self.internal_articles = InternalArticlesQuery(self)
+
+    # ===== TYPED EXECUTE METHOD (Recommended Interface) =====
+
+    @overload
+    async def execute(
+        self,
+        entity: Literal["contacts"],
+        action: Literal["list"],
+        params: "ContactsListParams",
+        *,
+        select_fields: list[str] | None = ...,
+        exclude_fields: list[str] | None = ...,
+        skip_truncation: bool = ...
+    ) -> "ContactsListResult": ...
+
+    @overload
+    async def execute(
+        self,
+        entity: Literal["contacts"],
+        action: Literal["create"],
+        params: "ContactsCreateParams",
+        *,
+        select_fields: list[str] | None = ...,
+        exclude_fields: list[str] | None = ...,
+        skip_truncation: bool = ...
+    ) -> "Contact": ...
+
+    @overload
+    async def execute(
+        self,
+        entity: Literal["contacts"],
+        action: Literal["get"],
+        params: "ContactsGetParams",
+        *,
+        select_fields: list[str] | None = ...,
+        exclude_fields: list[str] | None = ...,
+        skip_truncation: bool = ...
+    ) -> "Contact": ...
+
+    @overload
+    async def execute(
+        self,
+        entity: Literal["contacts"],
+        action: Literal["update"],
+        params: "ContactsUpdateParams",
+        *,
+        select_fields: list[str] | None = ...,
+        exclude_fields: list[str] | None = ...,
+        skip_truncation: bool = ...
+    ) -> "Contact": ...
+
+    @overload
+    async def execute(
+        self,
+        entity: Literal["contacts"],
+        action: Literal["delete"],
+        params: "ContactsDeleteParams",
+        *,
+        select_fields: list[str] | None = ...,
+        exclude_fields: list[str] | None = ...,
+        skip_truncation: bool = ...
+    ) -> "ContactDeletedResponse": ...
+
+    @overload
+    async def execute(
+        self,
+        entity: Literal["conversations"],
+        action: Literal["list"],
+        params: "ConversationsListParams",
+        *,
+        select_fields: list[str] | None = ...,
+        exclude_fields: list[str] | None = ...,
+        skip_truncation: bool = ...
+    ) -> "ConversationsListResult": ...
+
+    @overload
+    async def execute(
+        self,
+        entity: Literal["conversations"],
+        action: Literal["create"],
+        params: "ConversationsCreateParams",
+        *,
+        select_fields: list[str] | None = ...,
+        exclude_fields: list[str] | None = ...,
+        skip_truncation: bool = ...
+    ) -> "Message": ...
+
+    @overload
+    async def execute(
+        self,
+        entity: Literal["conversations"],
+        action: Literal["get"],
+        params: "ConversationsGetParams",
+        *,
+        select_fields: list[str] | None = ...,
+        exclude_fields: list[str] | None = ...,
+        skip_truncation: bool = ...
+    ) -> "Conversation": ...
+
+    @overload
+    async def execute(
+        self,
+        entity: Literal["conversations"],
+        action: Literal["update"],
+        params: "ConversationsUpdateParams",
+        *,
+        select_fields: list[str] | None = ...,
+        exclude_fields: list[str] | None = ...,
+        skip_truncation: bool = ...
+    ) -> "Conversation": ...
+
+    @overload
+    async def execute(
+        self,
+        entity: Literal["conversations"],
+        action: Literal["delete"],
+        params: "ConversationsDeleteParams",
+        *,
+        select_fields: list[str] | None = ...,
+        exclude_fields: list[str] | None = ...,
+        skip_truncation: bool = ...
+    ) -> "ConversationDeletedResponse": ...
+
+    @overload
+    async def execute(
+        self,
+        entity: Literal["companies"],
+        action: Literal["list"],
+        params: "CompaniesListParams",
+        *,
+        select_fields: list[str] | None = ...,
+        exclude_fields: list[str] | None = ...,
+        skip_truncation: bool = ...
+    ) -> "CompaniesListResult": ...
+
+    @overload
+    async def execute(
+        self,
+        entity: Literal["companies"],
+        action: Literal["create"],
+        params: "CompaniesCreateParams",
+        *,
+        select_fields: list[str] | None = ...,
+        exclude_fields: list[str] | None = ...,
+        skip_truncation: bool = ...
+    ) -> "Company": ...
+
+    @overload
+    async def execute(
+        self,
+        entity: Literal["companies"],
+        action: Literal["get"],
+        params: "CompaniesGetParams",
+        *,
+        select_fields: list[str] | None = ...,
+        exclude_fields: list[str] | None = ...,
+        skip_truncation: bool = ...
+    ) -> "Company": ...
+
+    @overload
+    async def execute(
+        self,
+        entity: Literal["companies"],
+        action: Literal["update"],
+        params: "CompaniesUpdateParams",
+        *,
+        select_fields: list[str] | None = ...,
+        exclude_fields: list[str] | None = ...,
+        skip_truncation: bool = ...
+    ) -> "Company": ...
+
+    @overload
+    async def execute(
+        self,
+        entity: Literal["companies"],
+        action: Literal["delete"],
+        params: "CompaniesDeleteParams",
+        *,
+        select_fields: list[str] | None = ...,
+        exclude_fields: list[str] | None = ...,
+        skip_truncation: bool = ...
+    ) -> "CompanyDeletedResponse": ...
+
+    @overload
+    async def execute(
+        self,
+        entity: Literal["teams"],
+        action: Literal["list"],
+        params: "TeamsListParams",
+        *,
+        select_fields: list[str] | None = ...,
+        exclude_fields: list[str] | None = ...,
+        skip_truncation: bool = ...
+    ) -> "TeamsListResult": ...
+
+    @overload
+    async def execute(
+        self,
+        entity: Literal["teams"],
+        action: Literal["get"],
+        params: "TeamsGetParams",
+        *,
+        select_fields: list[str] | None = ...,
+        exclude_fields: list[str] | None = ...,
+        skip_truncation: bool = ...
+    ) -> "Team": ...
+
+    @overload
+    async def execute(
+        self,
+        entity: Literal["admins"],
+        action: Literal["list"],
+        params: "AdminsListParams",
+        *,
+        select_fields: list[str] | None = ...,
+        exclude_fields: list[str] | None = ...,
+        skip_truncation: bool = ...
+    ) -> "AdminsListResult": ...
+
+    @overload
+    async def execute(
+        self,
+        entity: Literal["admins"],
+        action: Literal["get"],
+        params: "AdminsGetParams",
+        *,
+        select_fields: list[str] | None = ...,
+        exclude_fields: list[str] | None = ...,
+        skip_truncation: bool = ...
+    ) -> "Admin": ...
+
+    @overload
+    async def execute(
+        self,
+        entity: Literal["tags"],
+        action: Literal["list"],
+        params: "TagsListParams",
+        *,
+        select_fields: list[str] | None = ...,
+        exclude_fields: list[str] | None = ...,
+        skip_truncation: bool = ...
+    ) -> "TagsListResult": ...
+
+    @overload
+    async def execute(
+        self,
+        entity: Literal["tags"],
+        action: Literal["create"],
+        params: "TagsCreateParams",
+        *,
+        select_fields: list[str] | None = ...,
+        exclude_fields: list[str] | None = ...,
+        skip_truncation: bool = ...
+    ) -> "Tag": ...
+
+    @overload
+    async def execute(
+        self,
+        entity: Literal["tags"],
+        action: Literal["get"],
+        params: "TagsGetParams",
+        *,
+        select_fields: list[str] | None = ...,
+        exclude_fields: list[str] | None = ...,
+        skip_truncation: bool = ...
+    ) -> "Tag": ...
+
+    @overload
+    async def execute(
+        self,
+        entity: Literal["tags"],
+        action: Literal["delete"],
+        params: "TagsDeleteParams",
+        *,
+        select_fields: list[str] | None = ...,
+        exclude_fields: list[str] | None = ...,
+        skip_truncation: bool = ...
+    ) -> "TagDeletedResponse": ...
+
+    @overload
+    async def execute(
+        self,
+        entity: Literal["notes"],
+        action: Literal["create"],
+        params: "NotesCreateParams",
+        *,
+        select_fields: list[str] | None = ...,
+        exclude_fields: list[str] | None = ...,
+        skip_truncation: bool = ...
+    ) -> "Note": ...
+
+    @overload
+    async def execute(
+        self,
+        entity: Literal["segments"],
+        action: Literal["list"],
+        params: "SegmentsListParams",
+        *,
+        select_fields: list[str] | None = ...,
+        exclude_fields: list[str] | None = ...,
+        skip_truncation: bool = ...
+    ) -> "SegmentsListResult": ...
+
+    @overload
+    async def execute(
+        self,
+        entity: Literal["segments"],
+        action: Literal["get"],
+        params: "SegmentsGetParams",
+        *,
+        select_fields: list[str] | None = ...,
+        exclude_fields: list[str] | None = ...,
+        skip_truncation: bool = ...
+    ) -> "Segment": ...
+
+    @overload
+    async def execute(
+        self,
+        entity: Literal["internal_articles"],
+        action: Literal["create"],
+        params: "InternalArticlesCreateParams",
+        *,
+        select_fields: list[str] | None = ...,
+        exclude_fields: list[str] | None = ...,
+        skip_truncation: bool = ...
+    ) -> "InternalArticle": ...
+
+    @overload
+    async def execute(
+        self,
+        entity: Literal["internal_articles"],
+        action: Literal["update"],
+        params: "InternalArticlesUpdateParams",
+        *,
+        select_fields: list[str] | None = ...,
+        exclude_fields: list[str] | None = ...,
+        skip_truncation: bool = ...
+    ) -> "InternalArticle": ...
+
+    @overload
+    async def execute(
+        self,
+        entity: Literal["internal_articles"],
+        action: Literal["delete"],
+        params: "InternalArticlesDeleteParams",
+        *,
+        select_fields: list[str] | None = ...,
+        exclude_fields: list[str] | None = ...,
+        skip_truncation: bool = ...
+    ) -> "InternalArticleDeletedResponse": ...
+
+
+    @overload
+    async def execute(
+        self,
+        entity: str,
+        action: Literal["list", "create", "get", "update", "delete", "context_store_search"],
+        params: Mapping[str, Any],
+        *,
+        select_fields: list[str] | None = ...,
+        exclude_fields: list[str] | None = ...,
+        skip_truncation: bool = ...
+    ) -> IntercomExecuteResult[Any] | IntercomExecuteResultWithMeta[Any, Any] | Any: ...
+
+    async def execute(
+        self,
+        entity: str,
+        action: Literal["list", "create", "get", "update", "delete", "context_store_search"],
+        params: Mapping[str, Any] | None = None,
+        *,
+        select_fields: list[str] | None = None,
+        exclude_fields: list[str] | None = None,
+        skip_truncation: bool = True
+    ) -> Any:
+        """
+        Execute an entity operation with full type safety.
+
+        This is the recommended interface for blessed connectors as it:
+        - Uses the same signature as non-blessed connectors
+        - Provides full IDE autocomplete for entity/action/params
+        - Makes migration from generic to blessed connectors seamless
+
+        Args:
+            entity: Entity name (e.g., "customers")
+            action: Operation action (e.g., "create", "get", "list")
+            params: Operation parameters (typed based on entity+action)
+            select_fields: Optional allowlist of dot-notation fields to include
+            exclude_fields: Optional blocklist of dot-notation fields to remove
+            skip_truncation: Disable long-text truncation for collection actions
+
+        Returns:
+            Typed response based on the operation
+
+        Example:
+            customer = await connector.execute(
+                entity="customers",
+                action="get",
+                params={"id": "cus_123"}
+            )
+        """
+        from airbyte_agent_sdk.executor import ExecutionConfig
+
+        # Remap parameter names from snake_case (TypedDict keys) to API parameter names
+        resolved_params = dict(params) if params is not None else None
+        if resolved_params:
+            param_map = self._PARAM_MAP.get((entity, action), {})
+            if param_map:
+                resolved_params = {param_map.get(k, k): v for k, v in resolved_params.items()}
+
+        # Use ExecutionConfig for both local and hosted executors
+        config = ExecutionConfig(
+            entity=entity,
+            action=action,
+            params=resolved_params,
+            select_fields=select_fields,
+            exclude_fields=exclude_fields,
+            skip_truncation=skip_truncation
+        )
+
+        result = await self._executor.execute(config)
+
+        if not result.success:
+            raise RuntimeError(f"Execution failed: {result.error}")
+
+        # Check if this operation has extractors configured
+        has_extractors = self._ENVELOPE_MAP.get((entity, action), False)
+
+        if has_extractors:
+            # With extractors - return Pydantic envelope with data and meta
+            if result.meta is not None:
+                return IntercomExecuteResultWithMeta[Any, Any](
+                    data=result.data,
+                    meta=result.meta
+                )
+            else:
+                return IntercomExecuteResult[Any](data=result.data)
+        else:
+            # No extractors - return raw response data
+            return result.data
+
+    # ===== HEALTH CHECK METHOD =====
+
+    async def check(self) -> IntercomCheckResult:
+        """
+        Perform a health check to verify connectivity and credentials.
+
+        Executes a lightweight list operation (limit=1) to validate that
+        the connector can communicate with the API and credentials are valid.
+
+        Returns:
+            IntercomCheckResult with status ("healthy" or "unhealthy") and optional error message
+
+        Example:
+            result = await connector.check()
+            if result.status == "healthy":
+                print("Connection verified!")
+            else:
+                print(f"Check failed: {result.error}")
+        """
+        result = await self._executor.check()
+
+        if result.success and isinstance(result.data, dict):
+            return IntercomCheckResult(
+                status=result.data.get("status", "unhealthy"),
+                error=result.data.get("error"),
+                checked_entity=result.data.get("checked_entity"),
+                checked_action=result.data.get("checked_action"),
+            )
+        else:
+            return IntercomCheckResult(
+                status="unhealthy",
+                error=result.error or "Unknown error during health check",
+            )
+
+    # ===== INTROSPECTION METHODS =====
+
+    @classmethod
+    def tool_utils(
+        cls,
+        func: _F | None = None,
+        *,
+        update_docstring: bool = True,
+        max_output_chars: int | None = DEFAULT_MAX_OUTPUT_CHARS,
+        framework: FrameworkName | None = None,
+        internal_retries: int = 0,
+        should_internal_retry: Callable[[Exception, tuple[Any, ...], dict[str, Any]], bool] | None = None,
+        exhausted_runtime_failure_message: Callable[[Exception, tuple[Any, ...], dict[str, Any]], str | None] | None = None,
+    ) -> _F | Callable[[_F], _F]:
+        """
+        Add connector-specific documentation and runtime safeguards to one tool.
+
+        For new agents, prefer `build_connector_tools`. It returns progressive
+        `inspect_connector`, `read_skill_docs`, and `execute` tools so the agent
+        can load only the connector guidance it needs:
+
+        ```python
+        from airbyte_agent_sdk import build_connector_tools
+        from pydantic_ai import Agent
+
+        tools = build_connector_tools(connector, framework="pydantic_ai")
+        agent = Agent("openai:gpt-4o", tools=tools.as_list())
+        ```
+
+        ### Legacy: one generated-description tool
+
+        Existing integrations can keep using `tool_utils` for one broad
+        `execute` tool with the connector's full generated catalog in its
+        description:
+
+        ```python
+        from fastmcp import FastMCP
+
+        connector = IntercomConnector()
+        mcp = FastMCP("Connector Agent")
+
+        @mcp.tool()
+        @IntercomConnector.tool_utils
+        async def execute(entity: str, action: str, params: dict):
+            ...
+        ```
+
+        Configure documentation, output limits, framework translation, and
+        retries when needed:
+
+        ```python
+        @mcp.tool()
+        @IntercomConnector.tool_utils(update_docstring=False, max_output_chars=None)
+        async def execute(entity: str, action: str, params: dict):
+            ...
+
+        @mcp.tool()
+        @IntercomConnector.tool_utils(framework="pydantic_ai", internal_retries=2)
+        async def execute(entity: str, action: str, params: dict):
+            ...
+        ```
+
+        This decorator composes `translate_exceptions` for runtime wrapping,
+        output-size checks, framework signal translation, and optional internal
+        retries, then adds connector-specific docstring augmentation.
+
+        Args:
+            update_docstring: When True, append connector capabilities to `__doc__`.
+            max_output_chars: Max serialized output size before raising. Use `None` to disable.
+            framework: One of `"pydantic_ai" | "langchain" | "openai_agents" | "mcp"`.
+                Defaults to `None`, which auto-detects each framework's canonical
+                import in order. Explicit always wins.
+            internal_retries: How many transient runtime failures (429/5xx, network,
+                timeout) to retry silently before surfacing. Default 0. Forwarded to
+                `airbyte_agent_sdk.translation.translate_exceptions`.
+            should_internal_retry: Optional predicate `(error, args, kwargs) -> bool`
+                further restricting which retryable errors are safe for this specific
+                tool. Forwarded to `airbyte_agent_sdk.translation.translate_exceptions`.
+            exhausted_runtime_failure_message: Optional callback
+                `(error, args, kwargs) -> str | None`. Invoked after internal retries
+                are exhausted or were skipped because `should_internal_retry` returned
+                `False`. Forwarded to `airbyte_agent_sdk.translation.translate_exceptions`.
+        """
+
+        def decorate(inner: _F) -> _F:
+            if update_docstring:
+                description = generate_tool_description(
+                    IntercomConnectorModel,
+                )
+                original_doc = inner.__doc__ or ""
+                if original_doc.strip():
+                    full_doc = f"{original_doc.strip()}\n{description}"
+                else:
+                    full_doc = description
+            else:
+                full_doc = ""
+
+            wrapped = translate_exceptions(
+                inner,
+                framework=framework,
+                max_output_chars=max_output_chars,
+                internal_retries=internal_retries,
+                should_internal_retry=should_internal_retry,
+                exhausted_runtime_failure_message=exhausted_runtime_failure_message,
+            )
+
+            if update_docstring:
+                wrapped.__doc__ = full_doc
+            return wrapped  # type: ignore[return-value]
+
+        if func is not None:
+            return decorate(func)
+        return decorate
+
+    def list_entities(self) -> list[dict[str, Any]]:
+        """
+        Get structured data about available entities, actions, and parameters.
+
+        Returns a list of entity descriptions with:
+        - entity_name: Name of the entity (e.g., "contacts", "deals")
+        - description: Entity description from the first endpoint
+        - available_actions: List of actions (e.g., ["list", "get", "create"])
+        - parameters: Dict mapping action -> list of parameter dicts
+
+        Example:
+            entities = connector.list_entities()
+            for entity in entities:
+                print(f"{entity['entity_name']}: {entity['available_actions']}")
+        """
+        return describe_entities(IntercomConnectorModel)
+
+    def entity_schema(self, entity: str) -> dict[str, Any] | None:
+        """
+        Get the JSON schema for an entity.
+
+        Args:
+            entity: Entity name (e.g., "contacts", "companies")
+
+        Returns:
+            JSON schema dict describing the entity structure, or None if not found.
+
+        Example:
+            schema = connector.entity_schema("contacts")
+            if schema:
+                print(f"Contact properties: {list(schema.get('properties', {}).keys())}")
+        """
+        entity_def = next(
+            (e for e in IntercomConnectorModel.entities if e.name == entity),
+            None
+        )
+        if entity_def is None:
+            logging.getLogger(__name__).warning(
+                f"Entity '{entity}' not found. Available entities: "
+                f"{[e.name for e in IntercomConnectorModel.entities]}"
+            )
+        return entity_def.entity_schema if entity_def else None
+
+    @property
+    def connector_id(self) -> str | None:
+        """Get the connector/source ID (only available in hosted mode).
+
+        Returns:
+            The connector ID if in hosted mode, None if in local mode.
+        """
+        if hasattr(self, '_executor') and hasattr(self._executor, '_connector_id'):
+            return self._executor._connector_id
+        return None
+
+    # ===== RESOURCE MANAGEMENT =====
+
+    async def close(self):
+        """Close the connector and release resources."""
+        await self._executor.close()
+
+    async def __aenter__(self):
+        """Async context manager entry."""
+        return self
+
+    async def __aexit__(self, exc_type, exc_val, exc_tb):
+        """Async context manager exit."""
+        await self.close()
+
+
+
+class ContactsQuery:
+    """
+    Query class for Contacts entity operations.
+    """
+
+    def __init__(self, connector: IntercomConnector):
+        """Initialize query with connector reference."""
+        self._connector = connector
+
+    async def list(
+        self,
+        per_page: int | None = None,
+        starting_after: str | None = None,
+        **kwargs
+    ) -> ContactsListResult:
+        """
+        Returns a paginated list of contacts in the workspace
+
+        Args:
+            per_page: Number of contacts to return per page
+            starting_after: Cursor for pagination - get contacts after this ID
+            **kwargs: Additional parameters
+
+        Returns:
+            ContactsListResult
+        """
+        params = {k: v for k, v in {
+            "per_page": per_page,
+            "starting_after": starting_after,
+            **kwargs
+        }.items() if v is not None}
+
+        result = await self._connector.execute("contacts", "list", params)
+        # Cast generic envelope to concrete typed result
+        return ContactsListResult(
+            data=result.data,
+            meta=getattr(result, "meta", None)
+        )
+
+
+
+    async def create(
+        self,
+        role: str,
+        external_id: str | None = None,
+        email: str | None = None,
+        phone: str | None = None,
+        name: str | None = None,
+        avatar: str | None = None,
+        signed_up_at: int | None = None,
+        last_seen_at: int | None = None,
+        owner_id: int | None = None,
+        unsubscribed_from_emails: bool | None = None,
+        custom_attributes: dict[str, Any] | None = None,
+        **kwargs
+    ) -> Contact:
+        """
+        Create a new contact (user or lead)
+
+        Args:
+            role: The role of the contact (user or lead)
+            external_id: A unique identifier for the contact from your system
+            email: The contact's email address
+            phone: The contact's phone number
+            name: The contact's full name
+            avatar: An image URL for the contact's avatar
+            signed_up_at: Sign up timestamp (Unix)
+            last_seen_at: Last seen timestamp (Unix)
+            owner_id: The ID of the admin assigned as owner
+            unsubscribed_from_emails: Whether the contact is unsubscribed from emails
+            custom_attributes: Custom attributes for the contact
+            **kwargs: Additional parameters
+
+        Returns:
+            Contact
+        """
+        params = {k: v for k, v in {
+            "role": role,
+            "external_id": external_id,
+            "email": email,
+            "phone": phone,
+            "name": name,
+            "avatar": avatar,
+            "signed_up_at": signed_up_at,
+            "last_seen_at": last_seen_at,
+            "owner_id": owner_id,
+            "unsubscribed_from_emails": unsubscribed_from_emails,
+            "custom_attributes": custom_attributes,
+            **kwargs
+        }.items() if v is not None}
+
+        result = await self._connector.execute("contacts", "create", params)
+        return result
+
+
+
+    async def get(
+        self,
+        id: str | None = None,
+        **kwargs
+    ) -> Contact:
+        """
+        Get a single contact by ID
+
+        Args:
+            id: Contact ID
+            **kwargs: Additional parameters
+
+        Returns:
+            Contact
+        """
+        params = {k: v for k, v in {
+            "id": id,
+            **kwargs
+        }.items() if v is not None}
+
+        result = await self._connector.execute("contacts", "get", params)
+        return result
+
+
+
+    async def update(
+        self,
+        role: str | None = None,
+        external_id: str | None = None,
+        email: str | None = None,
+        phone: str | None = None,
+        name: str | None = None,
+        avatar: str | None = None,
+        signed_up_at: int | None = None,
+        last_seen_at: int | None = None,
+        owner_id: int | None = None,
+        unsubscribed_from_emails: bool | None = None,
+        custom_attributes: dict[str, Any] | None = None,
+        id: str | None = None,
+        **kwargs
+    ) -> Contact:
+        """
+        Update an existing contact by ID
+
+        Args:
+            role: The role of the contact (user or lead)
+            external_id: A unique identifier for the contact from your system
+            email: The contact's email address
+            phone: The contact's phone number
+            name: The contact's full name
+            avatar: An image URL for the contact's avatar
+            signed_up_at: Sign up timestamp (Unix)
+            last_seen_at: Last seen timestamp (Unix)
+            owner_id: The ID of the admin assigned as owner
+            unsubscribed_from_emails: Whether the contact is unsubscribed from emails
+            custom_attributes: Custom attributes for the contact
+            id: Contact ID
+            **kwargs: Additional parameters
+
+        Returns:
+            Contact
+        """
+        params = {k: v for k, v in {
+            "role": role,
+            "external_id": external_id,
+            "email": email,
+            "phone": phone,
+            "name": name,
+            "avatar": avatar,
+            "signed_up_at": signed_up_at,
+            "last_seen_at": last_seen_at,
+            "owner_id": owner_id,
+            "unsubscribed_from_emails": unsubscribed_from_emails,
+            "custom_attributes": custom_attributes,
+            "id": id,
+            **kwargs
+        }.items() if v is not None}
+
+        result = await self._connector.execute("contacts", "update", params)
+        return result
+
+
+
+    async def delete(
+        self,
+        id: str | None = None,
+        **kwargs
+    ) -> ContactDeletedResponse:
+        """
+        Permanently delete a contact by ID
+
+        Args:
+            id: The unique identifier of the contact to delete
+            **kwargs: Additional parameters
+
+        Returns:
+            ContactDeletedResponse
+        """
+        params = {k: v for k, v in {
+            "id": id,
+            **kwargs
+        }.items() if v is not None}
+
+        result = await self._connector.execute("contacts", "delete", params)
+        return result
+
+
+
+    async def context_store_search(
+        self,
+        query: ContactsSearchQuery,
+        limit: int | None = None,
+        cursor: str | None = None,
+        fields: list[list[str]] | None = None,
+    ) -> ContactsSearchResult:
+        """
+        Search contacts records from Airbyte cache.
+
+        This operation searches cached data from Airbyte syncs.
+        Only available in hosted execution mode.
+
+        Available filter fields (ContactsSearchFilter):
+        - android_app_name: The name of the Android app associated with the contact.
+        - android_app_version: The version of the Android app associated with the contact.
+        - android_device: The device used by the contact for Android.
+        - android_last_seen_at: The date and time when the contact was last seen on Android.
+        - android_os_version: The operating system version of the Android device.
+        - android_sdk_version: The SDK version of the Android device.
+        - avatar: URL pointing to the contact's avatar image.
+        - browser: The browser used by the contact.
+        - browser_language: The language preference set in the contact's browser.
+        - browser_version: The version of the browser used by the contact.
+        - companies: Companies associated with the contact.
+        - created_at: The date and time when the contact was created.
+        - custom_attributes: Custom attributes defined for the contact.
+        - email: The email address of the contact.
+        - external_id: External identifier for the contact.
+        - has_hard_bounced: Flag indicating if the contact has hard bounced.
+        - id: The unique identifier of the contact.
+        - ios_app_name: The name of the iOS app associated with the contact.
+        - ios_app_version: The version of the iOS app associated with the contact.
+        - ios_device: The device used by the contact for iOS.
+        - ios_last_seen_at: The date and time when the contact was last seen on iOS.
+        - ios_os_version: The operating system version of the iOS device.
+        - ios_sdk_version: The SDK version of the iOS device.
+        - language_override: Language override set for the contact.
+        - last_contacted_at: The date and time when the contact was last contacted.
+        - last_email_clicked_at: The date and time when the contact last clicked an email.
+        - last_email_opened_at: The date and time when the contact last opened an email.
+        - last_replied_at: The date and time when the contact last replied.
+        - last_seen_at: The date and time when the contact was last seen overall.
+        - location: Location details of the contact.
+        - marked_email_as_spam: Flag indicating if the contact's email was marked as spam.
+        - name: The name of the contact.
+        - notes: Notes associated with the contact.
+        - opted_in_subscription_types: Subscription types the contact opted into.
+        - opted_out_subscription_types: Subscription types the contact opted out from.
+        - os: Operating system of the contact's device.
+        - owner_id: The unique identifier of the contact's owner.
+        - phone: The phone number of the contact.
+        - referrer: Referrer information related to the contact.
+        - role: Role or position of the contact.
+        - signed_up_at: The date and time when the contact signed up.
+        - sms_consent: Consent status for SMS communication.
+        - social_profiles: Social profiles associated with the contact.
+        - tags: Tags associated with the contact.
+        - type_: Type of contact.
+        - unsubscribed_from_emails: Flag indicating if the contact unsubscribed from emails.
+        - unsubscribed_from_sms: Flag indicating if the contact unsubscribed from SMS.
+        - updated_at: The date and time when the contact was last updated.
+        - utm_campaign: Campaign data from UTM parameters.
+        - utm_content: Content data from UTM parameters.
+        - utm_medium: Medium data from UTM parameters.
+        - utm_source: Source data from UTM parameters.
+        - utm_term: Term data from UTM parameters.
+        - workspace_id: The unique identifier of the workspace associated with the contact.
+
+        Args:
+            query: Filter and sort conditions. Supports operators like eq, neq, gt, gte, lt, lte,
+                   in, like, fuzzy, keyword, not, and, or. Example: {"filter": {"eq": {"status": "active"}}}
+            limit: Maximum results to return (default 1000)
+            cursor: Pagination cursor from previous response's meta.cursor
+            fields: Field paths to include in results. Each path is a list of keys for nested access.
+                    Example: [["id"], ["user", "name"]] returns id and user.name fields.
+
+        Returns:
+            ContactsSearchResult with typed records, pagination metadata, and optional search metadata
+
+        Raises:
+            NotImplementedError: If called in local execution mode
+        """
+        params: dict[str, Any] = {"query": query}
+        if limit is not None:
+            params["limit"] = limit
+        if cursor is not None:
+            params["cursor"] = cursor
+        if fields is not None:
+            params["fields"] = fields
+
+        result = await self._connector.execute("contacts", "context_store_search", params)
+
+        # Parse response into typed result
+        meta_data = result.get("meta")
+        return ContactsSearchResult(
+            data=[
+                ContactsSearchData(**row)
+                for row in result.get("data", [])
+                if isinstance(row, dict)
+            ],
+            meta=AirbyteSearchMeta(
+                has_more=meta_data.get("has_more", False) if isinstance(meta_data, dict) else False,
+                cursor=meta_data.get("cursor") if isinstance(meta_data, dict) else None,
+                took_ms=meta_data.get("took_ms") if isinstance(meta_data, dict) else None,
+            ),
+        )
+
+class ConversationsQuery:
+    """
+    Query class for Conversations entity operations.
+    """
+
+    def __init__(self, connector: IntercomConnector):
+        """Initialize query with connector reference."""
+        self._connector = connector
+
+    async def list(
+        self,
+        per_page: int | None = None,
+        starting_after: str | None = None,
+        **kwargs
+    ) -> ConversationsListResult:
+        """
+        Returns a paginated list of conversations
+
+        Args:
+            per_page: Number of conversations to return per page
+            starting_after: Cursor for pagination
+            **kwargs: Additional parameters
+
+        Returns:
+            ConversationsListResult
+        """
+        params = {k: v for k, v in {
+            "per_page": per_page,
+            "starting_after": starting_after,
+            **kwargs
+        }.items() if v is not None}
+
+        result = await self._connector.execute("conversations", "list", params)
+        # Cast generic envelope to concrete typed result
+        return ConversationsListResult(
+            data=result.data,
+            meta=getattr(result, "meta", None)
+        )
+
+
+
+    async def create(
+        self,
+        from_: ConversationsCreateParamsFrom,
+        body: str,
+        subject: str | None = None,
+        attachment_urls: list[str] | None = None,
+        created_at: int | None = None,
+        **kwargs
+    ) -> Message:
+        """
+        Create a new conversation initiated by a contact (user or lead)
+
+        Args:
+            from_: The contact (user or lead) initiating the conversation
+            body: The content of the initial message in the conversation
+            subject: The subject line of the conversation (optional)
+            attachment_urls: A list of URLs of attached files (max 10)
+            created_at: Optional timestamp for the conversation creation (Unix)
+            **kwargs: Additional parameters
+
+        Returns:
+            Message
+        """
+        params = {k: v for k, v in {
+            "from": from_,
+            "body": body,
+            "subject": subject,
+            "attachment_urls": attachment_urls,
+            "created_at": created_at,
+            **kwargs
+        }.items() if v is not None}
+
+        result = await self._connector.execute("conversations", "create", params)
+        return result
+
+
+
+    async def get(
+        self,
+        id: str | None = None,
+        **kwargs
+    ) -> Conversation:
+        """
+        Get a single conversation by ID
+
+        Args:
+            id: Conversation ID
+            **kwargs: Additional parameters
+
+        Returns:
+            Conversation
+        """
+        params = {k: v for k, v in {
+            "id": id,
+            **kwargs
+        }.items() if v is not None}
+
+        result = await self._connector.execute("conversations", "get", params)
+        return result
+
+
+
+    async def update(
+        self,
+        read: bool | None = None,
+        custom_attributes: dict[str, Any] | None = None,
+        id: str | None = None,
+        **kwargs
+    ) -> Conversation:
+        """
+        Update conversation attributes such as custom_attributes or read status
+
+        Args:
+            read: Mark the conversation as read or unread
+            custom_attributes: Custom attributes to set on the conversation
+            id: Conversation ID
+            **kwargs: Additional parameters
+
+        Returns:
+            Conversation
+        """
+        params = {k: v for k, v in {
+            "read": read,
+            "custom_attributes": custom_attributes,
+            "id": id,
+            **kwargs
+        }.items() if v is not None}
+
+        result = await self._connector.execute("conversations", "update", params)
+        return result
+
+
+
+    async def delete(
+        self,
+        id: str | None = None,
+        **kwargs
+    ) -> ConversationDeletedResponse:
+        """
+        Permanently delete a conversation by ID
+
+        Args:
+            id: Conversation ID
+            **kwargs: Additional parameters
+
+        Returns:
+            ConversationDeletedResponse
+        """
+        params = {k: v for k, v in {
+            "id": id,
+            **kwargs
+        }.items() if v is not None}
+
+        result = await self._connector.execute("conversations", "delete", params)
+        return result
+
+
+
+    async def context_store_search(
+        self,
+        query: ConversationsSearchQuery,
+        limit: int | None = None,
+        cursor: str | None = None,
+        fields: list[list[str]] | None = None,
+    ) -> ConversationsSearchResult:
+        """
+        Search conversations records from Airbyte cache.
+
+        This operation searches cached data from Airbyte syncs.
+        Only available in hosted execution mode.
+
+        Available filter fields (ConversationsSearchFilter):
+        - admin_assignee_id: The ID of the administrator assigned to the conversation
+        - ai_agent: Data related to AI Agent involvement in the conversation
+        - ai_agent_participated: Indicates whether AI Agent participated in the conversation
+        - assignee: The assigned user responsible for the conversation.
+        - contacts: List of contacts involved in the conversation.
+        - conversation_message: The main message content of the conversation.
+        - conversation_rating: Ratings given to the conversation by the customer and teammate.
+        - created_at: The timestamp when the conversation was created
+        - custom_attributes: Custom attributes associated with the conversation
+        - customer_first_reply: Timestamp indicating when the customer first replied.
+        - customers: List of customers involved in the conversation
+        - first_contact_reply: Timestamp indicating when the first contact replied.
+        - id: The unique ID of the conversation
+        - linked_objects: Linked objects associated with the conversation
+        - open: Indicates if the conversation is open or closed
+        - priority: The priority level of the conversation
+        - read: Indicates if the conversation has been read
+        - redacted: Indicates if the conversation is redacted
+        - sent_at: The timestamp when the conversation was sent
+        - sla_applied: Service Level Agreement details applied to the conversation.
+        - snoozed_until: Timestamp until the conversation is snoozed
+        - source: Source details of the conversation.
+        - state: The state of the conversation (e.g., new, in progress)
+        - statistics: Statistics related to the conversation.
+        - tags: Tags applied to the conversation.
+        - team_assignee_id: The ID of the team assigned to the conversation
+        - teammates: List of teammates involved in the conversation.
+        - title: The title of the conversation
+        - topics: Topics associated with the conversation.
+        - type_: The type of the conversation
+        - updated_at: The timestamp when the conversation was last updated
+        - user: The user related to the conversation.
+        - waiting_since: Timestamp since waiting for a response
+
+        Args:
+            query: Filter and sort conditions. Supports operators like eq, neq, gt, gte, lt, lte,
+                   in, like, fuzzy, keyword, not, and, or. Example: {"filter": {"eq": {"status": "active"}}}
+            limit: Maximum results to return (default 1000)
+            cursor: Pagination cursor from previous response's meta.cursor
+            fields: Field paths to include in results. Each path is a list of keys for nested access.
+                    Example: [["id"], ["user", "name"]] returns id and user.name fields.
+
+        Returns:
+            ConversationsSearchResult with typed records, pagination metadata, and optional search metadata
+
+        Raises:
+            NotImplementedError: If called in local execution mode
+        """
+        params: dict[str, Any] = {"query": query}
+        if limit is not None:
+            params["limit"] = limit
+        if cursor is not None:
+            params["cursor"] = cursor
+        if fields is not None:
+            params["fields"] = fields
+
+        result = await self._connector.execute("conversations", "context_store_search", params)
+
+        # Parse response into typed result
+        meta_data = result.get("meta")
+        return ConversationsSearchResult(
+            data=[
+                ConversationsSearchData(**row)
+                for row in result.get("data", [])
+                if isinstance(row, dict)
+            ],
+            meta=AirbyteSearchMeta(
+                has_more=meta_data.get("has_more", False) if isinstance(meta_data, dict) else False,
+                cursor=meta_data.get("cursor") if isinstance(meta_data, dict) else None,
+                took_ms=meta_data.get("took_ms") if isinstance(meta_data, dict) else None,
+            ),
+        )
+
+class CompaniesQuery:
+    """
+    Query class for Companies entity operations.
+    """
+
+    def __init__(self, connector: IntercomConnector):
+        """Initialize query with connector reference."""
+        self._connector = connector
+
+    async def list(
+        self,
+        per_page: int | None = None,
+        starting_after: str | None = None,
+        **kwargs
+    ) -> CompaniesListResult:
+        """
+        Returns a paginated list of companies
+
+        Args:
+            per_page: Number of companies to return per page
+            starting_after: Cursor for pagination
+            **kwargs: Additional parameters
+
+        Returns:
+            CompaniesListResult
+        """
+        params = {k: v for k, v in {
+            "per_page": per_page,
+            "starting_after": starting_after,
+            **kwargs
+        }.items() if v is not None}
+
+        result = await self._connector.execute("companies", "list", params)
+        # Cast generic envelope to concrete typed result
+        return CompaniesListResult(
+            data=result.data,
+            meta=getattr(result, "meta", None)
+        )
+
+
+
+    async def create(
+        self,
+        company_id: str,
+        name: str | None = None,
+        plan: str | None = None,
+        monthly_spend: float | None = None,
+        size: int | None = None,
+        website: str | None = None,
+        industry: str | None = None,
+        custom_attributes: dict[str, Any] | None = None,
+        **kwargs
+    ) -> Company:
+        """
+        Create a new company or update an existing one by company_id
+
+        Args:
+            company_id: A unique identifier for the company from your system
+            name: The name of the company
+            plan: The name of the plan the company is on
+            monthly_spend: The monthly spend of the company
+            size: The number of employees in the company
+            website: The URL of the company website
+            industry: The industry the company operates in
+            custom_attributes: Custom attributes for the company
+            **kwargs: Additional parameters
+
+        Returns:
+            Company
+        """
+        params = {k: v for k, v in {
+            "company_id": company_id,
+            "name": name,
+            "plan": plan,
+            "monthly_spend": monthly_spend,
+            "size": size,
+            "website": website,
+            "industry": industry,
+            "custom_attributes": custom_attributes,
+            **kwargs
+        }.items() if v is not None}
+
+        result = await self._connector.execute("companies", "create", params)
+        return result
+
+
+
+    async def get(
+        self,
+        id: str | None = None,
+        **kwargs
+    ) -> Company:
+        """
+        Get a single company by ID
+
+        Args:
+            id: Company ID
+            **kwargs: Additional parameters
+
+        Returns:
+            Company
+        """
+        params = {k: v for k, v in {
+            "id": id,
+            **kwargs
+        }.items() if v is not None}
+
+        result = await self._connector.execute("companies", "get", params)
+        return result
+
+
+
+    async def update(
+        self,
+        name: str | None = None,
+        plan: str | None = None,
+        monthly_spend: float | None = None,
+        size: int | None = None,
+        website: str | None = None,
+        industry: str | None = None,
+        custom_attributes: dict[str, Any] | None = None,
+        id: str | None = None,
+        **kwargs
+    ) -> Company:
+        """
+        Update an existing company by ID
+
+        Args:
+            name: The name of the company
+            plan: The name of the plan the company is on
+            monthly_spend: The monthly spend of the company
+            size: The number of employees in the company
+            website: The URL of the company website
+            industry: The industry the company operates in
+            custom_attributes: Custom attributes for the company
+            id: Company ID
+            **kwargs: Additional parameters
+
+        Returns:
+            Company
+        """
+        params = {k: v for k, v in {
+            "name": name,
+            "plan": plan,
+            "monthly_spend": monthly_spend,
+            "size": size,
+            "website": website,
+            "industry": industry,
+            "custom_attributes": custom_attributes,
+            "id": id,
+            **kwargs
+        }.items() if v is not None}
+
+        result = await self._connector.execute("companies", "update", params)
+        return result
+
+
+
+    async def delete(
+        self,
+        id: str | None = None,
+        **kwargs
+    ) -> CompanyDeletedResponse:
+        """
+        Permanently delete a company by ID
+
+        Args:
+            id: The unique identifier of the company to delete
+            **kwargs: Additional parameters
+
+        Returns:
+            CompanyDeletedResponse
+        """
+        params = {k: v for k, v in {
+            "id": id,
+            **kwargs
+        }.items() if v is not None}
+
+        result = await self._connector.execute("companies", "delete", params)
+        return result
+
+
+
+    async def context_store_search(
+        self,
+        query: CompaniesSearchQuery,
+        limit: int | None = None,
+        cursor: str | None = None,
+        fields: list[list[str]] | None = None,
+    ) -> CompaniesSearchResult:
+        """
+        Search companies records from Airbyte cache.
+
+        This operation searches cached data from Airbyte syncs.
+        Only available in hosted execution mode.
+
+        Available filter fields (CompaniesSearchFilter):
+        - app_id: The ID of the application associated with the company
+        - company_id: The unique identifier of the company
+        - created_at: The date and time when the company was created
+        - custom_attributes: Custom attributes specific to the company
+        - id: The ID of the company
+        - industry: The industry in which the company operates
+        - monthly_spend: The monthly spend of the company
+        - name: The name of the company
+        - plan: Details of the company's subscription plan
+        - remote_created_at: The remote date and time when the company was created
+        - segments: Segments associated with the company
+        - session_count: The number of sessions related to the company
+        - size: The size of the company
+        - tags: Tags associated with the company
+        - type_: The type of the company
+        - updated_at: The date and time when the company was last updated
+        - user_count: The number of users associated with the company
+        - website: The website of the company
+
+        Args:
+            query: Filter and sort conditions. Supports operators like eq, neq, gt, gte, lt, lte,
+                   in, like, fuzzy, keyword, not, and, or. Example: {"filter": {"eq": {"status": "active"}}}
+            limit: Maximum results to return (default 1000)
+            cursor: Pagination cursor from previous response's meta.cursor
+            fields: Field paths to include in results. Each path is a list of keys for nested access.
+                    Example: [["id"], ["user", "name"]] returns id and user.name fields.
+
+        Returns:
+            CompaniesSearchResult with typed records, pagination metadata, and optional search metadata
+
+        Raises:
+            NotImplementedError: If called in local execution mode
+        """
+        params: dict[str, Any] = {"query": query}
+        if limit is not None:
+            params["limit"] = limit
+        if cursor is not None:
+            params["cursor"] = cursor
+        if fields is not None:
+            params["fields"] = fields
+
+        result = await self._connector.execute("companies", "context_store_search", params)
+
+        # Parse response into typed result
+        meta_data = result.get("meta")
+        return CompaniesSearchResult(
+            data=[
+                CompaniesSearchData(**row)
+                for row in result.get("data", [])
+                if isinstance(row, dict)
+            ],
+            meta=AirbyteSearchMeta(
+                has_more=meta_data.get("has_more", False) if isinstance(meta_data, dict) else False,
+                cursor=meta_data.get("cursor") if isinstance(meta_data, dict) else None,
+                took_ms=meta_data.get("took_ms") if isinstance(meta_data, dict) else None,
+            ),
+        )
+
+class TeamsQuery:
+    """
+    Query class for Teams entity operations.
+    """
+
+    def __init__(self, connector: IntercomConnector):
+        """Initialize query with connector reference."""
+        self._connector = connector
+
+    async def list(
+        self,
+        **kwargs
+    ) -> TeamsListResult:
+        """
+        Returns a list of all teams in the workspace
+
+        Returns:
+            TeamsListResult
+        """
+        params = {k: v for k, v in {
+            **kwargs
+        }.items() if v is not None}
+
+        result = await self._connector.execute("teams", "list", params)
+        # Cast generic envelope to concrete typed result
+        return TeamsListResult(
+            data=result.data
+        )
+
+
+
+    async def get(
+        self,
+        id: str | None = None,
+        **kwargs
+    ) -> Team:
+        """
+        Get a single team by ID
+
+        Args:
+            id: Team ID
+            **kwargs: Additional parameters
+
+        Returns:
+            Team
+        """
+        params = {k: v for k, v in {
+            "id": id,
+            **kwargs
+        }.items() if v is not None}
+
+        result = await self._connector.execute("teams", "get", params)
+        return result
+
+
+
+    async def context_store_search(
+        self,
+        query: TeamsSearchQuery,
+        limit: int | None = None,
+        cursor: str | None = None,
+        fields: list[list[str]] | None = None,
+    ) -> TeamsSearchResult:
+        """
+        Search teams records from Airbyte cache.
+
+        This operation searches cached data from Airbyte syncs.
+        Only available in hosted execution mode.
+
+        Available filter fields (TeamsSearchFilter):
+        - admin_ids: Array of user IDs representing the admins of the team.
+        - id: Unique identifier for the team.
+        - name: Name of the team.
+        - type_: Type of team (e.g., 'internal', 'external').
+
+        Args:
+            query: Filter and sort conditions. Supports operators like eq, neq, gt, gte, lt, lte,
+                   in, like, fuzzy, keyword, not, and, or. Example: {"filter": {"eq": {"status": "active"}}}
+            limit: Maximum results to return (default 1000)
+            cursor: Pagination cursor from previous response's meta.cursor
+            fields: Field paths to include in results. Each path is a list of keys for nested access.
+                    Example: [["id"], ["user", "name"]] returns id and user.name fields.
+
+        Returns:
+            TeamsSearchResult with typed records, pagination metadata, and optional search metadata
+
+        Raises:
+            NotImplementedError: If called in local execution mode
+        """
+        params: dict[str, Any] = {"query": query}
+        if limit is not None:
+            params["limit"] = limit
+        if cursor is not None:
+            params["cursor"] = cursor
+        if fields is not None:
+            params["fields"] = fields
+
+        result = await self._connector.execute("teams", "context_store_search", params)
+
+        # Parse response into typed result
+        meta_data = result.get("meta")
+        return TeamsSearchResult(
+            data=[
+                TeamsSearchData(**row)
+                for row in result.get("data", [])
+                if isinstance(row, dict)
+            ],
+            meta=AirbyteSearchMeta(
+                has_more=meta_data.get("has_more", False) if isinstance(meta_data, dict) else False,
+                cursor=meta_data.get("cursor") if isinstance(meta_data, dict) else None,
+                took_ms=meta_data.get("took_ms") if isinstance(meta_data, dict) else None,
+            ),
+        )
+
+class AdminsQuery:
+    """
+    Query class for Admins entity operations.
+    """
+
+    def __init__(self, connector: IntercomConnector):
+        """Initialize query with connector reference."""
+        self._connector = connector
+
+    async def list(
+        self,
+        **kwargs
+    ) -> AdminsListResult:
+        """
+        Returns a list of all admins in the workspace
+
+        Returns:
+            AdminsListResult
+        """
+        params = {k: v for k, v in {
+            **kwargs
+        }.items() if v is not None}
+
+        result = await self._connector.execute("admins", "list", params)
+        # Cast generic envelope to concrete typed result
+        return AdminsListResult(
+            data=result.data
+        )
+
+
+
+    async def get(
+        self,
+        id: str | None = None,
+        **kwargs
+    ) -> Admin:
+        """
+        Get a single admin by ID
+
+        Args:
+            id: Admin ID
+            **kwargs: Additional parameters
+
+        Returns:
+            Admin
+        """
+        params = {k: v for k, v in {
+            "id": id,
+            **kwargs
+        }.items() if v is not None}
+
+        result = await self._connector.execute("admins", "get", params)
+        return result
+
+
+
+class TagsQuery:
+    """
+    Query class for Tags entity operations.
+    """
+
+    def __init__(self, connector: IntercomConnector):
+        """Initialize query with connector reference."""
+        self._connector = connector
+
+    async def list(
+        self,
+        **kwargs
+    ) -> TagsListResult:
+        """
+        Returns a list of all tags in the workspace
+
+        Returns:
+            TagsListResult
+        """
+        params = {k: v for k, v in {
+            **kwargs
+        }.items() if v is not None}
+
+        result = await self._connector.execute("tags", "list", params)
+        # Cast generic envelope to concrete typed result
+        return TagsListResult(
+            data=result.data
+        )
+
+
+
+    async def create(
+        self,
+        name: str,
+        **kwargs
+    ) -> Tag:
+        """
+        Create a new tag or update an existing one
+
+        Args:
+            name: The name of the tag
+            **kwargs: Additional parameters
+
+        Returns:
+            Tag
+        """
+        params = {k: v for k, v in {
+            "name": name,
+            **kwargs
+        }.items() if v is not None}
+
+        result = await self._connector.execute("tags", "create", params)
+        return result
+
+
+
+    async def get(
+        self,
+        id: str | None = None,
+        **kwargs
+    ) -> Tag:
+        """
+        Get a single tag by ID
+
+        Args:
+            id: Tag ID
+            **kwargs: Additional parameters
+
+        Returns:
+            Tag
+        """
+        params = {k: v for k, v in {
+            "id": id,
+            **kwargs
+        }.items() if v is not None}
+
+        result = await self._connector.execute("tags", "get", params)
+        return result
+
+
+
+    async def delete(
+        self,
+        id: str | None = None,
+        **kwargs
+    ) -> TagDeletedResponse:
+        """
+        Permanently delete a tag by ID. This removes the tag from all contacts, companies, and conversations.
+
+        Args:
+            id: The unique identifier of the tag to delete
+            **kwargs: Additional parameters
+
+        Returns:
+            TagDeletedResponse
+        """
+        params = {k: v for k, v in {
+            "id": id,
+            **kwargs
+        }.items() if v is not None}
+
+        result = await self._connector.execute("tags", "delete", params)
+        return result
+
+
+
+class NotesQuery:
+    """
+    Query class for Notes entity operations.
+    """
+
+    def __init__(self, connector: IntercomConnector):
+        """Initialize query with connector reference."""
+        self._connector = connector
+
+    async def create(
+        self,
+        body: str,
+        contact_id: str,
+        admin_id: str | None = None,
+        **kwargs
+    ) -> Note:
+        """
+        Create a note on an existing contact
+
+        Args:
+            body: The body of the note in HTML format
+            admin_id: The ID of the admin creating the note
+            contact_id: Contact ID to add note to
+            **kwargs: Additional parameters
+
+        Returns:
+            Note
+        """
+        params = {k: v for k, v in {
+            "body": body,
+            "admin_id": admin_id,
+            "contact_id": contact_id,
+            **kwargs
+        }.items() if v is not None}
+
+        result = await self._connector.execute("notes", "create", params)
+        return result
+
+
+
+class SegmentsQuery:
+    """
+    Query class for Segments entity operations.
+    """
+
+    def __init__(self, connector: IntercomConnector):
+        """Initialize query with connector reference."""
+        self._connector = connector
+
+    async def list(
+        self,
+        include_count: bool | None = None,
+        **kwargs
+    ) -> SegmentsListResult:
+        """
+        Returns a list of all segments in the workspace
+
+        Args:
+            include_count: Include count of contacts in each segment
+            **kwargs: Additional parameters
+
+        Returns:
+            SegmentsListResult
+        """
+        params = {k: v for k, v in {
+            "include_count": include_count,
+            **kwargs
+        }.items() if v is not None}
+
+        result = await self._connector.execute("segments", "list", params)
+        # Cast generic envelope to concrete typed result
+        return SegmentsListResult(
+            data=result.data
+        )
+
+
+
+    async def get(
+        self,
+        id: str | None = None,
+        **kwargs
+    ) -> Segment:
+        """
+        Get a single segment by ID
+
+        Args:
+            id: Segment ID
+            **kwargs: Additional parameters
+
+        Returns:
+            Segment
+        """
+        params = {k: v for k, v in {
+            "id": id,
+            **kwargs
+        }.items() if v is not None}
+
+        result = await self._connector.execute("segments", "get", params)
+        return result
+
+
+
+class InternalArticlesQuery:
+    """
+    Query class for InternalArticles entity operations.
+    """
+
+    def __init__(self, connector: IntercomConnector):
+        """Initialize query with connector reference."""
+        self._connector = connector
+
+    async def create(
+        self,
+        title: str,
+        owner_id: int,
+        author_id: int,
+        body: str | None = None,
+        **kwargs
+    ) -> InternalArticle:
+        """
+        Create a new internal article in the workspace
+
+        Args:
+            title: The title of the article
+            body: The content of the article in HTML
+            owner_id: The ID of the owner of the article
+            author_id: The ID of the author of the article
+            **kwargs: Additional parameters
+
+        Returns:
+            InternalArticle
+        """
+        params = {k: v for k, v in {
+            "title": title,
+            "body": body,
+            "owner_id": owner_id,
+            "author_id": author_id,
+            **kwargs
+        }.items() if v is not None}
+
+        result = await self._connector.execute("internal_articles", "create", params)
+        return result
+
+
+
+    async def update(
+        self,
+        title: str | None = None,
+        body: str | None = None,
+        author_id: int | None = None,
+        owner_id: int | None = None,
+        id: str | None = None,
+        **kwargs
+    ) -> InternalArticle:
+        """
+        Update an existing internal article by ID
+
+        Args:
+            title: The title of the article
+            body: The content of the article in HTML
+            author_id: The ID of the author of the article
+            owner_id: The ID of the owner of the article
+            id: Internal article ID
+            **kwargs: Additional parameters
+
+        Returns:
+            InternalArticle
+        """
+        params = {k: v for k, v in {
+            "title": title,
+            "body": body,
+            "author_id": author_id,
+            "owner_id": owner_id,
+            "id": id,
+            **kwargs
+        }.items() if v is not None}
+
+        result = await self._connector.execute("internal_articles", "update", params)
+        return result
+
+
+
+    async def delete(
+        self,
+        id: str | None = None,
+        **kwargs
+    ) -> InternalArticleDeletedResponse:
+        """
+        Permanently delete an internal article by ID
+
+        Args:
+            id: Internal article ID
+            **kwargs: Additional parameters
+
+        Returns:
+            InternalArticleDeletedResponse
+        """
+        params = {k: v for k, v in {
+            "id": id,
+            **kwargs
+        }.items() if v is not None}
+
+        result = await self._connector.execute("internal_articles", "delete", params)
+        return result
+
+
