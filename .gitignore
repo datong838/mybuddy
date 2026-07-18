@@ -1,0 +1,21 @@
+# Local secrets / runtime — never upload
+.env
+.env.local
+**/.env
+!**/.env.example
+!**/.env.*.example
+!**/.env.sample
+!**/.env.template
+*.pem
+
+# Python / Node / build artifacts (not source)
+__pycache__/
+*.pyc
+.pytest_cache/
+node_modules/
+desktop/dist/
+desktop/src-tauri/target/
+**/target/
+dist/
+
+# Note: dify/ and openocta/ ARE included (full workspace upload to GitHub mybuddy)

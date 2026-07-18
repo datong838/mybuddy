@@ -1,0 +1,45 @@
+name: desktop-build
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - "mybuddy-v01/desktop/**"
+
+jobs:
+  build:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: windows-latest
+            platform: windows
+          - os: macos-latest
+            platform: macos
+          - os: ubuntu-latest
+            platform: linux
+    runs-on: ${{ matrix.os }}
+    defaults:
+      run:
+        working-directory: mybuddy-v01/desktop
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: mybuddy-v01/desktop/package-lock.json
+      - name: Linux webkit deps
+        if: matrix.platform == 'linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libwebkit2gtk-4.1-dev libappindicator3-dev librsvg2-dev patchelf
+      - run: npm ci
+      - run: npm run tauri build
+      - uses: actions/upload-artifact@v4
+        with:
+          name: aos-desktop-${{ matrix.platform }}
+          path: |
+            mybuddy-v01/desktop/src-tauri/target/release/bundle/**
+            mybuddy-v01/desktop/src-tauri/target/release/*.exe
+          if-no-files-found: warn

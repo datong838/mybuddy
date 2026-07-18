@@ -1,0 +1,48 @@
+# docs/golden-qa.yaml
+version: "0.2"
+channel: desktop
+cases:
+  - id: G01
+    question: "OBJ-1001 的关键运行参数是什么？"
+    expect_contains: ["-20", "2 小时"]
+    must_cite_doc: "OBJ-1001-操作手册_V3.2.pdf"
+  - id: G02
+    question: "不存在的对象 XYZ-999 的参数？"
+    expect_status: no_hit
+  - id: G03
+    question: "OBJ-1002 的保养周期是多久？"
+    expect_contains: ["90 天", "保养"]
+    must_cite_doc: "OBJ-1002-维保规范.pdf"
+  - id: G04
+    question: "紧急停机后应先检查哪些项？"
+    expect_contains: ["电源", "急停"]
+    must_cite_doc: "安全操作总则_V1.pdf"
+  - id: G05
+    question: "知识库里有没有关于火星基地的规格？"
+    expect_status: no_hit
+  - id: G06
+    question: "OBJ-1001 与 OBJ-1002 有什么关联？"
+    expect_contains: ["产线", "上游"]
+    must_cite_doc: "产线对象关系说明.md"
+  - id: G07
+    question: "液压站正常工作油温范围？"
+    expect_contains: ["35", "55"]
+    must_cite_doc: "液压站技术规格.pdf"
+  - id: G08
+    question: "请引用文档说明冷却水进水压力下限。"
+    expect_contains: ["0.2"]
+    must_cite_doc: "公用工程参数表.xlsx"
+  - id: G09
+    question: "虚构设备 ABC-000 的序列号？"
+    expect_status: no_hit
+  - id: G10
+    question: "换班交接需要填写哪些字段？"
+    expect_contains: ["班次", "异常"]
+    must_cite_doc: "交接班制度_V2.pdf"
+  - id: G11
+    question: "OBJ-1003 的标定方法摘要？"
+    expect_contains: ["标定", "零点"]
+    must_cite_doc: "OBJ-1003-标定手册.pdf"
+  - id: G12
+    question: "完全无关的菜谱怎么做红烧肉？"
+    expect_status: no_hit

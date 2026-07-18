@@ -1,0 +1,7 @@
+# Example OpenOcta / desktop env (do not commit secrets)
+
+DIFY_BASE_URL: "http://127.0.0.1"
+DIFY_API_KEY: "app-xxxxxxxx"
+DIFY_TIMEOUT_SEC: 60
+OPENOCTA_BASE_URL: "http://127.0.0.1:18789"
+BUDDY_ASK_URL: "http://127.0.0.1:8090/v1/buddy/ask"

@@ -1,0 +1,10 @@
+{
+  "version": "0.1-placeholder",
+  "name": "enterprise-kb-chat",
+  "note": "在 Dify 控制台配置 Chat 应用后，从此处替换为官方 DSL 导出 JSON/YAML。重建时导入本文件。",
+  "mode": "chat",
+  "model": { "provider": "REPLACE_ME", "name": "REPLACE_ME" },
+  "prompt_template_ref": "../prompts/refuse-and-cite.md",
+  "dataset": "enterprise-kb",
+  "top_k": 5
+}
